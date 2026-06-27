@@ -1,4 +1,5 @@
 import { WebSocketServer, WebSocket } from 'ws';
+import { createServer, type Server as HttpServer } from 'node:http';
 import { EventEmitter } from 'node:events';
 import type { GameSession, GameResult } from '../game/Game.js';
 import type { GameState } from '../game/GameLogic.js';
@@ -7,38 +8,41 @@ import type {
   WsMessage,
   FrontendMessage,
   ServerStatusPayload,
-} from './ws-types.js';
+} from '@u15/ws-types';
 
 // Events emitted:
-//   'set_client'    (slot: 0|1, clientType: 'tcp'|'cpu')
-//   'request_start' ()
-//   'request_reset' ()
-//   'load_map'      (filePath: string)
+//   'set_client'      (slot: 0|1, clientType, processConfig?)
+//   'delete_program'  (slot: 0|1)
+//   'request_start'   ()
+//   'request_reset'   ()
+//   'load_map'        (filePath: string)
+//   'set_map_params'  (params)
+//   'load_map_data'   (data)
 export class WsServer extends EventEmitter {
   private wss: WebSocketServer;
+  readonly httpServer: HttpServer;
   private lastStatus: ServerStatusPayload | null = null;
 
   constructor(port: number) {
     super();
-    this.wss = new WebSocketServer({ port });
+    this.httpServer = createServer();
+    this.wss = new WebSocketServer({ server: this.httpServer });
     this.wss.on('connection', (ws) => {
       ws.on('error', () => {});
       ws.on('message', (data) => this.onMessage(data.toString()));
 
-      // Send current server status immediately to new clients
       if (this.lastStatus) {
         ws.send(JSON.stringify({ type: 'server_status', payload: this.lastStatus }));
       }
     });
+    this.httpServer.listen(port);
   }
 
-  /** Push updated server status to all clients and cache it for late joiners. */
   broadcastStatus(payload: ServerStatusPayload): void {
     this.lastStatus = payload;
     this.broadcast({ type: 'server_status', payload });
   }
 
-  /** Attach a GameSession so its events are broadcast to all WS clients. */
   attach(session: GameSession, playerNames: [string, string]): void {
     session.on('stateUpdate', (state: GameState) => {
       this.broadcast({
@@ -88,12 +92,15 @@ export class WsServer extends EventEmitter {
 
   close(): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.wss.close((err) => (err ? reject(err) : resolve()));
+      this.wss.close((err) => {
+        if (err) reject(err);
+        else this.httpServer.close((e) => (e ? reject(e) : resolve()));
+      });
     });
   }
 
   get port(): number {
-    const addr = this.wss.address();
+    const addr = this.httpServer.address();
     return typeof addr === 'object' && addr !== null ? addr.port : 0;
   }
 
@@ -104,9 +111,14 @@ export class WsServer extends EventEmitter {
     } catch {
       return;
     }
+    if (typeof msg !== 'object' || msg === null) return;
+
     switch (msg.type) {
       case 'set_client':
         this.emit('set_client', msg.payload.slot, msg.payload.clientType, msg.payload.processConfig);
+        break;
+      case 'delete_program':
+        this.emit('delete_program', msg.payload.slot);
         break;
       case 'request_start':
         this.emit('request_start');

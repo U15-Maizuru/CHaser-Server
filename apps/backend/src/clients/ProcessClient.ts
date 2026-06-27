@@ -1,14 +1,7 @@
+import path from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { TcpClient } from '../network/TcpClient.js';
 
-/**
- * Python / Bot プログラムを child_process で起動し、
- * その後 TCP 接続を待つクライアント。
- *
- * プロトコル:
- *   Python: python.exe player.py --host 127.0.0.1 --port <port>
- *   Bot:    Bot.exe a:127.0.0.1 p:<port> n:BotProgram
- */
 export class ProcessClient extends TcpClient {
   private proc: ChildProcess | null = null;
 
@@ -16,27 +9,30 @@ export class ProcessClient extends TcpClient {
     super(timeout);
   }
 
-  /**
-   * TCP サーバーを起動し、外部プロセスを spawn して接続を待つ。
-   * listen + waitForClient をまとめて行う。
-   */
   async startProgram(
-    port: number,
-    programType: 'python' | 'bot',
-    programPath: string,
+    port:           number,
+    programType:    'python' | 'bot',
+    programPath:    string,
     runtimeCommand: string,
+    libPath?:       string,
   ): Promise<void> {
     await this.listen(port);
 
+    const env = buildEnv(libPath);
     const [command, args] = buildCommand(programType, programPath, runtimeCommand, port);
-    this.proc = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    this.proc = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], env });
     this.proc.stdout?.on('data', (d: Buffer) =>
       process.stdout.write(`[proc] ${d.toString().trimEnd()}\n`),
     );
     this.proc.stderr?.on('data', (d: Buffer) =>
       process.stderr.write(`[proc] ${d.toString().trimEnd()}\n`),
     );
-    this.proc.on('exit', (code) => console.log(`[proc] exit: ${code}`));
+    this.proc.on('exit', (code) => {
+      console.log(`[proc] exit: ${code}`);
+      if (code !== 0 && code !== null) {
+        this.emit('error', new Error(`Process exited with code ${code}`));
+      }
+    });
 
     await this.waitForClient();
   }
@@ -50,15 +46,24 @@ export class ProcessClient extends TcpClient {
   }
 }
 
+function buildEnv(libPath?: string): NodeJS.ProcessEnv {
+  if (!libPath) return process.env;
+  const absLib = path.resolve(libPath);
+  const existing = process.env.PYTHONPATH ?? '';
+  return {
+    ...process.env,
+    PYTHONPATH: existing ? `${absLib}${path.delimiter}${existing}` : absLib,
+  };
+}
+
 function buildCommand(
-  type: 'python' | 'bot',
+  type:        'python' | 'bot',
   programPath: string,
-  runtime: string,
-  port: number,
+  runtime:     string,
+  port:        number,
 ): [string, string[]] {
   if (type === 'python') {
     return [runtime, [programPath, '--host', '127.0.0.1', '--port', String(port)]];
   }
-  // Bot.exe 形式: a:127.0.0.1 p:<port> n:BotProgram
   return [runtime, [`a:127.0.0.1`, `p:${port}`, `n:BotProgram`]];
 }
