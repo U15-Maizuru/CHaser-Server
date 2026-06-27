@@ -128,7 +128,26 @@ export type FrontendMessage =
   | { type: 'set_double_mode';   payload: { enabled: boolean } }
   | { type: 'set_turn_delay';    payload: { ms: number } }
   | { type: 'request_next_round' }
-  | { type: 'manual_action';     payload: { slot: 0 | 1; action: number; rote: number } };
+  | { type: 'manual_action';     payload: { slot: 0 | 1; action: number; rote: number } }
+  | { type: 'create_room' }
+  | { type: 'join_room';         payload: { roomId: string } }
+  | { type: 'list_rooms' }
+  | { type: 'destroy_room' };
+
+// --- Room / lobby ---
+
+export interface RoomSummary {
+  id:        string;
+  phase:     ServerPhase;
+  ports:     [number, number];
+  createdAt: number;
+}
+
+export type LobbyMessage =
+  | { type: 'room_created'; payload: { roomId: string; ports: [number, number] } }
+  | { type: 'room_joined';  payload: { roomId: string; ports: [number, number] } }
+  | { type: 'room_list';    payload: { rooms: RoomSummary[] } }
+  | { type: 'error';        payload: { message: string } };
 
 // --- Messages (Backend → Frontend) ---
 

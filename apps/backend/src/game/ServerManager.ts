@@ -24,7 +24,6 @@ import type {
   Reason,
 } from '@u15/ws-types';
 
-const PORTS: [number, number] = [12031, 12032];
 const DEFAULT_TYPE: ClientType = 'process';
 
 interface SlotInfo {
@@ -53,12 +52,12 @@ export class ServerManager extends EventEmitter {
   private roundResults:  RoundResult[] = [];
   private turnDelayMs:   number        = 1000;  // 1ターンあたりの表示待機時間 (デフォルト1秒)
 
-  constructor() {
+  constructor(ports: [number, number] = [12031, 12032]) {
     super();
     this.localIP = getLocalIP();
     this.slots = [
-      { type: DEFAULT_TYPE, state: 'waiting', name: '', ip: '', port: PORTS[0], tcp: null },
-      { type: DEFAULT_TYPE, state: 'waiting', name: '', ip: '', port: PORTS[1], tcp: null },
+      { type: DEFAULT_TYPE, state: 'waiting', name: '', ip: '', port: ports[0], tcp: null },
+      { type: DEFAULT_TYPE, state: 'waiting', name: '', ip: '', port: ports[1], tcp: null },
     ];
     this.map = createRandomMap(undefined, this.mapParams.blockNum, this.mapParams.itemNum, this.mapParams.turnNum, this.mapParams.mirror);
     void this.startListening(0);
@@ -243,6 +242,13 @@ export class ServerManager extends EventEmitter {
     await this.startListening(0);
     await this.startListening(1);
     this.emitStatus();
+  }
+
+  shutdown(): void {
+    for (const slot of this.slots) {
+      slot.tcp?.close();
+      slot.tcp = null;
+    }
   }
 
   getStatus(): ServerStatusPayload {
