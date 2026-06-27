@@ -9,9 +9,12 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@u15/ws-types": "workspace:*",
+    "busboy": "^1.6.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@types/busboy": "^1.5.4",
     "@types/node": "^22.0.0",
     "@types/ws": "^8.5.13",
     "tsx": "^4.19.0",
