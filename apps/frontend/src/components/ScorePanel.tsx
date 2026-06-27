@@ -1,5 +1,5 @@
-import type { GameEndPayload, GameStateSnapshot, ServerPhase, TurnStartPayload } from '../types/ws-types';
-import { Winner, Reason } from '../types/ws-types';
+import type { GameEndPayload, GameStateSnapshot, ServerPhase, TurnStartPayload } from '@u15/ws-types';
+import { Winner, Reason } from '@u15/ws-types';
 
 interface Props {
   snapshot:  GameStateSnapshot | null;

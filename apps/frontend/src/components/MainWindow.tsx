@@ -1,4 +1,4 @@
-import type { GameEndPayload, GameStateSnapshot, TurnStartPayload, ServerPhase } from '../types/ws-types';
+import type { GameEndPayload, GameStateSnapshot, TurnStartPayload, ServerPhase } from '@u15/ws-types';
 import { useGameState } from '../hooks/useGameState';
 import { GameBoardCanvas } from './GameBoardCanvas';
 import { ScorePanel } from './ScorePanel';

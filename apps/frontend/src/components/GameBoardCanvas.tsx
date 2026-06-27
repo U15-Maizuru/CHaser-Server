@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { MapObject } from '../types/ws-types';
-import type { GameStateSnapshot, Point } from '../types/ws-types';
+import { MapObject } from '@u15/ws-types';
+import type { GameStateSnapshot, Point } from '@u15/ws-types';
 
 const CELL = 36; // px per cell
 

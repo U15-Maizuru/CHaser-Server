@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
+import type { GameStateSnapshot } from '@u15/ws-types';
 
 type SoundKey = 'go' | 'ready' | 'finish' | 'get_C' | 'get_H' | 'win' | 'lose';
 
@@ -16,7 +17,6 @@ export function useSound() {
   const cache = useRef<Partial<Record<SoundKey, HTMLAudioElement>>>({});
 
   useEffect(() => {
-    // Preload all sounds
     for (const [key, src] of Object.entries(SOUND_FILES) as [SoundKey, string][]) {
       const audio = new Audio(src);
       audio.preload = 'auto';
@@ -27,10 +27,28 @@ export function useSound() {
   const play = useCallback((key: SoundKey) => {
     const audio = cache.current[key];
     if (!audio) return;
-    // Rewind and play
     audio.currentTime = 0;
     audio.play().catch(() => {});
   }, []);
 
   return { play };
+}
+
+export function useScoreSound(
+  snapshot: GameStateSnapshot | null,
+  muted:    boolean,
+  play:     (key: SoundKey) => void,
+): void {
+  const prevC = useRef(0);
+  const prevH = useRef(0);
+
+  useEffect(() => {
+    if (muted) return;
+    const sc = snapshot?.teamScore;
+    if (!sc) return;
+    if (sc[0] > prevC.current) play('get_C');
+    if (sc[1] > prevH.current) play('get_H');
+    prevC.current = sc[0];
+    prevH.current = sc[1];
+  }, [snapshot?.teamScore, muted, play]);
 }

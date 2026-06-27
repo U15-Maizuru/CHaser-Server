@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGameState }    from './hooks/useGameState';
 import { useSettings }     from './hooks/useSettings';
-import { useSound }        from './hooks/useSound';
+import { useSound, useScoreSound } from './hooks/useSound';
 import { StartupDialog }   from './components/StartupDialog';
 import { MainWindow }      from './components/MainWindow';
 import { SettingDialog }   from './components/SettingDialog';
 import { MapEditorDialog } from './components/MapEditorDialog';
-import type { ClientStatusPayload } from './types/ws-types';
-import { MapObject, Winner } from './types/ws-types';
+import type { ClientStatusPayload } from '@u15/ws-types';
+import { MapObject, Winner } from '@u15/ws-types';
 import type { EditableMap } from './components/MapEditorDialog';
 
-const WS_URL = 'ws://localhost:8765';
+const WS_URL = (import.meta as { env?: { VITE_WS_URL?: string } }).env?.VITE_WS_URL ?? 'ws://localhost:8765';
+const HTTP_BASE = WS_URL.replace(/^ws/, 'http');
 
 export default function App() {
   const state = useGameState(WS_URL);
@@ -18,13 +19,12 @@ export default function App() {
   const { serverStatus, isConnected, gameEnd, snapshot } = state;
   const { play } = useSound();
 
+  useScoreSound(snapshot, settings.muted, play);
+
   const [showSettings,  setShowSettings]  = useState(false);
   const [showMapEditor, setShowMapEditor] = useState(false);
 
-  // Track previous state for sound triggers
-  const prevPhase  = useRef(serverStatus?.phase);
-  const prevScoreC = useRef(0);
-  const prevScoreH = useRef(0);
+  const prevPhase = useRef(serverStatus?.phase);
 
   useEffect(() => {
     if (settings.muted) return;
@@ -38,17 +38,6 @@ export default function App() {
     prevPhase.current = phase;
   }, [serverStatus?.phase, gameEnd, play, settings.muted]);
 
-  useEffect(() => {
-    if (settings.muted) return;
-    const sc = snapshot?.teamScore;
-    if (!sc) return;
-    if (sc[0] > prevScoreC.current) play('get_C');
-    if (sc[1] > prevScoreH.current) play('get_H');
-    prevScoreC.current = sc[0];
-    prevScoreH.current = sc[1];
-  }, [snapshot?.teamScore, play, settings.muted]);
-
-  // --- Sync map params to backend whenever settings change ---
   const didMount = useRef(false);
   useEffect(() => {
     if (!didMount.current) { didMount.current = true; return; }
@@ -61,26 +50,33 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.itemNum, settings.blockNum, settings.turnNum, settings.mirror]);
 
-  // --- Handlers ---
   const handleLoadMap = async () => {
-    const filePath = await window.electronAPI?.openMapFile?.();
-    if (filePath) state.loadMap(filePath);
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.map';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch(`${HTTP_BASE}/api/upload/map`, { method: 'POST', body: fd });
+      if (res.ok) {
+        const { serverPath } = await res.json() as { serverPath: string };
+        state.loadMap(serverPath);
+      }
+    };
+    input.click();
   };
 
-  const handleMapEditorSave = (map: EditableMap, filePath?: string) => {
+  const handleMapEditorSave = (map: EditableMap) => {
     state.loadMapData({
       field: map.field,
       size:  map.size,
       turn:  map.turn,
       teamFirstPoint: map.teamFirstPoint,
     });
-    if (filePath) {
-      // also tell backend to load the saved file (it'll re-import)
-      state.loadMap(filePath);
-    }
   };
 
-  // --- Render ---
   if (!isConnected) {
     return <div style={connecting}>バックエンドに接続中...</div>;
   }
@@ -89,7 +85,6 @@ export default function App() {
 
   return (
     <>
-      {/* 設定ダイアログ */}
       {showSettings && (
         <SettingDialog
           settings={settings}
@@ -98,7 +93,6 @@ export default function App() {
         />
       )}
 
-      {/* マップエディタ */}
       {showMapEditor && (
         <MapEditorDialog
           initialMap={defaultEditableMap}
@@ -108,11 +102,12 @@ export default function App() {
         />
       )}
 
-      {/* メイン UI */}
       {phase === 'setup' ? (
         <StartupDialog
           status={serverStatus ?? defaultStatus}
+          httpBase={HTTP_BASE}
           onSetClient={state.setClient}
+          onDeleteProgram={state.deleteProgram}
           onStart={state.requestStart}
           onLoadMap={handleLoadMap}
           onOpenEditor={() => setShowMapEditor(true)}
@@ -144,8 +139,8 @@ const defaultStatus = {
   phase: 'setup' as const,
   localIP: '...',
   clients: [
-    { type: 'tcp' as const, state: 'waiting' as const, name: '', ip: '', port: 12031 },
-    { type: 'tcp' as const, state: 'waiting' as const, name: '', ip: '', port: 12032 },
+    { type: 'process' as const, state: 'waiting' as const, name: '', ip: '', port: 12031 },
+    { type: 'process' as const, state: 'waiting' as const, name: '', ip: '', port: 12032 },
   ] as [ClientStatusPayload, ClientStatusPayload],
 };
 

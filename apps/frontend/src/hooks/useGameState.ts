@@ -7,32 +7,30 @@ import type {
   InlineMapData,
   MapParams,
   ProcessConfig,
-  ScoreData,
   ServerStatusPayload,
   TurnStartPayload,
   WsMessage,
-} from '../types/ws-types';
+} from '@u15/ws-types';
 
 export interface GameStateHook {
   snapshot:     GameStateSnapshot   | null;
   turnInfo:     TurnStartPayload    | null;
-  scoreData:    ScoreData           | null;
   gameEnd:      GameEndPayload      | null;
   serverStatus: ServerStatusPayload | null;
   isConnected:  boolean;
   // Commands
-  setClient:    (slot: 0 | 1, type: ClientType, processConfig?: ProcessConfig) => void;
-  requestStart: () => void;
-  requestReset: () => void;
-  loadMap:      (filePath: string) => void;
-  setMapParams: (params: MapParams) => void;
-  loadMapData:  (data: InlineMapData) => void;
+  setClient:     (slot: 0 | 1, type: ClientType, processConfig?: ProcessConfig) => void;
+  deleteProgram: (slot: 0 | 1) => void;
+  requestStart:  () => void;
+  requestReset:  () => void;
+  loadMap:       (filePath: string) => void;
+  setMapParams:  (params: MapParams) => void;
+  loadMapData:   (data: InlineMapData) => void;
 }
 
 export function useGameState(wsUrl: string): GameStateHook {
   const [snapshot,     setSnapshot]     = useState<GameStateSnapshot   | null>(null);
   const [turnInfo,     setTurnInfo]     = useState<TurnStartPayload    | null>(null);
-  const [scoreData,    setScoreData]    = useState<ScoreData           | null>(null);
   const [gameEnd,      setGameEnd]      = useState<GameEndPayload      | null>(null);
   const [serverStatus, setServerStatus] = useState<ServerStatusPayload | null>(null);
   const [isConnected,  setIsConnected]  = useState(false);
@@ -60,11 +58,9 @@ export function useGameState(wsUrl: string): GameStateHook {
       switch (msg.type) {
         case 'server_status':
           setServerStatus(msg.payload);
-          // Reset game state when returning to setup
           if (msg.payload.phase === 'setup') {
             setSnapshot(null);
             setTurnInfo(null);
-            setScoreData(null);
             setGameEnd(null);
           }
           break;
@@ -76,7 +72,7 @@ export function useGameState(wsUrl: string): GameStateHook {
           setTurnInfo(msg.payload);
           break;
         case 'score_update':
-          setScoreData(msg.payload);
+          // Scores are also reflected in the game_state snapshot; no separate state needed.
           break;
         case 'game_end':
           setGameEnd(msg.payload);
@@ -103,15 +99,15 @@ export function useGameState(wsUrl: string): GameStateHook {
   return {
     snapshot,
     turnInfo,
-    scoreData,
     gameEnd,
     serverStatus,
     isConnected,
-    setClient:    (slot, type, processConfig) => send({ type: 'set_client', payload: { slot, clientType: type, processConfig } }),
-    requestStart: ()           => send({ type: 'request_start' }),
-    requestReset: ()           => send({ type: 'request_reset' }),
-    loadMap:      (filePath)   => send({ type: 'load_map', payload: { filePath } }),
-    setMapParams: (params)     => send({ type: 'set_map_params', payload: params }),
-    loadMapData:  (data)       => send({ type: 'load_map_data', payload: data }),
+    setClient:     (slot, type, processConfig) => send({ type: 'set_client',    payload: { slot, clientType: type, processConfig } }),
+    deleteProgram: (slot)                       => send({ type: 'delete_program', payload: { slot } }),
+    requestStart:  ()                           => send({ type: 'request_start' }),
+    requestReset:  ()                           => send({ type: 'request_reset' }),
+    loadMap:       (filePath)                   => send({ type: 'load_map',      payload: { filePath } }),
+    setMapParams:  (params)                     => send({ type: 'set_map_params', payload: params }),
+    loadMapData:   (data)                       => send({ type: 'load_map_data', payload: data }),
   };
 }

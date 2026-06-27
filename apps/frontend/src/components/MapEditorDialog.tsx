@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { MapObject } from '../types/ws-types';
-import type { Point } from '../types/ws-types';
+import { MapObject } from '@u15/ws-types';
+import type { Point } from '@u15/ws-types';
 
 export interface EditableMap {
   field: MapObject[][];
@@ -10,10 +10,10 @@ export interface EditableMap {
 }
 
 interface Props {
-  initialMap:  EditableMap;
-  theme:       string;
-  onSave:      (map: EditableMap, filePath?: string) => void;
-  onClose:     () => void;
+  initialMap: EditableMap;
+  theme:      string;
+  onSave:     (map: EditableMap) => void;
+  onClose:    () => void;
 }
 
 type Tool = 'nothing' | 'block' | 'item' | 'start';
@@ -229,9 +229,8 @@ export function MapEditorDialog({ initialMap, theme, onSave, onClose }: Props) {
   };
 
   // ── Save ──────────────────────────────────────────────────────────────────
-  const handleSave = async () => {
-    const filePath = await window.electronAPI?.saveMapFile?.();
-    onSave(map, filePath ?? undefined);
+  const handleSave = () => {
+    onSave(map);
     onClose();
   };
 
