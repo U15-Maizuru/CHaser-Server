@@ -11,13 +11,16 @@ import type {
 } from '@u15/ws-types';
 
 // Events emitted:
-//   'set_client'      (slot: 0|1, clientType, processConfig?)
-//   'delete_program'  (slot: 0|1)
-//   'request_start'   ()
-//   'request_reset'   ()
-//   'load_map'        (filePath: string)
-//   'set_map_params'  (params)
-//   'load_map_data'   (data)
+//   'set_client'        (slot: 0|1, clientType, processConfig?)
+//   'delete_program'    (slot: 0|1)
+//   'request_start'     ()
+//   'request_reset'     ()
+//   'load_map'          (filePath: string)
+//   'set_map_params'    (params)
+//   'load_map_data'     (data)
+//   'set_double_mode'   (enabled: boolean)
+//   'request_next_round'()
+//   'manual_action'     (slot: 0|1, action: number, rote: number)
 export class WsServer extends EventEmitter {
   private wss: WebSocketServer;
   readonly httpServer: HttpServer;
@@ -81,6 +84,10 @@ export class WsServer extends EventEmitter {
     });
   }
 
+  broadcastManualRequest(slot: 0 | 1, aroundData: number[]): void {
+    this.broadcast({ type: 'manual_request', payload: { slot, aroundData } });
+  }
+
   broadcast(msg: WsMessage): void {
     const json = JSON.stringify(msg);
     for (const client of this.wss.clients) {
@@ -134,6 +141,18 @@ export class WsServer extends EventEmitter {
         break;
       case 'load_map_data':
         this.emit('load_map_data', msg.payload);
+        break;
+      case 'set_double_mode':
+        this.emit('set_double_mode', msg.payload.enabled);
+        break;
+      case 'set_turn_delay':
+        this.emit('set_turn_delay', msg.payload.ms);
+        break;
+      case 'request_next_round':
+        this.emit('request_next_round');
+        break;
+      case 'manual_action':
+        this.emit('manual_action', msg.payload.slot, msg.payload.action, msg.payload.rote);
         break;
     }
   }

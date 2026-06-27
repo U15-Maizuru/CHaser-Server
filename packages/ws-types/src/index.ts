@@ -58,9 +58,21 @@ export interface GameEndPayload {
   finalScore: [number, number];
 }
 
+// --- 2試合制: ラウンド結果 ---
+
+export interface RoundResult {
+  round:          0 | 1;
+  winner:         Winner;
+  reason:         Reason;
+  scores:         [number, number];  // [cool_score, hot_score]
+  remainingTurns: number;
+  points:         [number, number];  // 計算後ポイント [cool_pt, hot_pt]
+  playerNames:    [string, string];  // ラウンド開始時のプレイヤー名
+}
+
 // --- Server lifecycle ---
 
-export type ClientType  = 'tcp' | 'cpu' | 'process';
+export type ClientType  = 'tcp' | 'cpu' | 'process' | 'manual';
 export type ClientState = 'waiting' | 'connected' | 'ready';
 export type ServerPhase = 'setup' | 'playing' | 'finished';
 
@@ -74,9 +86,12 @@ export interface ClientStatusPayload {
 }
 
 export interface ServerStatusPayload {
-  phase:   ServerPhase;
-  localIP: string;
-  clients: [ClientStatusPayload, ClientStatusPayload];
+  phase:        ServerPhase;
+  localIP:      string;
+  clients:      [ClientStatusPayload, ClientStatusPayload];
+  doubleMode:   boolean;
+  currentRound: 0 | 1;
+  roundResults: RoundResult[];
 }
 
 // --- Commands (Frontend → Backend) ---
@@ -103,13 +118,17 @@ export interface InlineMapData {
 }
 
 export type FrontendMessage =
-  | { type: 'set_client';     payload: { slot: 0 | 1; clientType: ClientType; processConfig?: ProcessConfig } }
-  | { type: 'delete_program'; payload: { slot: 0 | 1 } }
+  | { type: 'set_client';        payload: { slot: 0 | 1; clientType: ClientType; processConfig?: ProcessConfig } }
+  | { type: 'delete_program';    payload: { slot: 0 | 1 } }
   | { type: 'request_start' }
   | { type: 'request_reset' }
-  | { type: 'load_map';       payload: { filePath: string } }
-  | { type: 'set_map_params'; payload: MapParams }
-  | { type: 'load_map_data';  payload: InlineMapData };
+  | { type: 'load_map';          payload: { filePath: string } }
+  | { type: 'set_map_params';    payload: MapParams }
+  | { type: 'load_map_data';     payload: InlineMapData }
+  | { type: 'set_double_mode';   payload: { enabled: boolean } }
+  | { type: 'set_turn_delay';    payload: { ms: number } }
+  | { type: 'request_next_round' }
+  | { type: 'manual_action';     payload: { slot: 0 | 1; action: number; rote: number } };
 
 // --- Messages (Backend → Frontend) ---
 
@@ -118,4 +137,5 @@ export type WsMessage =
   | { type: 'turn_start';    payload: TurnStartPayload }
   | { type: 'score_update';  payload: ScoreData }
   | { type: 'game_end';      payload: GameEndPayload }
-  | { type: 'server_status'; payload: ServerStatusPayload };
+  | { type: 'server_status'; payload: ServerStatusPayload }
+  | { type: 'manual_request'; payload: { slot: 0 | 1; aroundData: number[] } };

@@ -2,8 +2,10 @@ import { useCallback, useState } from 'react';
 
 export interface AppSettings {
   // ゲーム
-  timeout:  number;   // TCP タイムアウト (秒)
-  muted:    boolean;  // SE ミュート
+  timeout:    number;   // TCP タイムアウト (秒)
+  turnDelay:  number;   // 1ターンの表示待機時間 (ミリ秒)
+  muted:      boolean;  // SE ミュート
+  doubleMode: boolean;  // 2試合制
   // テクスチャ
   theme:    string;   // 'Jewel' | 'Light' | 'Heavy' | 'RPG'
   // ランダムマップ
@@ -14,13 +16,15 @@ export interface AppSettings {
 }
 
 const DEFAULTS: AppSettings = {
-  timeout:  5,
-  muted:    false,
-  theme:    'Jewel',
-  itemNum:  51,
-  blockNum: 20,
-  turnNum:  100,
-  mirror:   true,
+  timeout:    5,
+  turnDelay:  1000,
+  muted:      false,
+  doubleMode: false,
+  theme:      'Jewel',
+  itemNum:    51,
+  blockNum:   20,
+  turnNum:    100,
+  mirror:     true,
 };
 
 const STORAGE_KEY = 'u15_settings';

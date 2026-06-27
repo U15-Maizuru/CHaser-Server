@@ -35,6 +35,13 @@ export function StartupDialog({
           <span style={s.ipLabel}>IP</span>
           <span style={s.ipValue}>{status.localIP}</span>
         </div>
+        {status.doubleMode && (
+          <div style={s.roundBadge}>
+            {status.roundResults?.length === 0
+              ? '第1試合'
+              : `第${(status.currentRound ?? 0) + 1}試合`}
+          </div>
+        )}
         <button style={s.settingsBtn} onClick={onOpenSettings} title="設定">⚙</button>
       </div>
 
@@ -105,6 +112,14 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: 18,
     cursor: 'pointer',
     padding: '0 4px',
+  },
+  roundBadge: {
+    fontSize: 11,
+    padding: '2px 10px',
+    borderRadius: 4,
+    background: '#1f3a5f',
+    color: '#58a6ff',
+    letterSpacing: 1,
   },
   columns: {
     flex: 1,

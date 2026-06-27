@@ -28,6 +28,7 @@ const TYPE_LABELS: { type: ClientType; label: string }[] = [
   { type: 'process', label: 'プログラム' },
   { type: 'tcp',     label: 'TCP接続'   },
   { type: 'cpu',     label: 'CPU'        },
+  { type: 'manual',  label: '手動操作'  },
 ];
 
 export function TeamSetupPanel({ slot, label, color, bgColor, info, httpBase, onSetType, onDeleteProgram }: Props) {
@@ -40,10 +41,8 @@ export function TeamSetupPanel({ slot, label, color, bgColor, info, httpBase, on
   const progEndpoint = `${httpBase}/api/upload/program?slot=${slot}`;
 
   const handleTypeChange = (type: ClientType) => {
-    if (type === 'cpu') {
-      onSetType('cpu');
-    } else if (type === 'tcp') {
-      onSetType('tcp');
+    if (type === 'cpu' || type === 'manual' || type === 'tcp') {
+      onSetType(type);
     } else {
       onSetType('process');
     }

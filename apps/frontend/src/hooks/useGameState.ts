@@ -18,22 +18,28 @@ export interface GameStateHook {
   gameEnd:      GameEndPayload      | null;
   serverStatus: ServerStatusPayload | null;
   isConnected:  boolean;
+  manualRequest: { slot: 0 | 1; aroundData: number[] } | null;
   // Commands
-  setClient:     (slot: 0 | 1, type: ClientType, processConfig?: ProcessConfig) => void;
-  deleteProgram: (slot: 0 | 1) => void;
-  requestStart:  () => void;
-  requestReset:  () => void;
-  loadMap:       (filePath: string) => void;
-  setMapParams:  (params: MapParams) => void;
-  loadMapData:   (data: InlineMapData) => void;
+  setClient:       (slot: 0 | 1, type: ClientType, processConfig?: ProcessConfig) => void;
+  deleteProgram:   (slot: 0 | 1) => void;
+  requestStart:    () => void;
+  requestReset:    () => void;
+  requestNextRound:() => void;
+  setDoubleMode:   (enabled: boolean) => void;
+  setTurnDelay:    (ms: number) => void;
+  sendManualAction:(slot: 0 | 1, action: number, rote: number) => void;
+  loadMap:         (filePath: string) => void;
+  setMapParams:    (params: MapParams) => void;
+  loadMapData:     (data: InlineMapData) => void;
 }
 
 export function useGameState(wsUrl: string): GameStateHook {
-  const [snapshot,     setSnapshot]     = useState<GameStateSnapshot   | null>(null);
-  const [turnInfo,     setTurnInfo]     = useState<TurnStartPayload    | null>(null);
-  const [gameEnd,      setGameEnd]      = useState<GameEndPayload      | null>(null);
-  const [serverStatus, setServerStatus] = useState<ServerStatusPayload | null>(null);
-  const [isConnected,  setIsConnected]  = useState(false);
+  const [snapshot,      setSnapshot]      = useState<GameStateSnapshot   | null>(null);
+  const [turnInfo,      setTurnInfo]      = useState<TurnStartPayload    | null>(null);
+  const [gameEnd,       setGameEnd]       = useState<GameEndPayload      | null>(null);
+  const [serverStatus,  setServerStatus]  = useState<ServerStatusPayload | null>(null);
+  const [isConnected,   setIsConnected]   = useState(false);
+  const [manualRequest, setManualRequest] = useState<{ slot: 0 | 1; aroundData: number[] } | null>(null);
 
   const wsRef    = useRef<WebSocket | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -72,7 +78,9 @@ export function useGameState(wsUrl: string): GameStateHook {
           setTurnInfo(msg.payload);
           break;
         case 'score_update':
-          // Scores are also reflected in the game_state snapshot; no separate state needed.
+          break;
+        case 'manual_request':
+          setManualRequest(msg.payload);
           break;
         case 'game_end':
           setGameEnd(msg.payload);
@@ -102,12 +110,17 @@ export function useGameState(wsUrl: string): GameStateHook {
     gameEnd,
     serverStatus,
     isConnected,
-    setClient:     (slot, type, processConfig) => send({ type: 'set_client',    payload: { slot, clientType: type, processConfig } }),
-    deleteProgram: (slot)                       => send({ type: 'delete_program', payload: { slot } }),
-    requestStart:  ()                           => send({ type: 'request_start' }),
-    requestReset:  ()                           => send({ type: 'request_reset' }),
-    loadMap:       (filePath)                   => send({ type: 'load_map',      payload: { filePath } }),
-    setMapParams:  (params)                     => send({ type: 'set_map_params', payload: params }),
-    loadMapData:   (data)                       => send({ type: 'load_map_data', payload: data }),
+    manualRequest,
+    setClient:        (slot, type, processConfig) => send({ type: 'set_client',        payload: { slot, clientType: type, processConfig } }),
+    deleteProgram:    (slot)                       => send({ type: 'delete_program',    payload: { slot } }),
+    requestStart:     ()                           => send({ type: 'request_start' }),
+    requestReset:     ()                           => send({ type: 'request_reset' }),
+    requestNextRound: ()                           => send({ type: 'request_next_round' }),
+    setDoubleMode:    (enabled)                    => send({ type: 'set_double_mode',   payload: { enabled } }),
+    setTurnDelay:     (ms)                         => send({ type: 'set_turn_delay',    payload: { ms } }),
+    sendManualAction: (slot, action, rote)         => send({ type: 'manual_action',     payload: { slot, action, rote } }),
+    loadMap:          (filePath)                   => send({ type: 'load_map',          payload: { filePath } }),
+    setMapParams:     (params)                     => send({ type: 'set_map_params',    payload: params }),
+    loadMapData:      (data)                       => send({ type: 'load_map_data',     payload: data }),
   };
 }

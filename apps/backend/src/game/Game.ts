@@ -24,9 +24,10 @@ export interface GameResult {
 //   'gameEnd'     (result: GameResult)
 export class GameSession extends EventEmitter {
   async run(
-    clients: [BaseClient, BaseClient],
-    map: GameMap,
-    log?: StableLog,
+    clients:      [BaseClient, BaseClient],
+    map:          GameMap,
+    log?:         StableLog,
+    turnDelayMs = 0,
   ): Promise<GameResult> {
     let state: GameState = {
       map,
@@ -77,6 +78,7 @@ export class GameSession extends EventEmitter {
 
         // Emit state after move; emit score_update if score changed
         this.emit('stateUpdate', state);
+        if (turnDelayMs > 0) await sleep(turnDelayMs);
         if (state.teamScore[player] !== prevScore) {
           this.emit('scoreUpdate', state);
         }
@@ -155,4 +157,8 @@ async function notifyOtherPlayer(
 
 function formatResult(status: GameStatus): string {
   return `[決着] winner=${status.winner} reason=${status.reason}`;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }

@@ -152,3 +152,19 @@ export function isBlunder(status: GameStatus): boolean {
     status.reason === Reason.FOULED
   );
 }
+
+/**
+ * ポイント計算: アイテム数×10 + 残りターン数(勝者のみ) + 全取りボーナス(勝者のみ100pt)
+ * 参照: U15-server-maizuru ScoreLabelStyle.cpp
+ */
+export function calculatePoints(
+  score:          number,
+  remainingTurns: number,
+  isWinner:       boolean,
+  allItemsTaken:  boolean,
+): number {
+  const itemPoints  = score * 10;
+  const bonus       = isWinner ? remainingTurns : 0;
+  const sweepBonus  = (isWinner && allItemsTaken) ? 100 : 0;
+  return itemPoints + bonus + sweepBonus;
+}

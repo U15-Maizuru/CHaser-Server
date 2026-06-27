@@ -49,6 +49,14 @@ export function SettingDialog({ settings, onSave, onClose }: Props) {
                     style={s.numInput}
                   />
                 </Row>
+                <Row label="1ターンの表示時間 (秒)">
+                  <input
+                    type="number" min={0} max={10} step={0.1}
+                    value={(draft.turnDelay / 1000).toFixed(1)}
+                    onChange={e => set('turnDelay', Math.round(Number(e.target.value) * 1000))}
+                    style={s.numInput}
+                  />
+                </Row>
                 <Row label="テクスチャテーマ">
                   <select
                     value={draft.theme}
@@ -65,6 +73,14 @@ export function SettingDialog({ settings, onSave, onClose }: Props) {
                     type="checkbox"
                     checked={draft.muted}
                     onChange={e => set('muted', e.target.checked)}
+                    style={s.check}
+                  />
+                </Row>
+                <Row label="2試合制 (先後入れ替え)">
+                  <input
+                    type="checkbox"
+                    checked={draft.doubleMode}
+                    onChange={e => set('doubleMode', e.target.checked)}
                     style={s.check}
                   />
                 </Row>
