@@ -14,8 +14,12 @@ game.log
 .env
 .env.*
 
-# Claude Code
-.claude/
+# Claude Code (memory / settings は除外、.claude/skills/ だけ追跡)
+.claude/memory/
+.claude/plans/
+.claude/settings.json
+.claude/settings.local.json
+.claude/*.json
 
 # Editor
 *.un~

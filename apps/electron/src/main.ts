@@ -7,10 +7,6 @@ const isDev = process.env['NODE_ENV'] === 'development';
 let backendProcess: ChildProcess | null = null;
 
 function startBackend(appPath: string): void {
-  // Dev: run TypeScript source directly via tsx CLI (node tsx-cli.cjs entry.ts).
-  // Spawning node directly avoids .cmd shell-escaping issues on Windows with non-ASCII paths.
-  // Prod: electron binary acts as Node.js runtime with ELECTRON_RUN_AS_NODE=1.
-
   const backendEntry = isDev
     ? path.join(appPath, '../../../apps/backend/src/index.ts')
     : path.join(process.resourcesPath, 'backend/dist/index.js');
@@ -32,7 +28,6 @@ function startBackend(appPath: string): void {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: backendEnv,
   });
-
   backendProcess.stdout?.on('data', (d: Buffer) =>
     console.log('[backend]', d.toString().trimEnd()),
   );
@@ -49,30 +44,56 @@ function stopBackend(): void {
   }
 }
 
-type BW = InstanceType<typeof BrowserWindow>;
-let mainWindow: BW | null = null;
+const WEB_PREFS = {
+  contextIsolation: true,
+  nodeIntegration: false,
+};
 
-function createWindow(): void {
-  mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 860,
-    title: 'U15 Server Maizuru',
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-
+function loadUrl(win: BrowserWindow, mode: 'display' | 'control'): void {
+  const search = `?mode=${mode}`;
   if (isDev) {
-    void mainWindow.loadURL('http://localhost:5173');
+    void win.loadURL(`http://localhost:5173/${search}`);
   } else {
-    void mainWindow.loadFile(
+    void win.loadFile(
       path.join(process.resourcesPath, 'frontend/dist/index.html'),
+      { search },
     );
   }
+}
 
-  mainWindow.on('closed', () => { mainWindow = null; });
+// ── 対戦表示ウィンドウ ─────────────────────────────────────────────────────
+// ゲームボードを常時表示。セットアップ中は「待機中」画面を表示。
+let displayWindow: BrowserWindow | null = null;
+
+function createDisplayWindow(): void {
+  displayWindow = new BrowserWindow({
+    width: 1280,
+    height: 800,
+    title: 'U15 Server Maizuru — 対戦画面',
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), ...WEB_PREFS },
+  });
+  loadUrl(displayWindow, 'display');
+  displayWindow.on('closed', () => { displayWindow = null; });
+}
+
+// ── コントロールウィンドウ ────────────────────────────────────────────────
+// セットアップ操作・チーム設定・ゲーム開始/リセットを行う。
+let controlWindow: BrowserWindow | null = null;
+
+function createControlWindow(): void {
+  controlWindow = new BrowserWindow({
+    width: 820,
+    height: 920,
+    title: 'U15 Server Maizuru — コントロール',
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), ...WEB_PREFS },
+  });
+  loadUrl(controlWindow, 'control');
+
+  // コントロールウィンドウを閉じたらアプリ全体を終了
+  controlWindow.on('closed', () => {
+    controlWindow = null;
+    app.quit();
+  });
 }
 
 app.whenReady().then(() => {
@@ -104,10 +125,12 @@ app.whenReady().then(() => {
   });
 
   startBackend(__dirname);
-  createWindow();
+  createDisplayWindow();
+  createControlWindow();
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (!displayWindow) createDisplayWindow();
+    if (!controlWindow) createControlWindow();
   });
 }).catch(console.error);
 
