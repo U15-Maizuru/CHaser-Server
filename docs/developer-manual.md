@@ -15,54 +15,62 @@
 7. [ゲームロジック](#7-ゲームロジック)
 8. [フロントエンド構成](#8-フロントエンド構成)
 9. [ビルドとデプロイ](#9-ビルドとデプロイ)
-10. [テスト](#10-テスト)
-11. [拡張ガイド](#11-拡張ガイド)
+10. [マルチルーム / Web サービスモード](#10-マルチルーム--web-サービスモード)
+11. [テスト](#11-テスト)
+12. [拡張ガイド](#12-拡張ガイド)
 
 ---
 
 ## 1. アーキテクチャ概要
 
+### ローカルモード (U15_MODE=local)
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  Electron (apps/electron)                                   │
-│  main.ts: バックエンド起動 + 2つの BrowserWindow 作成       │
+│  main.ts: バックエンド起動(local) → /api/default-room で    │
+│           roomId 取得 → 2つの BrowserWindow を開く         │
 │                                                             │
 │  ┌──────────────────────┐   ┌──────────────────────────┐    │
 │  │ 対戦表示ウィンドウ    │   │  コントロールウィンドウ   │    │
-│  │ ?mode=display        │   │  ?mode=control           │    │
-│  │ 1280×800             │   │  820×920                 │    │
-│  │ DisplayMode.tsx      │   │  ControlApp (App.tsx)    │    │
-│  │ 常時ゲームボード表示  │   │  セットアップ・操作 UI   │    │
+│  │ ?room=local&mode=    │   │  ?room=local&mode=       │    │
+│  │   display           │   │    control               │    │
 │  └──────────────────────┘   └──────────────────────────┘    │
 └──────┬──────────────────────────────────┬───────────────────┘
        │  child_process.spawn             │
 ┌──────▼──────────────────────────────────▼───────────────────┐
-│  Backend (apps/backend)  — Node.js + TypeScript             │
+│  Backend (apps/backend) — Node.js + TypeScript              │
 │                                                             │
-│  WsServer (port 8765) — WebSocket + HTTP 共存              │
-│    ├── HttpServer — multipart ファイルアップロード          │
-│    └── ServerManager — ゲーム状態管理                       │
-│          ├── GameSession — ゲームループ実行 (turnDelayMs)   │
-│          ├── TcpClient (port 12031/12032) — TCP接続        │
-│          ├── ProcessClient — Python/Bot プロセス起動       │
-│          ├── ManualClient — WS経由の手動入力               │
-│          └── ComClient — 内蔵ダミーAI (SEARCH固定)         │
-└───────────────────────────────────────────────────────────┘
-  (両ウィンドウとも同一 WS サーバーに独立接続)
-                │  TCP接続
-┌───────────────▼──────────────────────────────────────────┐
-│  外部クライアント (Python AI プログラム)                    │
-│  python player.py --host 127.0.0.1 --port 12031           │
-└────────────────────────────────────────────────────────────┘
+│  WsServer (port 8765)                                       │
+│    ├── HttpServer — ファイルアップロード / default-room      │
+│    └── RoomManager — 部屋管理                               │
+│          └── Room "local" (ports 12031/12032)               │
+│                └── ServerManager                            │
+│                      ├── TcpClient (port 12031)             │
+│                      └── TcpClient (port 12032)             │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### 2ウィンドウ構成の仕組み
+### Web サービスモード (U15_MODE=web)
 
-- `Electron main.ts` が起動時に `?mode=display` と `?mode=control` の2ウィンドウを開く
-- 両ウィンドウは独立して同じ WebSocket サーバー (`ws://localhost:8765`) に接続する
-- バックエンドは接続クライアント数を意識しない。全 WS クライアントに同一メッセージをブロードキャストする
-- コントロールウィンドウのみが `set_client`, `request_start` 等のコマンドを送信する（対戦表示ウィンドウは表示専用）
-- コントロールウィンドウを閉じるとアプリ全体が終了する
+```
+ブラウザ (ロビー)
+  → GET http://server:8765/         → Lobby.tsx 表示
+  → WS  create_room                 → RoomManager が部屋生成
+  → WS  join_room {roomId}          → 部屋に入室
+
+RoomManager
+  │  createRoom() → ServerManager(ports=[13042, 13043])
+  │  createRoom() → ServerManager(ports=[13044, 13045])
+  │  ...最大500並列 (ポートプール 13000-14999)
+  └── 30分非アクティブで自動削除
+
+各 ServerManager
+  ├── TcpClient (動的ポート)
+  └── TcpClient (動的ポート)
+
+Python AI:  python player.py --host server --port 13042
+```
 
 ---
 
@@ -72,81 +80,61 @@
 U15-server-maizuru2/
 ├── apps/
 │   ├── backend/
-│   │   ├── src/
-│   │   │   ├── index.ts            エントリポイント
-│   │   │   ├── clients/
-│   │   │   │   ├── BaseClient.ts   クライアント抽象基底クラス
-│   │   │   │   ├── ComClient.ts    CPU (SEARCH 固定)
-│   │   │   │   ├── ManualClient.ts 手動操作クライアント
-│   │   │   │   └── ProcessClient.ts Python/Bot プロセス起動
-│   │   │   ├── game/
-│   │   │   │   ├── types.ts        ゲーム内部型 (@u15/ws-types を再エクスポート)
-│   │   │   │   ├── GameLogic.ts    純粋関数: applyMethod, judgeGame, calculatePoints
-│   │   │   │   ├── GameSystem.ts   マップ生成・パース
-│   │   │   │   ├── Game.ts         ゲームセッション (ターンループ + turnDelayMs)
-│   │   │   │   └── ServerManager.ts ゲーム状態オーケストレーター
-│   │   │   ├── log/
-│   │   │   │   └── StableLog.ts    game.log への書き込み
-│   │   │   └── network/
-│   │   │       ├── TcpClient.ts    TCP リスナー + ライン受信
-│   │   │       ├── WsServer.ts     WebSocket サーバー
-│   │   │       ├── HttpServer.ts   multipart アップロード API
-│   │   │       └── ws-types.ts     @u15/ws-types の再エクスポート
-│   │   └── package.json            @u15/backend
+│   │   └── src/
+│   │       ├── index.ts            エントリポイント (U15_MODE 分岐)
+│   │       ├── RoomManager.ts      部屋ライフサイクル管理
+│   │       ├── clients/
+│   │       │   ├── BaseClient.ts
+│   │       │   ├── ComClient.ts
+│   │       │   ├── ManualClient.ts
+│   │       │   └── ProcessClient.ts
+│   │       ├── game/
+│   │       │   ├── types.ts
+│   │       │   ├── GameLogic.ts
+│   │       │   ├── GameSystem.ts
+│   │       │   ├── Game.ts
+│   │       │   └── ServerManager.ts  ポート注入対応 constructor(ports)
+│   │       ├── log/
+│   │       │   └── StableLog.ts
+│   │       └── network/
+│   │           ├── PortPool.ts     TCP ポートプール
+│   │           ├── TcpClient.ts
+│   │           ├── WsServer.ts     ルーム対応 (setRoomManager)
+│   │           ├── HttpServer.ts   room別パス + /api/default-room
+│   │           └── ws-types.ts     @u15/ws-types 再エクスポート
 │   │
 │   ├── frontend/
-│   │   ├── src/
-│   │   │   ├── App.tsx             モード分岐 + ControlApp (コントロール画面)
-│   │   │   ├── components/
-│   │   │   │   ├── DisplayMode.tsx     対戦表示専用コンポーネント (?mode=display)
-│   │   │   │   ├── StartupDialog.tsx   セットアップ画面
-│   │   │   │   ├── TeamSetupPanel.tsx  チーム設定パネル
-│   │   │   │   ├── FileDropZone.tsx    ドラッグ&ドロップアップロード
-│   │   │   │   ├── LibrarySection.tsx  カスタムライブラリ管理
-│   │   │   │   ├── SetupFooter.tsx     マップ操作+スタートボタン
-│   │   │   │   ├── MainWindow.tsx      対戦中メイン画面 (3カラム)
-│   │   │   │   ├── GameBoardCanvas.tsx ゲームボード Canvas 描画
-│   │   │   │   ├── PlayerSidePanel.tsx 左右プレイヤーパネル
-│   │   │   │   ├── ManualControls.tsx  手動操作方向キーパッド
-│   │   │   │   ├── SettingDialog.tsx   設定ダイアログ
-│   │   │   │   └── MapEditorDialog.tsx マップエディタ
-│   │   │   ├── hooks/
-│   │   │   │   ├── useGameState.ts     WebSocket 状態管理・コマンド送信
-│   │   │   │   ├── useSettings.ts      localStorage 設定永続化
-│   │   │   │   ├── useSound.ts         SE 再生
-│   │   │   │   └── useFileUpload.ts    HTTP アップロード (XHR + 進捗)
-│   │   │   ├── styles/
-│   │   │   │   └── tokens.ts           デザイントークン (色・フォント)
-│   │   │   ├── types/
-│   │   │   │   └── ws-types.ts         @u15/ws-types の再エクスポート
-│   │   │   └── assets/
-│   │   │       ├── Image/{Jewel,Light,Heavy,RPG}/ テクスチャ PNG
-│   │   │       └── Sound/              SE mp3
-│   │   └── package.json                @u15/frontend
+│   │   └── src/
+│   │       ├── App.tsx             ?room= ルーティング + Lobby 分岐
+│   │       ├── components/
+│   │       │   ├── Lobby.tsx           ロビー画面 (Web モード)
+│   │       │   ├── DisplayMode.tsx     wsUrl/roomId props 対応
+│   │       │   ├── StartupDialog.tsx
+│   │       │   ├── MainWindow.tsx
+│   │       │   └── ...
+│   │       ├── hooks/
+│   │       │   ├── useGameState.ts     roomId 引数 + join_room 送信
+│   │       │   ├── useLobby.ts         ロビー用 WS フック
+│   │       │   └── ...
+│   │       └── ...
 │   │
 │   └── electron/
-│       ├── src/
-│       │   ├── main.ts             Electron メインプロセス (2ウィンドウ管理)
-│       │   └── preload.ts          コンテキストブリッジ (IPC)
-│       ├── dev.js                  開発起動スクリプト
-│       ├── test-e2e.mjs            E2E テストスクリプト
-│       └── package.json            @u15/electron
+│       └── src/
+│           └── main.ts   /api/default-room で roomId 取得後にウィンドウを開く
 │
 ├── packages/
 │   └── ws-types/
-│       └── src/index.ts            共有型定義 (唯一の正)
+│       └── src/index.ts    RoomSummary, LobbyMessage, 新 FrontendMessage 追加
 │
-├── server/                         実行時自動生成
-│   ├── programs/{cool,hot}/        アップロードされた AI プログラム
-│   ├── libs/{cool,hot}/            カスタムライブラリ
-│   └── maps/                       マップファイル
+├── server/
+│   ├── maps/                       マップファイル (全ルーム共通)
+│   └── rooms/<roomId>/
+│       ├── programs/cool/          COOL チームのアップロードプログラム
+│       ├── programs/hot/
+│       ├── libs/cool/
+│       └── libs/hot/
 │
-├── docs/
-│   ├── user-manual.md
-│   └── developer-manual.md
-├── package.json                    ルートスクリプト
-├── pnpm-workspace.yaml
-└── test-screenshots/               E2E テスト出力
+└── docs/
 ```
 
 ---
@@ -162,17 +150,13 @@ U15-server-maizuru2/
 ### セットアップ
 
 ```bash
-# リポジトリをクローン
-git clone https://github.com/U15-Maizuru/U15-server-maizuru2
-cd U15-server-maizuru2
-
-# 依存関係インストール (全ワークスペース)
+# 依存関係インストール
 pnpm install
 
-# 共有型パッケージをビルド (必須 — 先にビルドしないと他がコンパイルエラー)
+# 共有型パッケージをビルド (必須)
 pnpm --filter @u15/ws-types build
 
-# 開発モード起動 (対戦表示 + コントロールの2ウィンドウが開く)
+# 開発モード起動 (ローカルモード)
 pnpm --filter @u15/electron dev
 ```
 
@@ -180,8 +164,10 @@ pnpm --filter @u15/electron dev
 
 | 変数 | デフォルト | 説明 |
 |---|---|---|
-| `VITE_WS_URL` | `ws://localhost:8765` | フロントエンドのWS接続先 |
-| `NODE_ENV` | `development` | `production` にすると本番ビルドを読む |
+| `U15_MODE` | `local` | `local` = Electron向け1ルーム自動生成 / `web` = マルチルームサービス |
+| `PORT` | `8765` | バックエンド HTTP/WS サーバーのポート |
+| `NODE_ENV` | `development` | `production` にすると frontend/dist を静的配信 |
+| `VITE_WS_URL` | `ws://hostname:8765` | フロントエンドの WS 接続先 (自動検出) |
 
 ---
 
@@ -192,92 +178,118 @@ pnpm --filter @u15/electron dev
 **バックエンドとフロントエンドが共有する型定義の唯一の場所。**
 
 ```typescript
-// 主要エクスポート
-enum MapObject   // NOTHING=0, TARGET=1, BLOCK=2, ITEM=3
-enum Winner      // COOL=0, HOT=1, DRAW=2, CONTINUE=3, NONE=4
-enum Reason      // SCORE, TRAPPED, CONFINED, ATTACK, COLLISION, FOULED, NONE
+// ゲーム型 (変更なし)
+enum MapObject, Winner, Reason
+interface GameStateSnapshot, TurnStartPayload, ScoreData, GameEndPayload
+interface RoundResult, ServerStatusPayload, ClientStatusPayload
+type ServerPhase, ClientType, ClientState
 
-interface RoundResult   // 試合1件の結果 (scores, points, winner, remainingTurns)
-interface ServerStatusPayload  // doubleMode, currentRound, roundResults を含む
-type FrontendMessage    // フロントエンド → バックエンド コマンド
-type WsMessage          // バックエンド → フロントエンド ブロードキャスト
+// ルーム / ロビー型 (追加)
+interface RoomSummary { id, phase, ports, createdAt }
+type LobbyMessage =
+  | { type: 'room_created'; payload: { roomId, ports } }
+  | { type: 'room_joined';  payload: { roomId, ports } }
+  | { type: 'room_list';    payload: { rooms: RoomSummary[] } }
+  | { type: 'error';        payload: { message } }
+
+// フロントエンド → バックエンド (ゲーム + ロビー)
+type FrontendMessage =
+  | ... (既存ゲームコマンド)
+  | { type: 'create_room' }
+  | { type: 'join_room';  payload: { roomId } }
+  | { type: 'list_rooms' }
+  | { type: 'destroy_room' }
 ```
-
-> **重要**: `apps/backend` や `apps/frontend` 内の `ws-types.ts` は薄い再エクスポートのみです。型の変更は必ず `packages/ws-types/src/index.ts` に行い、`pnpm --filter @u15/ws-types build` を実行してください。
 
 ### `@u15/backend` (apps/backend)
 
-ゲームロジックと TCP/WebSocket サーバーの実装。
-
-**ServerManager** — 中心的なオーケストレーター
+**PortPool** — TCP ポートプール
 
 ```typescript
-// 主要メソッド
-setClientType(slot, type, processConfig?)  // クライアント設定
-setDoubleMode(enabled)                      // 2試合制 ON/OFF
-setTurnDelay(ms)                            // ターン表示待機時間 (0〜10000ms)
-requestStart()                              // ゲーム開始
-requestNextRound()                          // 2試合制: 次試合開始
-requestReset()                              // リセット
-deleteProgram(slot)                         // プログラム削除
-loadMap(filePath)                           // マップ読み込み
+class PortPool {
+  alloc(): number | null   // プールから1ポートを確保 (なければ null)
+  release(port: number): void
+  get size(): number
+}
 ```
 
-**クライアント種別**
-
-| クラス | 説明 |
-|---|---|
-| `TcpClient` | TCP ソケットからの接続を待ち受ける |
-| `ProcessClient` | Python/Bot を子プロセスで起動し TCP で待ち受ける |
-| `ManualClient` | WS `manual_action` イベントを受けてアクションを提供する。`need_input` イベントで入力要求を通知 |
-| `ComClient` | 常に SEARCH を返すダミー AI |
-
-**turnDelayMs (ターン表示待機時間)**
+**RoomManager** — 部屋のライフサイクル管理
 
 ```typescript
-// Game.ts のターンループ
-this.emit('stateUpdate', state);       // ボード状態をブロードキャスト
-if (turnDelayMs > 0) await sleep(ms); // ← ここで待機 (フロントが描画する時間)
-// 次のプレイヤーの GetReady へ
+class RoomManager {
+  constructor(webPortRange?: [number, number])  // 未指定 = ローカルモード
+  createRoom(id?: string, fixedPorts?: [number, number]): Room | null
+  getRoom(id: string): Room | undefined
+  listRooms(): RoomSummary[]
+  destroyRoom(id: string): void
+  touchRoom(id: string): void  // 最終アクティブ時刻を更新
+  shutdown(): void             // 全部屋を閉じてタイマーを停止
+
+  // WsServer が設定するコールバック
+  onRoomStatus?:    (roomId, payload) => void
+  onRoomSession?:   (roomId, session, names) => void
+  onManualClient?:  (roomId, mc) => void
+  onRoomDestroyed?: (roomId) => void
+}
 ```
 
-デフォルト: `1000` ms (1秒)。`setTurnDelay(0)` で即時進行になる。
+**ServerManager** — 1つのゲームを管理 (変更点)
+
+```typescript
+// ポートをコンストラクタで注入 (デフォルト [12031, 12032] で後方互換)
+constructor(ports: [number, number] = [12031, 12032])
+
+// 部屋削除時の安全なクリーンアップ (TCP を閉じるだけ、再起動しない)
+shutdown(): void
+```
+
+**WsServer** — ルーム対応の WebSocket サーバー
+
+```typescript
+class WsServer {
+  constructor(port: number)
+  setRoomManager(rm: RoomManager): void   // 起動後に呼ぶ
+  broadcastToRoom(roomId, msg: WsMessage): void
+  broadcastAll(msg: WsMessage | LobbyMessage): void
+  attachRoom(roomId, session, playerNames): void  // セッション開始時
+  close(): Promise<void>
+}
+```
+
+接続時の動作:
+- 全クライアントに `room_list` を即送信
+- `join_room` 受信 → ソケットをルームに紐付け → キャッシュ済みの `server_status` を送信 → `room_joined` を送信
+- ゲームメッセージ → `socketToRoom` でルームを特定 → そのルームの `ServerManager` に dispatch
 
 ### `@u15/frontend` (apps/frontend)
-
-React + Vite の UI 実装。`?mode=` クエリパラメータで動作を切り替える。
 
 **モード分岐 (App.tsx)**
 
 ```typescript
-const MODE = new URLSearchParams(window.location.search).get('mode') ?? 'control';
+const ROOM_ID = new URLSearchParams(window.location.search).get('room');
+const MODE    = new URLSearchParams(window.location.search).get('mode') ?? 'display';
 
 export default function App() {
-  if (MODE === 'display') return <DisplayMode />;  // 対戦表示専用
-  return <ControlApp />;                           // 従来のセットアップ+操作 UI
+  if (!ROOM_ID) return <Lobby wsUrl={WS_URL} />;           // ロビー (Web モード)
+  if (MODE === 'display') return <DisplayMode wsUrl={WS_URL} roomId={ROOM_ID} />;
+  return <ControlApp roomId={ROOM_ID} />;
 }
 ```
 
-**DisplayMode** — 対戦表示専用コンポーネント
-- `setup` フェーズ: チーム接続状態を表示する待機画面
-- `playing`/`finished` フェーズ: `MainWindow` を read-only で表示（操作ボタンは no-op）
-- SE は DisplayMode でも再生される
+**Lobby** — ロビー画面 (Web モード専用)
 
-**ControlApp** — コントロールウィンドウ用
-- 従来の `App` 相当の動作 (StartupDialog / MainWindow 切り替え)
-- WS 接続時に `setTurnDelay` を送信（接続前は送信されないため `isConnected` を依存に含める）
+- WS 接続時に `list_rooms` を送信し `room_list` を表示
+- 「新しいルームを作成」→ `create_room` → `room_created` → `?room=xxx&mode=control` へリダイレクト
+- 「観戦」→ `?room=xxx&mode=display` へリダイレクト
 
-### `@u15/electron` (apps/electron)
-
-2ウィンドウを管理するメインプロセス。
+**useGameState(wsUrl, roomId)**
 
 ```typescript
-// main.ts の骨格
-startBackend(__dirname);        // バックエンドを子プロセスで起動
-
-createDisplayWindow();          // ?mode=display (1280×800)
-createControlWindow();          // ?mode=control (820×920)
-                                // コントロールウィンドウを閉じると app.quit()
+// 接続後に join_room を自動送信
+ws.onopen = () => {
+  setIsConnected(true);
+  ws.send(JSON.stringify({ type: 'join_room', payload: { roomId } }));
+};
 ```
 
 ---
@@ -290,51 +302,69 @@ createControlWindow();          // ?mode=control (820×920)
 
 | メッセージ | ペイロード | 説明 |
 |---|---|---|
+| `create_room` | — | 新しいルームを作成 (Web モード) |
+| `join_room` | `{roomId}` | ルームに参加 (全モード必須) |
+| `list_rooms` | — | ルーム一覧を要求 |
+| `destroy_room` | — | 参加中のルームを削除 |
 | `set_client` | `{slot, clientType, processConfig?}` | クライアント種別設定 |
-| `delete_program` | `{slot}` | プログラム削除・スロット初期化 |
+| `delete_program` | `{slot}` | プログラム削除 |
 | `request_start` | — | ゲーム開始 |
-| `request_reset` | — | セットアップに戻る |
-| `request_next_round` | — | 2試合制: 次試合開始 |
+| `request_reset` | — | リセット |
+| `request_next_round` | — | 次試合開始 |
 | `set_double_mode` | `{enabled}` | 2試合制 ON/OFF |
-| `set_turn_delay` | `{ms}` | ターン表示待機時間 (ミリ秒, 0〜10000) |
-| `manual_action` | `{slot, action, rote}` | 手動操作アクション |
-| `load_map` | `{filePath}` | マップファイル読み込み |
-| `set_map_params` | `{itemNum, blockNum, turnNum, mirror}` | ランダムマップパラメータ |
-| `load_map_data` | `{field, size, turn, teamFirstPoint}` | マップデータ直接送信 |
+| `set_turn_delay` | `{ms}` | ターン表示待機時間 |
+| `manual_action` | `{slot, action, rote}` | 手動操作 |
+| `load_map` | `{filePath}` | マップ読み込み |
+| `set_map_params` | `{...}` | ランダムマップパラメータ |
+| `load_map_data` | `{...}` | マップデータ直接送信 |
 
-**バックエンド → フロントエンド (WsMessage)**
+> **重要**: ゲームメッセージはルームに `join_room` してから有効になります。未入室のソケットからのメッセージは無視されます。
+
+**バックエンド → フロントエンド**
+
+ロビー向け (LobbyMessage):
 
 | メッセージ | ペイロード | 説明 |
 |---|---|---|
-| `server_status` | `ServerStatusPayload` | フェーズ・クライアント状態・2試合制情報 |
+| `room_list` | `{rooms: RoomSummary[]}` | 接続時と変更時に全クライアントへブロードキャスト |
+| `room_created` | `{roomId, ports}` | create_room 発行者に返す |
+| `room_joined` | `{roomId, ports}` | join_room 発行者に返す |
+| `error` | `{message}` | エラー通知 |
+
+ゲーム向け (WsMessage、ルーム内のソケットのみ):
+
+| メッセージ | ペイロード | 説明 |
+|---|---|---|
+| `server_status` | `ServerStatusPayload` | フェーズ・クライアント状態 |
 | `game_state` | `GameStateSnapshot` | ボード全体の状態 |
 | `turn_start` | `{turn, player}` | ターン開始通知 |
 | `score_update` | `{teamScore, leaveItems}` | スコア更新 |
 | `game_end` | `{winner, reason, finalScore, playerNames}` | ゲーム終了 |
-| `manual_request` | `{slot, aroundData}` | 手動操作: アクション入力待ち |
+| `manual_request` | `{slot, aroundData}` | 手動操作入力待ち |
 
-### HTTP API (port 8765 / WS と共存)
+### HTTP API (port 8765)
 
 | エンドポイント | メソッド | 説明 |
 |---|---|---|
-| `/api/upload/program?slot=0\|1` | POST | AI プログラム (.py/.exe) アップロード |
-| `/api/upload/library?slot=0\|1` | POST | カスタムライブラリ (.py) アップロード |
-| `/api/upload/map` | POST | マップファイル (.map) アップロード |
-| `/api/libs?slot=0\|1` | GET | アップロード済みライブラリ一覧 |
-| `/api/libs/:filename?slot=0\|1` | DELETE | ライブラリ削除 |
+| `/api/default-room` | GET | ローカルモード用: `{roomId: "local", ports: [12031, 12032]}` を返す |
+| `/api/upload/program?slot=0\|1&room=<id>` | POST | AI プログラム (.py/.exe) アップロード |
+| `/api/upload/library?slot=0\|1&room=<id>` | POST | カスタムライブラリ (.py) アップロード |
+| `/api/upload/map` | POST | マップファイル (.map) — 全ルーム共通 |
+| `/api/libs?slot=0\|1&room=<id>` | GET | アップロード済みライブラリ一覧 |
+| `/api/libs/:filename?slot=0\|1&room=<id>` | DELETE | ライブラリ削除 |
 
-ファイルサイズ制限: プログラム/ライブラリ 512KB、マップ 1MB。CORS ヘッダー付き。
+アップロードされたファイルは `server/rooms/<roomId>/programs/cool/` 等にルーム別に保存されます。マップファイルのみ `server/maps/` に共通保存されます。
 
 ---
 
 ## 6. TCP クライアントプロトコル
 
-Python AI プログラムはサーバーに TCP 接続して以下のプロトコルでゲームを行います。
+Python AI プログラムはサーバーに TCP 接続して以下のプロトコルでゲームを行います。**ローカルモードでも Web サービスモードでも同一プロトコルです。** 異なるのは接続先ポート番号のみです。
 
 ### 接続
 
 ```
-Client → Server: "[チーム名]\r\n"  (接続後最初の送信)
+Client → Server: "[チーム名]\r\n"
 ```
 
 ### ターンプロトコル (1ターン = 3フェーズ)
@@ -345,14 +375,10 @@ Server → "@ \r\n"
 Client → "gr\r\n"
 ```
 
-**フェーズ 2: Method (アクション送信)**
+**フェーズ 2: Method**
 ```
 Server → "[ConnectStatus][9マスのMapObject値]\r\n"
-          例: "1012012012\r\n"
-          ↑ConnectStatus(1桁) + 周囲3×3の状態(9桁)
-
-Client → "[action][rote]\r\n"
-          例: "wr\r\n"  (WALK RIGHT)
+Client → "[action][rote]\r\n"  例: "wr\r\n" (WALK RIGHT)
 ```
 
 **フェーズ 3: EndSharp**
@@ -361,40 +387,20 @@ Server → "[更新後のAroundData]\r\n"
 Client → "#\r\n"
 ```
 
-> **ターン間の待機**: バックエンドは `stateUpdate` ブロードキャスト後に `turnDelayMs` ミリ秒待機してから次の GetReady を送信します。デフォルトは 1000ms。
+### ポート番号
 
-### アクション文字一覧
+| モード | COOL ポート | HOT ポート |
+|---|---|---|
+| ローカル | 12031 (固定) | 12032 (固定) |
+| Web サービス | 動的 (13000〜14999) | 動的 (13000〜14999) |
 
-| 文字 | アクション |
-|---|---|
-| `w` | WALK (移動) |
-| `l` | LOOK (観察) |
-| `s` | SEARCH (探索) |
-| `p` | PUT (ブロック設置) |
+Web サービスモードではロビーまたはコントロール画面に表示された値を使います。
 
-### 方向文字一覧
-
-| 文字 | 方向 |
-|---|---|
-| `u` | UP (y-1) |
-| `d` | DOWN (y+1) |
-| `r` | RIGHT (x+1) |
-| `l` | LEFT (x-1) |
-
-### AroundData レイアウト (3×3グリッド, インデックス 0〜8)
-
-```
-0 1 2
-3 4 5    ← 4 = 自分自身の位置
-6 7 8
-```
-
-MapObject 値: `0`=空 `1`=未使用 `2`=ブロック `3`=アイテム
-
-### Python プログラム起動引数
+### Python プログラム例
 
 ```bash
-python player.py --host 127.0.0.1 --port 12031
+python player.py --host 192.168.x.x --port 12031  # ローカル COOL
+python player.py --host example.com --port 13042  # Web COOL (ルームに応じて変わる)
 ```
 
 ---
@@ -405,41 +411,23 @@ python player.py --host 127.0.0.1 --port 12031
 
 ```typescript
 // Game.ts
-async run(clients, map, log?, turnDelayMs = 0): Promise<GameResult> {
-  // ...
-  this.emit('stateUpdate', state);       // ボード状態をブロードキャスト
-  if (turnDelayMs > 0) await sleep(ms); // 視覚的確認のための待機
-  // 次フェーズへ
-}
+this.emit('stateUpdate', state);
+if (turnDelayMs > 0) await sleep(ms);
+// 次フェーズへ
 ```
 
-設定 → `ServerManager.setTurnDelay(ms)` → `session.run(..., ms)` に渡す。ゲーム開始時に適用（実行中の変更は次のゲームから）。
-
-### ポイント計算 (`calculatePoints` in GameLogic.ts)
+### ポイント計算 (`calculatePoints`)
 
 ```typescript
-function calculatePoints(
-  score:          number,  // アイテム取得数
-  remainingTurns: number,  // 終了時の残りターン数
-  isWinner:       boolean, // この試合の勝者か
-  allItemsTaken:  boolean, // 全アイテム取得したか
-): number {
-  return score * 10 + (isWinner ? remainingTurns : 0) + (isWinner && allItemsTaken ? 100 : 0);
-}
+score * 10 + (isWinner ? remainingTurns : 0) + (isWinner && allItemsTaken ? 100 : 0)
 ```
 
-### 勝ち点システム (2試合制)
-
-- 1勝 = 3点 (`KACHI_PER_WIN = 3`)
-- TOTAL 勝ち点 = 双方の勝ち点の合計
-- TOTAL スコア = COOL スコア + HOT スコア
-
-### 判定優先順位 (`judgeGame` in GameLogic.ts)
+### 判定優先順位 (`judgeGame`)
 
 1. ブロック下敷き (COLLISION / ATTACK)
 2. 4方向囲まれ (CONFINED / TRAPPED)
 3. 切断 (FOULED)
-4. ターン0 or 両者同時敗北 → スコア比較 (SCORE / DRAW)
+4. ターン0 → スコア比較 (SCORE / DRAW)
 
 ### マップ形式 (.map ファイル)
 
@@ -460,81 +448,60 @@ H: [HOTスタートX],[HOTスタートY]
 
 ```
 App.tsx
-├── DisplayMode.tsx          (?mode=display — 対戦表示専用)
-│   ├── SetupWaiting         (setup フェーズの待機画面)
-│   └── MainWindow.tsx       (playing/finished フェーズ, 操作 no-op)
+├── Lobby.tsx               (?room なし — Web サービスモードのロビー)
 │
-└── ControlApp               (?mode=control — コントロール)
-    ├── SettingDialog.tsx    (overlay modal)
-    ├── MapEditorDialog.tsx  (overlay modal)
-    ├── StartupDialog.tsx    (phase === 'setup')
-    │   ├── TeamSetupPanel.tsx  × 2 (COOL/HOT)
-    │   │   ├── FileDropZone.tsx
-    │   │   └── LibrarySection.tsx
-    │   └── SetupFooter.tsx
-    └── MainWindow.tsx       (phase !== 'setup')
-        ├── PlayerSidePanel.tsx × 2 (side=0: COOL, side=1: HOT)
-        ├── GameBoardCanvas.tsx
-        └── ManualControls.tsx  (manual スロットある時のみ)
+├── DisplayMode.tsx         (?room=xxx&mode=display)
+│   ├── SetupWaiting        (setup フェーズの待機画面, ポートを動的表示)
+│   └── MainWindow.tsx      (playing/finished フェーズ)
+│
+└── ControlApp              (?room=xxx&mode=control)
+    ├── SettingDialog.tsx
+    ├── MapEditorDialog.tsx
+    ├── StartupDialog.tsx
+    └── MainWindow.tsx
 ```
 
 ### 主要フック
 
 | フック | 役割 |
 |---|---|
-| `useGameState(wsUrl)` | WS 接続・メッセージ受信・コマンド送信 |
-| `useSettings()` | localStorage への AppSettings 永続化 |
-| `useSound()` | HTMLAudioElement による SE 再生 |
-| `useScoreSound(snapshot, muted, play)` | スコア変化時の SE トリガー |
-| `useFileUpload()` | XHR multipart アップロード + 進捗管理 |
+| `useGameState(wsUrl, roomId)` | WS 接続・join_room 送信・ゲーム状態管理 |
+| `useLobby(wsUrl)` | ロビー用 WS 接続・create_room / join_room |
+| `useSettings()` | localStorage への設定永続化 |
+| `useSound()` | SE 再生 |
+| `useFileUpload()` | XHR multipart アップロード |
 
-### AppSettings (localStorage キー: `u15_settings`)
+### WS URL の自動検出
 
 ```typescript
-interface AppSettings {
-  timeout:    number;   // TCP タイムアウト秒 (デフォルト: 5)
-  turnDelay:  number;   // ターン表示待機時間 ms (デフォルト: 1000)
-  muted:      boolean;  // SE ミュート
-  doubleMode: boolean;  // 2試合制
-  theme:      string;   // テクスチャテーマ ('Jewel' | 'Light' | 'Heavy' | 'RPG')
-  itemNum:    number;   // ランダムマップアイテム数
-  blockNum:   number;   // ランダムマップブロック数
-  turnNum:    number;   // ランダムマップターン数
-  mirror:     boolean;  // 対称マップ生成
-}
+const WS_URL = env?.VITE_WS_URL ?? `ws://${window.location.hostname}:8765`;
 ```
 
-> **WS タイミング注意**: `turnDelay` 等の設定は WS 接続後に送信します。接続前に `useEffect` が発火しても `send()` は無視されます。`isConnected` を依存に含めることで接続時に再送します。
-
-### PlayerSidePanel の表示データ
-
-- `side=0` (左パネル, COOL視点): COOL→HOT→TOTAL の順、列 = 勝ち点|スコア|B/P|アイテム
-- `side=1` (右パネル, HOT視点): HOT→COOL→TOTAL の順、列 = アイテム|B/P|スコア|勝ち点 (反転)
-- データは `roundResults.points` の累積 + 現在ゲームの `teamScore × 10`
+`http://192.168.1.11:8765` でアクセスすれば `ws://192.168.1.11:8765` に自動接続。
 
 ---
 
 ## 9. ビルドとデプロイ
 
-### 開発モード
+### 開発モード (ローカル)
 
 ```bash
 pnpm --filter @u15/electron dev
-# → backend を tsx で起動
-# → Vite dev サーバー (port 5173) を起動
-# → Electron が 2ウィンドウを開く (localhost:5173/?mode=display と ?mode=control)
+# U15_MODE=local で自動起動
+# ?room=local&mode=display と ?room=local&mode=control で2ウィンドウが開く
 ```
 
-### プロダクションビルド
+### Web サービスとしてデプロイ
 
 ```bash
-# 全ワークスペースをビルド (ws-types → backend, frontend → electron の順)
+# ビルド
 pnpm build
 
-# Windows インストーラー作成
-pnpm --filter @u15/electron build:win
-# → apps/electron/release/ に NSIS インストーラーが生成される
+# 起動
+NODE_ENV=production U15_MODE=web PORT=8765 node apps/backend/dist/index.js
 ```
+
+`NODE_ENV=production` にすると `HttpServer` が `apps/frontend/dist/` を port 8765 で静的配信します。ポート1つで完結します。
 
 ### ビルド依存順序
 
@@ -544,11 +511,81 @@ pnpm --filter @u15/electron build:win
                      →  @u15/electron
 ```
 
-pnpm は `package.json` の `dependencies` から順序を自動解決します。
+### Windows インストーラー (ローカルモード)
+
+```bash
+pnpm --filter @u15/electron build:win
+# → apps/electron/release/ に NSIS インストーラーが生成
+```
 
 ---
 
-## 10. テスト
+## 10. マルチルーム / Web サービスモード
+
+### ポート設計
+
+| 用途 | ポート範囲 |
+|---|---|
+| HTTP / WebSocket | 8765 (固定) |
+| ローカルモード AI | 12031, 12032 (固定) |
+| Web モード AI | 13000〜14999 (動的、最大500ルーム) |
+
+PortPool は `Set<number>` ベースで O(1) alloc/release。Node.js はシングルスレッドのためロック不要。
+
+### ルームのライフサイクル
+
+```
+create_room
+  → PortPool.alloc() × 2
+  → new ServerManager([p0, p1])
+  → ServerManager が TCP 待機開始
+  → Room {id, ports, manager, lastActive, phase} を rooms Map に追加
+
+ゲーム実行中は phase='playing' → 自動削除対象外
+
+30分以上 lastActive が更新されない (非playing) → sweepExpired() で自動削除
+
+destroy_room (明示的削除)
+  → manager.shutdown() でTCP を閉じる
+  → PortPool.release() でポートを返却
+  → WsServer の lastRoomStatus, roomManualClients, roomSockets を削除
+```
+
+### WsServer のルーティング
+
+```
+接続時
+  → room_list を全クライアントに送信
+
+join_room {roomId}
+  → socketToRoom.set(ws, roomId)
+  → roomSockets.get(roomId).add(ws)
+  → lastRoomStatus にキャッシュがあれば server_status を即送信
+  → room_joined を送信
+
+ゲームメッセージ
+  → socketToRoom.get(ws) でルームを特定
+  → room.manager.xxx() に dispatch
+
+ルーム削除 (onRoomDestroyed コールバック)
+  → lastRoomStatus, roomManualClients, roomSockets から削除
+```
+
+### アップロードパスの命名規則
+
+```
+server/rooms/<roomId>/programs/cool/   ← COOL プログラム
+server/rooms/<roomId>/programs/hot/    ← HOT プログラム
+server/rooms/<roomId>/libs/cool/       ← COOL カスタムライブラリ
+server/rooms/<roomId>/libs/hot/        ← HOT カスタムライブラリ
+server/maps/                           ← マップ (全ルーム共通)
+```
+
+ローカルモードでは `roomId='local'` なので `server/rooms/local/programs/cool/` になります。
+
+---
+
+## 11. テスト
 
 ### 単体テスト (Vitest)
 
@@ -556,35 +593,23 @@ pnpm は `package.json` の `dependencies` から順序を自動解決します�
 pnpm --filter @u15/backend test
 ```
 
-`apps/backend/src/game/GameLogic.test.ts`, `GameSystem.test.ts`, `TcpClient.test.ts`, `WsServer.test.ts` 等。
+テストファイル: `GameLogic.test.ts`, `GameSystem.test.ts`, `TcpClient.test.ts`, `WsServer.test.ts`
+
+`WsServer.test.ts` は `RoomManager` を使ってルーム対応の統合テストを行います。メッセージ受信はバッファ付き `connectWs()` で競合状態を回避しています。
 
 ### E2E テスト (Playwright)
 
 ```bash
-# 2ウィンドウ Electron アプリを自動起動してシナリオを実行
 pnpm test:e2e
 # または
 node apps/electron/test-e2e.mjs
 ```
 
-**テスト前処理**: テスト開始時に `localStorage.turnDelay = 0` を設定してゲームを高速化します（デフォルト 1000ms のままではタイムアウトするため）。
-
-**テスト対象ウィンドウ**: `?mode=control` のコントロールウィンドウで操作します（`?mode=display` は読み取り専用なので操作テストの対象外）。
-
-**テストシナリオ (37項目)**
-
-| スイート | 内容 |
-|---|---|
-| セットアップUI | 2カラム表示・モードボタン・FileDropZone・IP |
-| 設定ダイアログ | タブ・2試合制トグル・各設定項目 |
-| FileDropZone | ドロップエリア・拡張子・pychaser表示 |
-| CPU vs CPU | ゲーム開始→終了→リセット・勝敗表示 |
-| 2試合制 | 試合1→次戦スタート→第2試合→合計ポイント |
-| 手動操作 | ManualControls表示・アクション送信・終了 |
+テスト開始時に `localStorage.turnDelay = 0` を設定してゲームを高速化します。テストは `?room=local&mode=control` で操作します。
 
 ---
 
-## 11. 拡張ガイド
+## 12. 拡張ガイド
 
 ### 新しいクライアント種別の追加
 
@@ -595,34 +620,25 @@ node apps/electron/test-e2e.mjs
 
 ### 新しい WebSocket メッセージの追加
 
-1. `packages/ws-types/src/index.ts` の `FrontendMessage` / `WsMessage` に追加
-2. ビルド: `pnpm --filter @u15/ws-types build`
+1. `packages/ws-types/src/index.ts` の `FrontendMessage` / `WsMessage` / `LobbyMessage` に追加
+2. `pnpm --filter @u15/ws-types build`
 3. `apps/backend/src/network/WsServer.ts` の `onMessage` switch に追加
-4. `apps/backend/src/index.ts` でイベントハンドラーを接続
-5. `apps/frontend/src/hooks/useGameState.ts` に送信関数を追加
-
-### 型変更の手順
-
-```bash
-# 1. packages/ws-types/src/index.ts を編集
-# 2. 共有パッケージをリビルド
-pnpm --filter @u15/ws-types build
-# 3. 両ワークスペースをビルドしてエラーを確認
-pnpm --filter @u15/backend build
-pnpm --filter @u15/frontend build
-```
+4. `apps/frontend/src/hooks/useGameState.ts` に送信関数を追加
 
 ### DisplayMode のカスタマイズ
 
-`apps/frontend/src/components/DisplayMode.tsx` の `SetupWaiting` コンポーネントを編集することで、セットアップ中の待機画面をカスタマイズできます（大会名、ロゴ、背景色など）。
+`apps/frontend/src/components/DisplayMode.tsx` の `SetupWaiting` コンポーネントを編集。待機画面（大会名・ロゴ・背景色）をカスタマイズできます。TCP ポートは `clients[0].port` / `clients[1].port` で動的に表示されます。
 
-### ゲームロジックの変更
+### ポートプール範囲の変更
 
-- `GameLogic.ts`: 純粋関数のみ。状態のコピーを返し副作用なし
-- `GameSystem.ts`: マップ生成・パース
-- `Game.ts`: ターンループ（`GameLogic` を呼ぶだけ）+ `turnDelayMs` 待機
-- `ServerManager.ts`: 状態を保持する唯一のクラス
+`apps/backend/src/index.ts` の `WEB_PORTS` を変更します。
 
-### ポイント計算の変更
+```typescript
+const WEB_PORTS: [number, number] = [13000, 14999]; // デフォルト: 最大500ルーム
+```
 
-`apps/backend/src/game/GameLogic.ts` の `calculatePoints` 関数を変更します。変更後は必ず `apps/backend/src/game/GameLogic.test.ts` でテストを追加してください。
+ファイアウォールのポート範囲も合わせて変更してください。
+
+### ルーム TTL の変更
+
+`apps/backend/src/RoomManager.ts` の `ROOM_TTL_MS` を変更します (デフォルト 30分)。
