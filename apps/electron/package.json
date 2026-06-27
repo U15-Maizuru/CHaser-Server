@@ -1,0 +1,49 @@
+{
+  "name": "@u15/electron",
+  "version": "0.0.1",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "node dev.js",
+    "build": "tsc",
+    "build:win": "pnpm build && pnpm build:frontend && electron-builder --win",
+    "build:frontend": "pnpm --filter frontend build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "cross-env": "^7.0.3",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
+    "typescript": "^5.7.0"
+  },
+  "build": {
+    "appId": "jp.u15.server",
+    "productName": "U15 Server Maizuru",
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "files": [
+      "dist/**",
+      "!dist/**/*.map"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend/dist",
+        "to": "backend/dist",
+        "filter": ["**/*", "!**/*.map"]
+      },
+      {
+        "from": "../frontend/dist",
+        "to": "frontend/dist"
+      }
+    ]
+  }
+}
