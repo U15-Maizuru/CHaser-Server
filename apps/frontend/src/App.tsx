@@ -7,24 +7,29 @@ import { MainWindow }      from './components/MainWindow';
 import { SettingDialog }   from './components/SettingDialog';
 import { MapEditorDialog } from './components/MapEditorDialog';
 import { DisplayMode }     from './components/DisplayMode';
+import { Lobby }           from './components/Lobby';
 import type { ClientStatusPayload } from '@u15/ws-types';
 import { MapObject, Winner } from '@u15/ws-types';
 import type { EditableMap } from './components/MapEditorDialog';
 
-const WS_URL    = (import.meta as { env?: { VITE_WS_URL?: string } }).env?.VITE_WS_URL ?? 'ws://localhost:8765';
+// WS URL: 環境変数 > window.location.hostname (自動検出) の優先順位
+const WS_URL    = (import.meta as { env?: { VITE_WS_URL?: string } }).env?.VITE_WS_URL
+  ?? `ws://${window.location.hostname}:8765`;
 const HTTP_BASE = WS_URL.replace(/^ws/, 'http');
 
-// ?mode=display → 対戦表示専用ウィンドウ
-// ?mode=control (or none) → セットアップ・コントロールウィンドウ
-const MODE = new URLSearchParams(window.location.search).get('mode') ?? 'control';
+const params  = new URLSearchParams(window.location.search);
+const ROOM_ID = params.get('room');
+const MODE    = params.get('mode') ?? 'display';
 
 export default function App() {
-  if (MODE === 'display') return <DisplayMode />;
-  return <ControlApp />;
+  // room パラメータなし → ロビー (Web サービスモード)
+  if (!ROOM_ID) return <Lobby wsUrl={WS_URL} />;
+  if (MODE === 'display') return <DisplayMode wsUrl={WS_URL} roomId={ROOM_ID} />;
+  return <ControlApp roomId={ROOM_ID} />;
 }
 
-function ControlApp() {
-  const state = useGameState(WS_URL);
+function ControlApp({ roomId }: { roomId: string }) {
+  const state = useGameState(WS_URL, roomId);
   const { settings, update: updateSettings } = useSettings();
   const { serverStatus, isConnected, gameEnd, snapshot } = state;
   const { play } = useSound();
@@ -60,7 +65,6 @@ function ControlApp() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.itemNum, settings.blockNum, settings.turnNum, settings.mirror]);
 
-  // doubleMode / turnDelay 設定をバックエンドへ同期
   useEffect(() => {
     if (serverStatus?.phase === 'setup') {
       state.setDoubleMode(settings.doubleMode);
@@ -68,11 +72,14 @@ function ControlApp() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.doubleMode, serverStatus?.phase]);
 
-  // turnDelay: 接続時 + 設定変更時に同期 (接続前に呼ぶと WS が未オープンで無視される)
+  // turnDelay: 接続時 + 設定変更時に同期
   useEffect(() => {
     if (isConnected) state.setTurnDelay(settings.turnDelay);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.turnDelay, isConnected]);
+
+  // アップロード URL に roomId を含める
+  const httpBaseRoom = `${HTTP_BASE}?room=${roomId}`;
 
   const handleLoadMap = async () => {
     const input = document.createElement('input');
@@ -129,7 +136,7 @@ function ControlApp() {
       {phase === 'setup' ? (
         <StartupDialog
           status={serverStatus ?? defaultStatus}
-          httpBase={HTTP_BASE}
+          httpBase={httpBaseRoom}
           onSetClient={state.setClient}
           onDeleteProgram={state.deleteProgram}
           onStart={state.requestStart}

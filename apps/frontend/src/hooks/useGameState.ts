@@ -5,6 +5,7 @@ import type {
   GameEndPayload,
   GameStateSnapshot,
   InlineMapData,
+  LobbyMessage,
   MapParams,
   ProcessConfig,
   ServerStatusPayload,
@@ -20,20 +21,20 @@ export interface GameStateHook {
   isConnected:  boolean;
   manualRequest: { slot: 0 | 1; aroundData: number[] } | null;
   // Commands
-  setClient:       (slot: 0 | 1, type: ClientType, processConfig?: ProcessConfig) => void;
-  deleteProgram:   (slot: 0 | 1) => void;
-  requestStart:    () => void;
-  requestReset:    () => void;
-  requestNextRound:() => void;
-  setDoubleMode:   (enabled: boolean) => void;
-  setTurnDelay:    (ms: number) => void;
-  sendManualAction:(slot: 0 | 1, action: number, rote: number) => void;
-  loadMap:         (filePath: string) => void;
-  setMapParams:    (params: MapParams) => void;
-  loadMapData:     (data: InlineMapData) => void;
+  setClient:        (slot: 0 | 1, type: ClientType, processConfig?: ProcessConfig) => void;
+  deleteProgram:    (slot: 0 | 1) => void;
+  requestStart:     () => void;
+  requestReset:     () => void;
+  requestNextRound: () => void;
+  setDoubleMode:    (enabled: boolean) => void;
+  setTurnDelay:     (ms: number) => void;
+  sendManualAction: (slot: 0 | 1, action: number, rote: number) => void;
+  loadMap:          (filePath: string) => void;
+  setMapParams:     (params: MapParams) => void;
+  loadMapData:      (data: InlineMapData) => void;
 }
 
-export function useGameState(wsUrl: string): GameStateHook {
+export function useGameState(wsUrl: string, roomId: string): GameStateHook {
   const [snapshot,      setSnapshot]      = useState<GameStateSnapshot   | null>(null);
   const [turnInfo,      setTurnInfo]      = useState<TurnStartPayload    | null>(null);
   const [gameEnd,       setGameEnd]       = useState<GameEndPayload      | null>(null);
@@ -57,11 +58,20 @@ export function useGameState(wsUrl: string): GameStateHook {
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
-    ws.onopen = () => setIsConnected(true);
+    ws.onopen = () => {
+      setIsConnected(true);
+      // 接続直後にルームに参加する
+      ws.send(JSON.stringify({ type: 'join_room', payload: { roomId } } satisfies FrontendMessage));
+    };
 
     ws.onmessage = (event: MessageEvent) => {
-      const msg = JSON.parse(event.data as string) as WsMessage;
+      const msg = JSON.parse(event.data as string) as WsMessage | LobbyMessage;
       switch (msg.type) {
+        case 'room_joined':
+        case 'room_list':
+        case 'room_created':
+        case 'error':
+          break;
         case 'server_status':
           setServerStatus(msg.payload);
           if (msg.payload.phase === 'setup') {
@@ -94,7 +104,7 @@ export function useGameState(wsUrl: string): GameStateHook {
       setIsConnected(false);
       retryRef.current = setTimeout(connect, 2000);
     };
-  }, [wsUrl]);
+  }, [wsUrl, roomId]);
 
   useEffect(() => {
     connect();

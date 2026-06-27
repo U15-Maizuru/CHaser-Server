@@ -19,8 +19,8 @@ function startBackend(appPath: string): void {
     : [process.execPath, [backendEntry]];
 
   const backendEnv = isDev
-    ? { ...process.env }
-    : { ...process.env, ELECTRON_RUN_AS_NODE: '1' };
+    ? { ...process.env, U15_MODE: 'local' }
+    : { ...process.env, ELECTRON_RUN_AS_NODE: '1', U15_MODE: 'local' };
 
   console.log('[main] backend entry:', backendEntry);
 
@@ -49,8 +49,7 @@ const WEB_PREFS = {
   nodeIntegration: false,
 };
 
-function loadUrl(win: BrowserWindow, mode: 'display' | 'control'): void {
-  const search = `?mode=${mode}`;
+function loadUrl(win: BrowserWindow, search: string): void {
   if (isDev) {
     void win.loadURL(`http://localhost:5173/${search}`);
   } else {
@@ -61,42 +60,56 @@ function loadUrl(win: BrowserWindow, mode: 'display' | 'control'): void {
   }
 }
 
+// ── デフォルトルームの roomId を取得 ────────────────────────────────────────
+// バックエンドが U15_MODE=local で起動すると roomId='local' が自動作成される。
+// /api/default-room から取得して URL パラメータとして使う。
+async function fetchDefaultRoom(retries = 20): Promise<string> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const res  = await fetch('http://localhost:8765/api/default-room');
+      const data = await res.json() as { roomId?: string };
+      if (data.roomId) return data.roomId;
+    } catch {
+      // バックエンドがまだ起動していない場合は待機
+    }
+    await new Promise(r => setTimeout(r, 500));
+  }
+  return 'local'; // フォールバック
+}
+
 // ── 対戦表示ウィンドウ ─────────────────────────────────────────────────────
-// ゲームボードを常時表示。セットアップ中は「待機中」画面を表示。
 let displayWindow: BrowserWindow | null = null;
 
-function createDisplayWindow(): void {
+function createDisplayWindow(roomId: string): void {
   displayWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     title: 'U15 Server Maizuru — 対戦画面',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), ...WEB_PREFS },
   });
-  loadUrl(displayWindow, 'display');
+  loadUrl(displayWindow, `?room=${roomId}&mode=display`);
   displayWindow.on('closed', () => { displayWindow = null; });
 }
 
 // ── コントロールウィンドウ ────────────────────────────────────────────────
-// セットアップ操作・チーム設定・ゲーム開始/リセットを行う。
 let controlWindow: BrowserWindow | null = null;
 
-function createControlWindow(): void {
+function createControlWindow(roomId: string): void {
   controlWindow = new BrowserWindow({
     width: 820,
     height: 920,
     title: 'U15 Server Maizuru — コントロール',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), ...WEB_PREFS },
   });
-  loadUrl(controlWindow, 'control');
+  loadUrl(controlWindow, `?room=${roomId}&mode=control`);
 
-  // コントロールウィンドウを閉じたらアプリ全体を終了
   controlWindow.on('closed', () => {
     controlWindow = null;
     app.quit();
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   ipcMain.handle('dialog:openFile', async () => {
     const result = await dialog.showOpenDialog({
       filters: [{ name: 'Map files', extensions: ['map'] }],
@@ -125,12 +138,17 @@ app.whenReady().then(() => {
   });
 
   startBackend(__dirname);
-  createDisplayWindow();
-  createControlWindow();
+
+  // バックエンドが起動してデフォルトルームが作成されるまで待つ
+  const roomId = await fetchDefaultRoom();
+  console.log('[main] default room:', roomId);
+
+  createDisplayWindow(roomId);
+  createControlWindow(roomId);
 
   app.on('activate', () => {
-    if (!displayWindow) createDisplayWindow();
-    if (!controlWindow) createControlWindow();
+    if (!displayWindow) createDisplayWindow(roomId);
+    if (!controlWindow) createControlWindow(roomId);
   });
 }).catch(console.error);
 

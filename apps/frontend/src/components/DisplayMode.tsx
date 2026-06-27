@@ -5,18 +5,20 @@ import { useGameState } from '../hooks/useGameState';
 import { useSettings } from '../hooks/useSettings';
 import { useSound, useScoreSound } from '../hooks/useSound';
 import { MainWindow } from './MainWindow';
+import {
+  BG_ROOT, BG_CARD, BG_HEADER,
+  COOL_COLOR, COOL_LIGHT, COOL_DARK, COOL_PALE,
+  HOT_COLOR,  HOT_LIGHT,  HOT_DARK,  HOT_PALE,
+  TURN_BASE, TURN_LIGHT,
+  WIN_BASE, WIN_LIGHT, WIN_PALE,
+  TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
+  SHADOW_MD, BORDER_COLOR,
+  RADIUS_MD, RADIUS_LG,
+  FONT_UI, FONT_NUM,
+} from '../styles/tokens';
 
-const WS_URL = (import.meta as { env?: { VITE_WS_URL?: string } }).env?.VITE_WS_URL
-  ?? 'ws://localhost:8765';
-
-/**
- * 対戦表示専用モード (Electron の displayWindow が読み込む)
- *
- * セットアップ中 → 「対戦開始をお待ちください」待機画面
- * 対戦中/終了後 → MainWindow (ボード + スコアパネル, 操作ボタンなし)
- */
-export function DisplayMode() {
-  const state   = useGameState(WS_URL);
+export function DisplayMode({ wsUrl, roomId }: { wsUrl: string; roomId: string }) {
+  const state   = useGameState(wsUrl, roomId);
   const { settings } = useSettings();
   const { play } = useSound();
   const { serverStatus, snapshot, turnInfo, gameEnd, isConnected } = state;
@@ -39,9 +41,9 @@ export function DisplayMode() {
 
   if (!isConnected) {
     return (
-      <div style={s.splash}>
-        <div style={s.title}>U15 Server Maizuru</div>
-        <div style={s.sub}>バックエンドに接続中...</div>
+      <div style={splash.root}>
+        <div style={splash.title}>U15 Server Maizuru</div>
+        <div style={splash.sub}>バックエンドに接続中...</div>
       </div>
     );
   }
@@ -50,7 +52,6 @@ export function DisplayMode() {
     return <SetupWaiting serverStatus={serverStatus} />;
   }
 
-  // playing / finished — ボードを常時表示 (操作は全て no-op)
   return (
     <MainWindow
       snapshot={snapshot}
@@ -69,120 +70,143 @@ export function DisplayMode() {
   );
 }
 
-// ── 待機画面 ─────────────────────────────────────────────────────────────────
+// ── 待機画面 ──────────────────────────────────────────────────────────────────
 
 const STATE_LABEL: Record<string, string> = {
   waiting:   '接続待ち',
   connected: '接続中...',
   ready:     '準備完了',
 };
-const STATE_COLOR: Record<string, string> = {
-  waiting:   '#888',
-  connected: '#f0a500',
-  ready:     '#3fb950',
-};
+
+function stateBadgeStyle(state: string): React.CSSProperties {
+  switch (state) {
+    case 'ready':     return { background: WIN_LIGHT,   color: WIN_BASE };
+    case 'connected': return { background: TURN_LIGHT,  color: TURN_BASE };
+    default:          return { background: '#e8e4f0',   color: TEXT_MUTED };
+  }
+}
 
 function SetupWaiting({ serverStatus }: { serverStatus: ServerStatusPayload | null }) {
-  const clients   = serverStatus?.clients;
-  const localIP   = serverStatus?.localIP ?? '...';
-  const doubleMode = serverStatus?.doubleMode ?? false;
+  const clients      = serverStatus?.clients;
+  const localIP      = serverStatus?.localIP ?? '...';
+  const doubleMode   = serverStatus?.doubleMode ?? false;
   const currentRound = serverStatus?.currentRound ?? 0;
 
   return (
     <div style={sw.root}>
       {/* タイトル */}
-      <div style={sw.title}>U15 Server Maizuru</div>
-      <div style={sw.sub}>
-        {doubleMode ? `第${currentRound + 1}試合 ` : ''}対戦開始をお待ちください
+      <div style={sw.titleWrap}>
+        <div style={sw.title}>U15 Server Maizuru</div>
+        <div style={sw.sub}>
+          {doubleMode ? `第${currentRound + 1}試合 — ` : ''}対戦開始をお待ちください
+        </div>
       </div>
 
-      {/* チーム状態 */}
-      <div style={sw.teams}>
-        {clients ? (
-          <>
-            <TeamCard
-              label="COOL"
-              color="#54C3F1"
-              name={clients[0].name || '---'}
-              state={clients[0].state}
-            />
-            <div style={sw.vs}>VS</div>
-            <TeamCard
-              label="HOT"
-              color="#EE87B4"
-              name={clients[1].name || '---'}
-              state={clients[1].state}
-            />
-          </>
-        ) : (
-          <div style={sw.connecting}>接続を確認中...</div>
-        )}
-      </div>
+      {/* チームカード */}
+      {clients && (
+        <div style={sw.teams}>
+          <TeamCard
+            label="COOL" color={COOL_COLOR} darkColor={COOL_DARK}
+            paleColor={COOL_PALE} lightColor={COOL_LIGHT}
+            name={clients[0].name || '---'} state={clients[0].state}
+            port={clients[0].port}
+          />
+          <div style={sw.vs}>VS</div>
+          <TeamCard
+            label="HOT"  color={HOT_COLOR}  darkColor={HOT_DARK}
+            paleColor={HOT_PALE}  lightColor={HOT_LIGHT}
+            name={clients[1].name || '---'} state={clients[1].state}
+            port={clients[1].port}
+          />
+        </div>
+      )}
 
-      {/* IP / ポート情報 */}
-      <div style={sw.info}>
-        <div>ローカル IP: <strong>{localIP}</strong></div>
-        <div style={sw.ports}>COOL: port 12031 &nbsp;|&nbsp; HOT: port 12032</div>
+      {/* IP情報 */}
+      <div style={sw.infoCard}>
+        <span style={sw.infoLabel}>ローカル IP</span>
+        <span style={sw.infoIP}>{localIP}</span>
+        <span style={sw.infoSep}>|</span>
+        <span style={sw.infoPort}>COOL: {clients ? clients[0].port : '…'} &nbsp; HOT: {clients ? clients[1].port : '…'}</span>
       </div>
     </div>
   );
 }
 
-function TeamCard({ label, color, name, state }: {
-  label: string; color: string; name: string; state: string;
+function TeamCard({ label, color, darkColor, paleColor, lightColor, name, state, port }: {
+  label: string; color: string; darkColor: string; paleColor: string; lightColor: string;
+  name: string; state: string; port: number;
 }) {
+  const badge = stateBadgeStyle(state);
   return (
-    <div style={{ ...tc.card, borderColor: color }}>
-      <div style={{ ...tc.header, background: color }}>{label}</div>
-      <div style={tc.name}>{name}</div>
-      <div style={{ ...tc.badge, background: STATE_COLOR[state] ?? '#888' }}>
-        {STATE_LABEL[state] ?? state}
+    <div style={{ ...tc.card, background: paleColor }}>
+      <div style={{ ...tc.header, background: `linear-gradient(135deg, ${color}, ${darkColor})` }}>
+        {label}
       </div>
+      <div style={{ ...tc.name, color: darkColor }}>{name}</div>
+      <div style={{ ...tc.badge, ...badge }}>{STATE_LABEL[state] ?? state}</div>
+      <div style={tc.port}>port {port}</div>
     </div>
   );
 }
 
-// ── スタイル ─────────────────────────────────────────────────────────────────
+// ── スタイル ──────────────────────────────────────────────────────────────────
 
-const s: Record<string, React.CSSProperties> = {
-  splash: {
+const splash: Record<string, React.CSSProperties> = {
+  root: {
     height: '100vh', display: 'flex', flexDirection: 'column',
     alignItems: 'center', justifyContent: 'center',
-    background: '#f0f0d8', fontFamily: 'monospace',
+    background: BG_ROOT, fontFamily: FONT_UI, gap: 16,
   },
-  title: { fontSize: 32, fontWeight: 'bold', letterSpacing: 2, color: '#333' },
-  sub:   { fontSize: 16, color: '#888', marginTop: 12 },
+  title: { fontSize: 32, fontWeight: 800, letterSpacing: '0.04em', color: TEXT_PRIMARY },
+  sub:   { fontSize: 16, color: TEXT_MUTED },
 };
 
 const sw: Record<string, React.CSSProperties> = {
   root: {
     height: '100vh', display: 'flex', flexDirection: 'column',
     alignItems: 'center', justifyContent: 'center',
-    background: '#f0f0d8', fontFamily: 'monospace', gap: 32,
+    background: BG_ROOT, fontFamily: FONT_UI, gap: 40,
   },
-  title: { fontSize: 38, fontWeight: 'bold', letterSpacing: 3, color: '#222' },
-  sub:   { fontSize: 18, color: '#555', marginTop: -20 },
+  titleWrap: { textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 8 },
+  title: { fontSize: 38, fontWeight: 800, letterSpacing: '0.05em', color: TEXT_PRIMARY },
+  sub:   { fontSize: 16, color: TEXT_SECONDARY },
   teams: { display: 'flex', alignItems: 'center', gap: 40 },
-  vs:    { fontSize: 36, fontWeight: 'bold', color: '#888' },
-  connecting: { fontSize: 16, color: '#888' },
-  info:  { textAlign: 'center', color: '#666', fontSize: 13, lineHeight: 1.8 },
-  ports: { fontSize: 11, color: '#999' },
+  vs: {
+    fontSize: 28, fontWeight: 800, color: TEXT_MUTED,
+    fontFamily: FONT_NUM, letterSpacing: '0.1em',
+  },
+  infoCard: {
+    display: 'flex', alignItems: 'center', gap: 12,
+    padding: '10px 24px', background: BG_CARD,
+    borderRadius: RADIUS_LG, boxShadow: SHADOW_MD,
+    border: `1px solid ${BORDER_COLOR}`,
+  },
+  infoLabel: { fontSize: 11, color: TEXT_MUTED, letterSpacing: '0.04em' },
+  infoIP:    { fontFamily: FONT_NUM, fontWeight: 700, fontSize: 18, color: TEXT_PRIMARY },
+  infoSep:   { color: BORDER_COLOR },
+  infoPort:  { fontSize: 12, color: TEXT_SECONDARY, fontFamily: FONT_NUM },
 };
 
 const tc: Record<string, React.CSSProperties> = {
   card: {
-    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
-    padding: '16px 24px', border: '3px solid', borderRadius: 12,
-    background: '#fff', minWidth: 200,
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
+    padding: '0 0 20px',
+    borderRadius: RADIUS_MD, overflow: 'hidden',
+    boxShadow: SHADOW_MD, minWidth: 220,
   },
   header: {
     width: '100%', textAlign: 'center',
-    color: '#fff', fontWeight: 'bold', fontSize: 18,
-    padding: '6px 0', borderRadius: 20, letterSpacing: 2,
+    color: '#fff', fontWeight: 800, fontSize: 20,
+    padding: '14px 0', letterSpacing: '0.1em',
+    marginBottom: 4,
   },
-  name:  { fontSize: 20, fontWeight: 'bold', color: '#222', minHeight: 28 },
+  name:  {
+    fontSize: 22, fontWeight: 800,
+    minHeight: 32, letterSpacing: '0.02em',
+  },
   badge: {
-    color: '#fff', fontWeight: 'bold', fontSize: 13,
-    padding: '4px 16px', borderRadius: 20, letterSpacing: 1,
+    fontWeight: 700, fontSize: 12,
+    padding: '5px 18px', borderRadius: 99, letterSpacing: '0.06em',
   },
+  port: { fontSize: 11, color: TEXT_MUTED, fontFamily: FONT_NUM },
 };
