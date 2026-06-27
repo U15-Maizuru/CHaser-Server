@@ -1,89 +1,54 @@
-import { ServerManager } from './game/ServerManager.js';
-import { WsServer } from './network/WsServer.js';
+import os from 'node:os';
+import { RoomManager } from './RoomManager.js';
+import { WsServer }    from './network/WsServer.js';
 import { handleHttpRequest, ensureDirectories } from './network/HttpServer.js';
-import type { ManualClient } from './clients/ManualClient.js';
-import type { ProcessConfig, MapParams, InlineMapData } from '@u15/ws-types';
 
-const PORT = 8765;
+const PORT       = Number(process.env['PORT'] ?? 8765);
+const U15_MODE   = process.env['U15_MODE'] ?? 'local';   // 'local' | 'web'
+const LOCAL_PORTS: [number, number] = [12031, 12032];
+const WEB_PORTS:  [number, number]  = [13000, 14999];    // 1000ポート = 500並列ルーム
+
+function getLocalIP(): string {
+  for (const iface of Object.values(os.networkInterfaces())) {
+    for (const addr of iface ?? []) {
+      if (addr.family === 'IPv4' && !addr.internal) return addr.address;
+    }
+  }
+  return 'localhost';
+}
 
 async function main() {
   ensureDirectories();
+  const localIP = getLocalIP();
 
-  console.log('U15 Server starting...');
-  console.log(`  COOL TCP port : 12031`);
-  console.log(`  HOT  TCP port : 12032`);
-  console.log(`  WebSocket/HTTP: ${PORT}  (ws://localhost:${PORT})`);
+  const ws = new WsServer(PORT);
+  const rm = new RoomManager(U15_MODE === 'web' ? WEB_PORTS : undefined);
 
-  const ws      = new WsServer(PORT);
-  const manager = new ServerManager();
+  ws.httpServer.on('request', (req, res) => handleHttpRequest(req, res, rm));
+  ws.setRoomManager(rm);
 
-  // Attach HTTP handler to the shared http.Server inside WsServer
-  ws.httpServer.on('request', handleHttpRequest);
+  if (U15_MODE === 'local') {
+    const room = rm.createRoom('local', LOCAL_PORTS);
+    if (!room) throw new Error('ローカルルームの作成に失敗しました');
+    console.log('U15 Server starting... (ローカルモード)');
+    console.log(`  ─────────────────────────────────────────`);
+    console.log(`  ブラウザアクセス: http://${localIP}:5173         (dev / Vite)`);
+    console.log(`                   http://${localIP}:${PORT}          (prod / static)`);
+    console.log(`  オペレーター:     URL に ?room=local&mode=control を追加`);
+    console.log(`  ─────────────────────────────────────────`);
+    console.log(`  COOL AI 接続先: ${localIP}:${LOCAL_PORTS[0]}`);
+    console.log(`  HOT  AI 接続先: ${localIP}:${LOCAL_PORTS[1]}`);
+    console.log(`  WebSocket:      ws://${localIP}:${PORT}`);
+  } else {
+    console.log('U15 Server starting... (Webサービスモード)');
+    console.log(`  ─────────────────────────────────────────`);
+    console.log(`  ロビー:   http://${localIP}:${PORT}`);
+    console.log(`  WebSocket: ws://${localIP}:${PORT}`);
+    console.log(`  ポートプール: ${WEB_PORTS[0]}–${WEB_PORTS[1]} (最大${(WEB_PORTS[1] - WEB_PORTS[0] + 1) >> 1}並列ルーム)`);
+  }
 
-  // 現在アクティブな ManualClient を追跡
-  const manualClients = new Map<0 | 1, ManualClient>();
-
-  manager.on('status', (payload) => ws.broadcastStatus(payload));
-
-  ws.on('set_client', (slot: 0 | 1, clientType: 'tcp' | 'cpu' | 'process' | 'manual', processConfig?: ProcessConfig) => {
-    void manager.setClientType(slot, clientType, processConfig);
-  });
-
-  ws.on('delete_program', (slot: 0 | 1) => {
-    manager.deleteProgram(slot);
-  });
-
-  ws.on('request_start', () => {
-    manualClients.clear();
-    manager.requestStart().catch(console.error);
-  });
-
-  ws.on('request_reset', () => {
-    manualClients.clear();
-    manager.requestReset().catch(console.error);
-  });
-
-  ws.on('load_map', (filePath: string) => {
-    manager.loadMap(filePath);
-  });
-
-  ws.on('set_map_params', (params: MapParams) => {
-    manager.setMapParams(params);
-  });
-
-  ws.on('load_map_data', (data: InlineMapData) => {
-    manager.loadMapData(data);
-  });
-
-  ws.on('set_double_mode', (enabled: boolean) => {
-    manager.setDoubleMode(enabled);
-  });
-
-  ws.on('set_turn_delay', (ms: number) => {
-    manager.setTurnDelay(ms);
-  });
-
-  ws.on('request_next_round', () => {
-    manualClients.clear();
-    manager.requestNextRound().catch(console.error);
-  });
-
-  ws.on('manual_action', (slot: 0 | 1, action: number, rote: number) => {
-    const mc = manualClients.get(slot);
-    if (mc) mc.receiveAction(action, rote);
-  });
-
-  // ManualClient が作られたら登録し、need_input イベントを WS でブロードキャスト
-  manager.on('manual_client_created', (mc: ManualClient) => {
-    manualClients.set(mc.currentSlot, mc);
-    mc.on('need_input', (slot: 0 | 1, aroundData: number[]) => {
-      ws.broadcastManualRequest(slot, aroundData);
-    });
-  });
-
-  manager.on('session_created', (session, playerNames) => {
-    ws.attach(session, playerNames);
-  });
+  process.on('SIGINT',  () => { rm.shutdown(); process.exit(0); });
+  process.on('SIGTERM', () => { rm.shutdown(); process.exit(0); });
 }
 
 main().catch(console.error);
