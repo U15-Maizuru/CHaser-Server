@@ -4,16 +4,19 @@ import type {
   ServerStatusPayload,
 } from '@u15/ws-types';
 import { Winner } from '@u15/ws-types';
+import {
+  BG_CARD,
+  COOL_COLOR, COOL_LIGHT, COOL_PALE, COOL_DARK,
+  HOT_COLOR,  HOT_LIGHT,  HOT_PALE,  HOT_DARK,
+  WIN_BASE, WIN_LIGHT, WIN_PALE,
+  TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
+  SHADOW_SM, BORDER_COLOR,
+  RADIUS_SM, RADIUS_MD,
+  FONT_UI, FONT_NUM,
+} from '../styles/tokens';
 
 type RoundResult = WsRoundResult;
 
-/**
- * 対戦画面の左右プレイヤーパネル
- * 参照: U15-server-maizuru mainwindow.ui (frameA / frameB)
- *
- * side=0 → 左パネル (COOL 視点): COOL→HOT→TOTAL 順, 列=勝ち点|スコア|B/P|アイテム
- * side=1 → 右パネル (HOT 視点) : HOT→COOL→TOTAL 順, 列=アイテム|B/P|スコア|勝ち点 (反転)
- */
 interface Props {
   side:         0 | 1;
   snapshot:     GameStateSnapshot | null;
@@ -22,19 +25,8 @@ interface Props {
 
 const KACHI_PER_WIN = 3;
 
-const TEAM_COLOR  = ['#1a5fcc', '#cc1a1a'] as const;  // COOL blue / HOT red
-const TEAM_BG     = ['#b3d4ff', '#ffb3b3'] as const;  // COOL item bg / HOT item bg
-const TEAM_LABEL  = ['COOL', 'HOT']        as const;
-
 function computeData(snapshot: GameStateSnapshot | null, roundResults: RoundResult[]) {
-  // 現在のゲームのスコア (ターン中はアイテム数×10、終了後はroundResultsに入る)
   const curItems: [number, number] = snapshot?.teamScore ?? [0, 0];
-
-  // 完了したラウンドの累積
-  const accItems: [number, number] = [
-    roundResults.reduce((s, r) => s + r.scores[0], 0),
-    roundResults.reduce((s, r) => s + r.scores[1], 0),
-  ];
   const accPoints: [number, number] = [
     roundResults.reduce((s, r) => s + r.points[0], 0),
     roundResults.reduce((s, r) => s + r.points[1], 0),
@@ -43,163 +35,173 @@ function computeData(snapshot: GameStateSnapshot | null, roundResults: RoundResu
     roundResults.filter(r => r.winner === Winner.COOL).length,
     roundResults.filter(r => r.winner === Winner.HOT).length,
   ];
-
-  // 累積 + 現在ゲーム
-  const totalItems: [number, number]  = [accItems[0]  + curItems[0],  accItems[1]  + curItems[1]];
-  const totalPoints: [number, number] = [accPoints[0] + curItems[0] * 10, accPoints[1] + curItems[1] * 10];
-  const kachi: [number, number]       = [wins[0] * KACHI_PER_WIN, wins[1] * KACHI_PER_WIN];
-
-  return { totalItems, totalPoints, kachi };
+  const totalPoints: [number, number] = [
+    accPoints[0] + curItems[0] * 10,
+    accPoints[1] + curItems[1] * 10,
+  ];
+  const kachi: [number, number] = [wins[0] * KACHI_PER_WIN, wins[1] * KACHI_PER_WIN];
+  return { curItems, totalPoints, kachi, roundResults };
 }
 
 export function PlayerSidePanel({ side, snapshot, serverStatus }: Props) {
   const roundResults = serverStatus?.roundResults ?? [];
-  const { totalItems, totalPoints, kachi } = computeData(snapshot, roundResults);
+  const doubleMode   = serverStatus?.doubleMode   ?? false;
+  const { curItems, totalPoints, kachi } = computeData(snapshot, roundResults);
 
   // 表示順: side=0 → COOL(0)→HOT(1), side=1 → HOT(1)→COOL(0)
   const order: [0 | 1, 0 | 1] = side === 0 ? [0, 1] : [1, 0];
 
-  // TOTAL 計算
-  const grandScore = totalPoints[0] + totalPoints[1];
   const grandKachi = kachi[0] + kachi[1];
+  const grandScore = totalPoints[0] + totalPoints[1];
 
   return (
-    <div style={s.panel}>
-      {/* COOL or HOT ボックス (上) */}
-      <TeamBox
+    <div style={s.card}>
+      {/* ── チーム1 ── */}
+      <TeamSection
         team={order[0]}
-        items={totalItems[order[0]]}
-        score={totalPoints[order[0]]}
         kachi={kachi[order[0]]}
-        reversed={side === 1}
+        score={totalPoints[order[0]]}
+        items={curItems[order[0]]}
+        roundResults={roundResults}
+        doubleMode={doubleMode}
       />
 
-      {/* HOT or COOL ボックス (下) */}
-      <TeamBox
+      {/* ── チーム2 ── */}
+      <TeamSection
         team={order[1]}
-        items={totalItems[order[1]]}
-        score={totalPoints[order[1]]}
         kachi={kachi[order[1]]}
-        reversed={side === 1}
+        score={totalPoints[order[1]]}
+        items={curItems[order[1]]}
+        roundResults={roundResults}
+        doubleMode={doubleMode}
       />
 
-      {/* TOTAL ボックス */}
-      <div style={s.totalWrap}>
-        <div style={s.totalHeader}>TOTAL 合計</div>
-        <div style={{ ...s.totalRow, flexDirection: side === 0 ? 'row' : 'row-reverse' }}>
-          <div style={s.totalCell}>
-            <div style={s.totalLabel}>勝ち点</div>
-            <div style={s.totalValue}>{grandKachi}pt</div>
-          </div>
-          <div style={s.totalCell}>
-            <div style={s.totalLabel}>スコア</div>
-            <div style={s.totalValue}>{grandScore}pt</div>
-          </div>
+      {/* ── TOTAL ── */}
+      <div style={s.totalSection}>
+        <div style={s.totalHeader}>⭐ TOTAL</div>
+        <div style={s.totalGrid}>
+          <StatCell label="勝ち点" value={`${grandKachi}pt`} bg={WIN_PALE} color={WIN_BASE} />
+          <StatCell label="スコア"  value={`${grandScore}pt`} bg={WIN_PALE} color={WIN_BASE} />
         </div>
       </div>
     </div>
   );
 }
 
-// ── TeamBox ───────────────────────────────────────────────────────────────────
+// ── TeamSection ───────────────────────────────────────────────────────────────
 
-function TeamBox({ team, items, score, kachi, reversed }: {
-  team: 0 | 1; items: number; score: number; kachi: number; reversed: boolean;
+function TeamSection({ team, kachi, score, items, roundResults, doubleMode }: {
+  team: 0 | 1; kachi: number; score: number; items: number;
+  roundResults: RoundResult[]; doubleMode: boolean;
 }) {
-  const color   = TEAM_COLOR[team];
-  const itemBg  = TEAM_BG[team];
-  const label   = TEAM_LABEL[team];
-
-  // 列: side=0 → 勝ち点|スコア|B/P|アイテム, side=1 → アイテム|B/P|スコア|勝ち点
-  const cols: { key: string; value: number | string; highlight: boolean }[] = reversed
-    ? [
-        { key: 'アイテム', value: score,  highlight: true  },
-        { key: 'B/P',      value: 0,      highlight: false },
-        { key: 'スコア',   value: score,  highlight: true  },
-        { key: '勝ち点',   value: kachi,  highlight: false },
-      ]
-    : [
-        { key: '勝ち点',   value: kachi,  highlight: false },
-        { key: 'スコア',   value: score,  highlight: true  },
-        { key: 'B/P',      value: 0,      highlight: false },
-        { key: 'アイテム', value: score,  highlight: true  },
-      ];
+  const base  = team === 0 ? COOL_COLOR : HOT_COLOR;
+  const dark  = team === 0 ? COOL_DARK  : HOT_DARK;
+  const pale  = team === 0 ? COOL_PALE  : HOT_PALE;
+  const light = team === 0 ? COOL_LIGHT : HOT_LIGHT;
+  const label = team === 0 ? 'COOL' : 'HOT';
 
   return (
     <div style={s.teamBox}>
-      <div style={{ ...s.teamHeader, background: color }}>{label}</div>
-      <div style={s.colRow}>
-        {cols.map(col => (
-          <div key={col.key} style={s.col}>
-            <div style={s.colLabel}>{col.key}</div>
-            <div style={{
-              ...s.colValue,
-              background: col.highlight ? itemBg : '#fff',
-              borderColor: col.highlight ? color : '#aaa',
-            }}>
-              {col.value}
-            </div>
+      {/* グラデヘッダー */}
+      <div style={{
+        ...s.teamHeader,
+        background: `linear-gradient(135deg, ${base}, ${dark})`,
+      }}>
+        <span style={s.dots}>●●●</span>
+        <span style={s.teamLabel}>{label}</span>
+      </div>
+
+      {/* ラウンド別データ (doubleMode時) */}
+      {doubleMode && roundResults.map((rr, i) => (
+        <div key={i} style={s.roundRow}>
+          <span style={{ ...s.roundBadge, background: light, color: dark }}>
+            第{i + 1}試合
+          </span>
+          <div style={s.roundStats}>
+            <StatCell label="勝ち点" value={`${rr.winner === (team === 0 ? Winner.COOL : Winner.HOT) ? KACHI_PER_WIN : 0}pt`} bg={pale} color={base} small />
+            <StatCell label="スコア" value={`${rr.scores[team]}pt`} bg={pale} color={base} small />
+            <StatCell label="ポイント" value={`${rr.points[team]}pt`} bg={pale} color={base} small />
           </div>
-        ))}
+        </div>
+      ))}
+
+      {/* 現在のゲーム統計 */}
+      <div style={s.statsGrid}>
+        <StatCell label="勝ち点"  value={`${kachi}pt`}  bg={pale} color={base} />
+        <StatCell label="スコア"   value={`${score}pt`}  bg={pale} color={base} />
+        <StatCell label="アイテム" value={String(items)} bg={pale} color={base} />
       </div>
     </div>
   );
 }
 
+// ── StatCell ─────────────────────────────────────────────────────────────────
+
+function StatCell({ label, value, bg, color, small }: {
+  label: string; value: string; bg: string; color: string; small?: boolean;
+}) {
+  return (
+    <div style={{ ...cellS.wrap, flex: 1 }}>
+      <div style={cellS.label}>{label}</div>
+      <div style={{
+        ...cellS.value,
+        background: bg,
+        color,
+        fontSize: small ? '0.85rem' : '1rem',
+      }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+const cellS: Record<string, React.CSSProperties> = {
+  wrap:  { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 },
+  label: { fontSize: 'clamp(0.45rem, 0.75vw, 0.8rem)', color: TEXT_MUTED, letterSpacing: '0.04em' },
+  value: {
+    fontFamily: FONT_NUM, fontWeight: 700, textAlign: 'center',
+    borderRadius: RADIUS_SM, padding: 'clamp(2px, 0.5vh, 6px) 4px', width: '100%',
+    fontSize: 'clamp(0.65rem, 1.1vw, 1.2rem)',
+  },
+};
+
 // ── Styles ───────────────────────────────────────────────────────────────────
 
 const s: Record<string, React.CSSProperties> = {
-  panel: {
-    display: 'flex', flexDirection: 'column', gap: 10,
-    padding: '10px 12px',
-    background: '#ffffff',
-    border: '2px solid #d0d0c0',
-    borderRadius: 8,
-    minWidth: 230, maxWidth: 310,
-    flexShrink: 0,
-    fontFamily: 'monospace',
+  card: {
+    display: 'flex', flexDirection: 'column', gap: 0,
+    background: BG_CARD, borderRadius: RADIUS_MD, boxShadow: SHADOW_SM,
+    width: 'clamp(110px, 18vw, 240px)', flexShrink: 0,
+    overflow: 'hidden', fontFamily: FONT_UI,
+    alignSelf: 'stretch',  // 親の高さに合わせて縦に伸びる
   },
   teamBox: {
-    display: 'flex', flexDirection: 'column', gap: 6,
-    padding: '6px 8px',
-    background: '#fafaf0',
-    border: '1px solid #ccc',
-    borderRadius: 8,
+    display: 'flex', flexDirection: 'column', gap: 'clamp(4px, 0.8vh, 10px)',
+    padding: '0 8px clamp(6px, 1vh, 10px)',
+    borderBottom: `1px solid ${BORDER_COLOR}`,
   },
   teamHeader: {
-    color: '#fff', fontWeight: 'bold', fontSize: 14,
-    textAlign: 'center', padding: '3px 0', borderRadius: 20,
-    letterSpacing: 2,
+    display: 'flex', alignItems: 'center', gap: 6,
+    padding: 'clamp(5px, 1vh, 12px) 10px', margin: '0 -8px clamp(2px, 0.5vh, 5px)',
+    color: '#fff',
   },
-  colRow: { display: 'flex', gap: 6, justifyContent: 'space-between' },
-  col:    { display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 },
-  colLabel: { fontSize: 10, color: '#666', marginBottom: 2, whiteSpace: 'nowrap' },
-  colValue: {
-    fontSize: 15, fontWeight: 'bold', color: '#111',
-    border: '2px solid', borderRadius: 8,
-    padding: '2px 6px', minWidth: 36, textAlign: 'center',
-    width: '100%',
+  dots: { fontSize: 'clamp(4px, 0.7vw, 8px)', opacity: 0.7, letterSpacing: 2 },
+  teamLabel: { fontWeight: 700, fontSize: 'clamp(0.6rem, 1vw, 1.1rem)', letterSpacing: '0.08em' },
+  statsGrid: { display: 'flex', gap: 'clamp(3px, 0.6vw, 7px)' },
+  roundRow: { display: 'flex', flexDirection: 'column', gap: 3 },
+  roundBadge: {
+    fontSize: 'clamp(0.45rem, 0.75vw, 0.7rem)', fontWeight: 600, padding: '2px 7px',
+    borderRadius: 99, alignSelf: 'flex-start',
   },
-  totalWrap: {
-    padding: '6px 8px',
-    background: '#fafaf0',
-    border: '1px solid #ccc',
-    borderRadius: 8,
+  roundStats: { display: 'flex', gap: 3 },
+  totalSection: {
+    padding: 'clamp(5px, 0.8vh, 10px) 8px clamp(8px, 1.2vh, 14px)',
+    background: WIN_PALE,
   },
   totalHeader: {
-    background: '#228B22', color: '#fff',
-    fontWeight: 'bold', fontSize: 14,
-    textAlign: 'center', padding: '3px 0', borderRadius: 20,
-    letterSpacing: 2, marginBottom: 8,
-    position: 'relative',
+    fontWeight: 700, fontSize: 'clamp(0.5rem, 0.85vw, 0.9rem)', color: WIN_BASE,
+    letterSpacing: '0.06em', marginBottom: 'clamp(4px, 0.7vh, 8px)',
+    borderTop: `2px solid ${WIN_LIGHT}`, paddingTop: 'clamp(4px, 0.7vh, 8px)',
   },
-  totalRow: { display: 'flex', gap: 10, justifyContent: 'center' },
-  totalCell: { display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 },
-  totalLabel: { fontSize: 11, color: '#666', marginBottom: 4 },
-  totalValue: {
-    fontSize: 26, fontWeight: 'bold', color: '#111',
-    border: '2px solid #228B22', borderRadius: 8,
-    padding: '4px 10px', textAlign: 'center', width: '100%',
-    background: '#fff',
-  },
+  totalGrid: { display: 'flex', gap: 'clamp(4px, 0.8vw, 10px)' },
 };

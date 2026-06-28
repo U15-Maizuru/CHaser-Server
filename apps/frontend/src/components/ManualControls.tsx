@@ -1,14 +1,20 @@
 import { useEffect, useState } from 'react';
 import type { ServerStatusPayload } from '@u15/ws-types';
-import { BORDER_COLOR, BG_PANEL, TEXT_SECONDARY, COOL_COLOR, HOT_COLOR } from '../styles/tokens';
+import {
+  BG_CARD,
+  COOL_COLOR, COOL_LIGHT, COOL_PALE, COOL_DARK,
+  HOT_COLOR,  HOT_LIGHT,  HOT_PALE,  HOT_DARK,
+  WIN_BASE, WIN_LIGHT,
+  TEXT_SECONDARY, TEXT_MUTED, BORDER_COLOR,
+  SHADOW_MD, RADIUS_SM, RADIUS_MD,
+  FONT_UI,
+} from '../styles/tokens';
 
-// Action enum values (must match backend Action enum)
 const ACTION_WALK   = 0;
 const ACTION_LOOK   = 1;
 const ACTION_SEARCH = 2;
 const ACTION_PUT    = 3;
 
-// Rote enum values (must match backend Rote enum)
 const ROTE_UP    = 0;
 const ROTE_DOWN  = 1;
 const ROTE_RIGHT = 2;
@@ -23,7 +29,6 @@ interface Props {
 export function ManualControls({ serverStatus, manualRequest, onAction }: Props) {
   const [selectedAction, setSelectedAction] = useState(ACTION_WALK);
 
-  // manualSlot: どちらのスロットが manual か
   const manualSlots = (serverStatus?.clients ?? [])
     .map((c, i) => ({ slot: i as 0 | 1, type: c.type }))
     .filter(x => x.type === 'manual');
@@ -36,7 +41,6 @@ export function ManualControls({ serverStatus, manualRequest, onAction }: Props)
     onAction(activeSlot, selectedAction, rote);
   };
 
-  // キーボードショートカット
   useEffect(() => {
     if (!isWaiting) return;
     const onKey = (e: KeyboardEvent) => {
@@ -47,59 +51,86 @@ export function ManualControls({ serverStatus, manualRequest, onAction }: Props)
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isWaiting, selectedAction, activeSlot]);
 
   if (manualSlots.length === 0) return null;
 
-  const teamColor = activeSlot === 0 ? COOL_COLOR : HOT_COLOR;
-  const teamLabel = activeSlot === 0 ? 'COOL' : 'HOT';
+  const base  = activeSlot === 0 ? COOL_COLOR : HOT_COLOR;
+  const light = activeSlot === 0 ? COOL_LIGHT : HOT_LIGHT;
+  const pale  = activeSlot === 0 ? COOL_PALE  : HOT_PALE;
+  const dark  = activeSlot === 0 ? COOL_DARK  : HOT_DARK;
+  const label = activeSlot === 0 ? 'COOL' : 'HOT';
 
   return (
-    <div style={{ ...s.root, borderColor: teamColor }}>
-      <div style={{ ...s.header, color: teamColor }}>
-        手動操作 ({teamLabel})
-        {isWaiting
-          ? <span style={s.waitingBadge}>入力待ち</span>
-          : <span style={s.idleBadge}>待機中</span>}
-      </div>
+    <>
+      {/* pulse keyframe */}
+      <style>{`
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+      `}</style>
 
-      {/* アクション選択 */}
-      <div style={s.row}>
-        <span style={s.label}>アクション</span>
-        <select
-          style={s.select}
-          value={selectedAction}
-          onChange={e => setSelectedAction(Number(e.target.value))}
-        >
-          <option value={ACTION_WALK}>WALK (移動)</option>
-          <option value={ACTION_LOOK}>LOOK (観察)</option>
-          <option value={ACTION_SEARCH}>SEARCH (探索)</option>
-          <option value={ACTION_PUT}>PUT (ブロック設置)</option>
-        </select>
-      </div>
+      <div style={{ ...s.card, borderColor: light }}>
+        {/* ヘッダー */}
+        <div style={{ ...s.header, background: `linear-gradient(135deg, ${base}, ${dark})` }}>
+          <span style={s.icon}>🕹</span>
+          <span style={s.headerText}>手動操作 — {label}</span>
+          {isWaiting
+            ? <span style={{ ...s.badge, background: WIN_LIGHT, color: WIN_BASE,
+                animation: 'pulse 1.2s ease-in-out infinite' }}>入力待ち</span>
+            : <span style={{ ...s.badge, background: 'rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.6)' }}>待機中</span>
+          }
+        </div>
 
-      {/* 方向パッド */}
-      <div style={s.dpad}>
-        <div style={s.dpadRow}>
-          <DPadBtn disabled={!isWaiting} onClick={() => send(ROTE_UP)}>↑</DPadBtn>
+        {/* アクション選択 */}
+        <div style={s.row}>
+          <span style={s.label}>アクション</span>
+          <select
+            style={{ ...s.select, borderColor: BORDER_COLOR, background: pale }}
+            value={selectedAction}
+            onChange={e => setSelectedAction(Number(e.target.value))}
+          >
+            <option value={ACTION_WALK}>移動 (WALK)</option>
+            <option value={ACTION_LOOK}>観察 (LOOK)</option>
+            <option value={ACTION_SEARCH}>探索 (SEARCH)</option>
+            <option value={ACTION_PUT}>設置 (PUT)</option>
+          </select>
         </div>
-        <div style={s.dpadRow}>
-          <DPadBtn disabled={!isWaiting} onClick={() => send(ROTE_LEFT)}>←</DPadBtn>
-          <DPadBtn disabled={!isWaiting} onClick={() => send(ROTE_DOWN)}>↓</DPadBtn>
-          <DPadBtn disabled={!isWaiting} onClick={() => send(ROTE_RIGHT)}>→</DPadBtn>
+
+        {/* 方向パッド */}
+        <div style={s.dpad}>
+          <div style={s.dpadRow}>
+            <DPadBtn disabled={!isWaiting} color={base} light={light} onClick={() => send(ROTE_UP)}>↑</DPadBtn>
+          </div>
+          <div style={s.dpadRow}>
+            <DPadBtn disabled={!isWaiting} color={base} light={light} onClick={() => send(ROTE_LEFT)}>←</DPadBtn>
+            <DPadBtn disabled={!isWaiting} color={base} light={light} onClick={() => send(ROTE_DOWN)}>↓</DPadBtn>
+            <DPadBtn disabled={!isWaiting} color={base} light={light} onClick={() => send(ROTE_RIGHT)}>→</DPadBtn>
+          </div>
         </div>
+
+        <div style={s.hint}>⌨ 矢印キーでも操作できます</div>
       </div>
-      <div style={s.hint}>キーボード: ↑↓←→</div>
-    </div>
+    </>
   );
 }
 
-function DPadBtn({ disabled, onClick, children }: { disabled: boolean; onClick: () => void; children: React.ReactNode }) {
+function DPadBtn({ disabled, onClick, color, light, children }: {
+  disabled: boolean; onClick: () => void; color: string; light: string; children: React.ReactNode;
+}) {
+  const [hover, setHover] = useState(false);
   return (
     <button
-      style={{ ...s.dpadBtn, opacity: disabled ? 0.35 : 1 }}
+      style={{
+        ...s.dpadBtn,
+        background: hover && !disabled ? color : light,
+        color:      hover && !disabled ? '#fff' : color,
+        opacity:    disabled ? 0.35 : 1,
+        transform:  hover && !disabled ? 'scale(1.05)' : 'scale(1)',
+      }}
       disabled={disabled}
       onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
     >
       {children}
     </button>
@@ -107,60 +138,38 @@ function DPadBtn({ disabled, onClick, children }: { disabled: boolean; onClick: 
 }
 
 const s: Record<string, React.CSSProperties> = {
-  root: {
-    background: BG_PANEL,
-    border: '2px solid',
-    borderRadius: 8,
-    padding: '12px 16px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 10,
-    userSelect: 'none',
+  card: {
+    background: BG_CARD, border: '2px solid', borderRadius: RADIUS_MD,
+    overflow: 'hidden', boxShadow: SHADOW_MD,
+    display: 'flex', flexDirection: 'column', gap: 0,
+    userSelect: 'none', fontFamily: FONT_UI,
   },
   header: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    fontSize: 12,
-    fontWeight: 'bold',
-    letterSpacing: 1,
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: '10px 14px', color: '#fff',
   },
-  waitingBadge: {
-    fontSize: 10,
-    padding: '1px 6px',
-    borderRadius: 3,
-    background: '#2d6a4f',
-    color: '#fff',
+  icon:       { fontSize: 16 },
+  headerText: { flex: 1, fontWeight: 700, fontSize: 12, letterSpacing: '0.06em' },
+  badge: {
+    fontSize: 10, padding: '2px 8px', borderRadius: 99,
+    fontWeight: 600, letterSpacing: '0.04em',
   },
-  idleBadge: {
-    fontSize: 10,
-    padding: '1px 6px',
-    borderRadius: 3,
-    background: '#444',
-    color: '#aaa',
-  },
-  row:   { display: 'flex', alignItems: 'center', gap: 8 },
-  label: { fontSize: 11, color: TEXT_SECONDARY, minWidth: 60 },
+  row:   { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px 0' },
+  label: { fontSize: 11, color: TEXT_SECONDARY, minWidth: 56 },
   select: {
-    padding: '3px 6px',
-    background: '#0d1117',
-    border: `1px solid ${BORDER_COLOR}`,
-    borderRadius: 4,
-    color: '#eee',
-    fontSize: 11,
-    cursor: 'pointer',
+    flex: 1, padding: '5px 8px', border: '1px solid',
+    borderRadius: RADIUS_SM, fontSize: 11, cursor: 'pointer',
+    fontFamily: FONT_UI,
   },
-  dpad:    { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 },
+  dpad:    { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '10px 0 4px' },
   dpadRow: { display: 'flex', gap: 4 },
   dpadBtn: {
-    width: 40, height: 40,
-    background: '#1a1f2b',
-    border: `1px solid ${BORDER_COLOR}`,
-    borderRadius: 6,
-    color: '#eee',
-    fontSize: 18,
-    cursor: 'pointer',
-    transition: 'opacity 0.1s',
+    width: 44, height: 44, border: 'none',
+    borderRadius: RADIUS_SM, fontSize: 18, cursor: 'pointer',
+    fontWeight: 700, transition: 'all 0.15s ease',
   },
-  hint: { fontSize: 10, color: '#555', textAlign: 'center' },
+  hint: {
+    fontSize: 10, color: TEXT_MUTED, textAlign: 'center',
+    padding: '0 0 12px', letterSpacing: '0.02em',
+  },
 };

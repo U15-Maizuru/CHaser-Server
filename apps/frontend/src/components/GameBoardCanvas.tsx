@@ -2,9 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { MapObject } from '@u15/ws-types';
 import type { GameStateSnapshot, Point } from '@u15/ws-types';
 
-const CELL = 36; // px per cell
+const DEFAULT_CELL = 36;
 
-// フォールバック用パレット (テクスチャ未ロード時)
 const COLOR = {
   floor:   '#d4cbb8',
   block:   '#3a3330',
@@ -19,24 +18,17 @@ const TEXTURE_KEYS: TextureKey[] = ['Floor', 'Block', 'Item', 'Cool', 'Hot'];
 
 function useTextures(theme: string): Partial<Record<TextureKey, HTMLImageElement>> {
   const [textures, setTextures] = useState<Partial<Record<TextureKey, HTMLImageElement>>>({});
-
   useEffect(() => {
     const loaded: Partial<Record<TextureKey, HTMLImageElement>> = {};
     let remaining = TEXTURE_KEYS.length;
-
     for (const key of TEXTURE_KEYS) {
       const img = new Image();
       img.src = new URL(`../assets/Image/${theme}/${key}.png`, import.meta.url).href;
-      img.onload  = () => {
-        loaded[key] = img;
-        remaining--;
-        if (remaining === 0) setTextures({ ...loaded });
-      };
-      img.onerror = () => { remaining--; };
+      img.onload  = () => { loaded[key] = img; if (--remaining === 0) setTextures({ ...loaded }); };
+      img.onerror = () => { --remaining; };
     }
     setTextures({});
   }, [theme]);
-
   return textures;
 }
 
@@ -44,12 +36,14 @@ interface Props {
   snapshot: GameStateSnapshot;
   flip?:    boolean;
   theme?:   string;
+  cellSize?: number;   // 外部からセルサイズを指定 (省略時は DEFAULT_CELL)
 }
 
-export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel' }: Props) {
+export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellSize = DEFAULT_CELL }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textures  = useTextures(theme);
   const { field, size, teamPos } = snapshot;
+  const CELL = cellSize;
 
   const W = size.x * CELL;
   const H = size.y * CELL;
@@ -88,9 +82,9 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel' }: Pro
       for (let c = 0; c < size.x; c++) {
         const cell = field[r]?.[c] ?? MapObject.NOTHING;
         if (cell === MapObject.BLOCK) {
-          if (!drawImg('Block', cx(c), cy(r))) drawBlock(ctx, cx(c), cy(r));
+          if (!drawImg('Block', cx(c), cy(r))) drawBlock(ctx, cx(c), cy(r), CELL);
         } else if (cell === MapObject.ITEM) {
-          if (!drawImg('Item', cx(c), cy(r))) drawItem(ctx, cx(c), cy(r));
+          if (!drawImg('Item', cx(c), cy(r))) drawItem(ctx, cx(c), cy(r), CELL);
         }
       }
     }
@@ -102,11 +96,11 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel' }: Pro
       const pos: Point = teamPos[t];
       if (pos.x >= 0 && pos.y >= 0 && pos.x < size.x && pos.y < size.y) {
         if (!drawImg(playerKeys[t], cx(pos.x), cy(pos.y))) {
-          drawPlayer(ctx, cx(pos.x), cy(pos.y), playerColors[t]);
+          drawPlayer(ctx, cx(pos.x), cy(pos.y), playerColors[t], CELL);
         }
       }
     }
-  }, [snapshot, flip, W, H, size.x, size.y, field, teamPos, textures]);
+  }, [snapshot, flip, W, H, size.x, size.y, field, teamPos, textures, CELL]);
 
   return (
     <canvas
@@ -118,28 +112,26 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel' }: Pro
   );
 }
 
-// ── Fallback drawing ──────────────────────────────────────────────────────────
-
-function drawPlayer(ctx: CanvasRenderingContext2D, x: number, y: number, color: string) {
-  const pad = 4;
+function drawPlayer(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, cell: number) {
+  const pad = Math.max(2, Math.floor(cell * 0.11));
   ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.roundRect(x + pad, y + pad, CELL - pad * 2, CELL - pad * 2, 6);
+  ctx.roundRect(x + pad, y + pad, cell - pad * 2, cell - pad * 2, Math.max(3, cell * 0.15));
   ctx.fill();
   ctx.fillStyle = '#ffffff55';
-  ctx.fillRect(x + pad + 2, y + pad + 2, (CELL - pad * 2) / 2, 4);
+  ctx.fillRect(x + pad + 2, y + pad + 2, (cell - pad * 2) / 2, Math.max(2, cell * 0.1));
 }
 
-function drawBlock(ctx: CanvasRenderingContext2D, x: number, y: number) {
+function drawBlock(ctx: CanvasRenderingContext2D, x: number, y: number, cell: number) {
   ctx.fillStyle = COLOR.block;
-  ctx.fillRect(x, y, CELL, CELL);
+  ctx.fillRect(x, y, cell, cell);
   ctx.fillStyle = '#ffffff18';
-  ctx.fillRect(x, y, CELL, 3);
-  ctx.fillRect(x, y, 3, CELL);
+  ctx.fillRect(x, y, cell, Math.max(2, cell * 0.08));
+  ctx.fillRect(x, y, Math.max(2, cell * 0.08), cell);
 }
 
-function drawItem(ctx: CanvasRenderingContext2D, x: number, y: number) {
-  const cx2 = x + CELL / 2, cy2 = y + CELL / 2, r = CELL / 2 - 6;
+function drawItem(ctx: CanvasRenderingContext2D, x: number, y: number, cell: number) {
+  const cx2 = x + cell / 2, cy2 = y + cell / 2, r = cell / 2 - Math.max(3, cell * 0.15);
   ctx.fillStyle = COLOR.item;
   ctx.beginPath();
   ctx.arc(cx2, cy2, r, 0, Math.PI * 2);

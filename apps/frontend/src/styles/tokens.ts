@@ -1,19 +1,62 @@
-export const COOL_COLOR  = '#3a82c4';
-export const HOT_COLOR   = '#c43a3a';
+// ── Pastel Kawaii カラーパレット ──────────────────────────────
 
-export const BG_ROOT     = '#0d1117';
-export const BG_PANEL    = '#161b22';
-export const BORDER_COLOR = '#30363d';
+// 背景
+export const BG_ROOT   = '#faf7ff';
+export const BG_CARD   = '#ffffff';
+export const BG_HEADER = 'linear-gradient(135deg, #f0eeff 0%, #fff0f6 100%)';
 
-export const TEXT_PRIMARY   = '#eee';
-export const TEXT_SECONDARY = '#888';
-export const TEXT_DIM       = '#555';
+// COOL チーム (パステルブルー系)
+export const COOL_COLOR = '#3d88e8';
+export const COOL_LIGHT = '#ddeeff';
+export const COOL_PALE  = '#f0f7ff';
+export const COOL_DARK  = '#1a55bb';
 
-export const STATE_READY     = '#2d6a4f';
-export const STATE_CONNECTED = '#5a8a3a';
-export const STATE_WAITING   = '#555';
+// HOT チーム (パステルローズ系)
+export const HOT_COLOR = '#ee4477';
+export const HOT_LIGHT = '#ffd0e0';
+export const HOT_PALE  = '#fff0f5';
+export const HOT_DARK  = '#bb1144';
 
-export const ACCENT_BLUE = '#58a6ff';
-export const ACCENT_GREEN = '#238636';
+// ターン (パステルパープル)
+export const TURN_BASE  = '#9966dd';
+export const TURN_LIGHT = '#eee0ff';
+export const TURN_PALE  = '#f8f4ff';
 
-export const FONT_MONO = 'monospace';
+// TOTAL・勝利 (パステルミント)
+export const WIN_BASE  = '#33aa77';
+export const WIN_LIGHT = '#ccf0e0';
+export const WIN_PALE  = '#f0fbf5';
+
+// ゴールド (引き分け・アイテム・勝利演出)
+export const GOLD_BASE  = '#ddaa22';
+export const GOLD_LIGHT = '#fff3cc';
+
+// テキスト
+export const TEXT_PRIMARY   = '#1e1830';
+export const TEXT_SECONDARY = '#6e5e88';
+export const TEXT_MUTED     = '#a898ba';
+// 旧互換エイリアス
+export const TEXT_DIM       = '#a898ba';
+
+// 接続状態バッジ
+export const STATE_READY     = '#33aa77';
+export const STATE_CONNECTED = '#55bb88';
+export const STATE_WAITING   = '#9966dd';
+
+// シャドウ・ボーダー・角丸
+export const SHADOW_SM   = '0 2px 8px rgba(120,90,200,0.10)';
+export const SHADOW_MD   = '0 4px 20px rgba(120,90,200,0.12)';
+export const BORDER_COLOR = 'rgba(140,120,210,0.18)';
+export const RADIUS_SM   = '12px';
+export const RADIUS_MD   = '20px';
+export const RADIUS_LG   = '28px';
+
+// フォント
+export const FONT_UI   = '-apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif';
+export const FONT_NUM  = '"SF Mono", Menlo, "Courier New", monospace';
+export const FONT_MONO = FONT_NUM; // 旧互換
+
+// 旧互換
+export const BG_PANEL    = '#ffffff';
+export const ACCENT_BLUE  = COOL_COLOR;
+export const ACCENT_GREEN = WIN_BASE;
