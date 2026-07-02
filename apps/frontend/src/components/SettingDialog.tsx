@@ -1,5 +1,11 @@
 import { useState } from 'react';
 import type { AppSettings } from '../hooks/useSettings';
+import {
+  BG_ROOT, BG_CARD, BORDER_COLOR, COOL_COLOR,
+  TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
+  WIN_BASE, SHADOW_MD, RADIUS_MD, RADIUS_SM,
+  FONT_UI, FONT_NUM,
+} from '../styles/tokens';
 
 interface Props {
   settings: AppSettings;
@@ -157,53 +163,54 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 const s: Record<string, React.CSSProperties> = {
   overlay: {
-    position: 'fixed', inset: 0, background: '#000000aa',
+    position: 'fixed', inset: 0, background: 'rgba(30,24,48,0.4)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
   },
   dialog: {
-    background: '#161b22', border: '1px solid #30363d', borderRadius: 8,
-    width: 420, display: 'flex', flexDirection: 'column',
-    color: '#eee', fontFamily: 'monospace',
+    background: BG_CARD, borderRadius: RADIUS_MD, boxShadow: SHADOW_MD,
+    width: 420, maxHeight: '90vh', display: 'flex', flexDirection: 'column',
+    overflow: 'hidden',
+    color: TEXT_PRIMARY, fontFamily: FONT_UI,
   },
   header: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    padding: '12px 16px', borderBottom: '1px solid #30363d',
+    padding: '14px 20px', borderBottom: `1px solid ${BORDER_COLOR}`,
   },
-  title:    { fontSize: 14, fontWeight: 'bold' },
+  title:    { fontSize: 15, fontWeight: 800 },
   closeBtn: {
-    background: 'none', border: 'none', color: '#888', fontSize: 16,
+    background: 'none', border: 'none', color: TEXT_MUTED, fontSize: 16,
     cursor: 'pointer', padding: '0 4px',
   },
-  tabs: { display: 'flex', borderBottom: '1px solid #30363d' },
+  tabs: { display: 'flex', borderBottom: `1px solid ${BORDER_COLOR}` },
   tab: {
-    flex: 1, padding: '8px 0', background: 'none', border: 'none',
-    color: '#888', fontSize: 12, cursor: 'pointer', borderBottom: '2px solid transparent',
+    flex: 1, padding: '10px 0', background: 'none', border: 'none',
+    color: TEXT_MUTED, fontSize: 12, fontWeight: 600, cursor: 'pointer', borderBottom: '2px solid transparent',
   },
-  tabActive: { color: '#58a6ff', borderBottom: '2px solid #58a6ff' },
-  body:   { padding: '16px 20px' },
+  tabActive: { color: COOL_COLOR, borderBottom: `2px solid ${COOL_COLOR}` },
+  body:   { padding: '16px 20px', flex: 1, minHeight: 0, overflow: 'auto' },
   table:  { width: '100%', borderCollapse: 'collapse' },
-  tdLabel: { padding: '8px 0', fontSize: 12, color: '#aaa', width: '55%' },
+  tdLabel: { padding: '8px 0', fontSize: 12, color: TEXT_SECONDARY, width: '55%' },
   tdValue: { padding: '8px 0' },
   numInput: {
-    width: 80, padding: '4px 6px', background: '#0d1117',
-    border: '1px solid #333', borderRadius: 4, color: '#eee',
-    fontSize: 13, fontFamily: 'monospace',
+    width: 80, padding: '5px 8px', background: BG_ROOT,
+    border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM, color: TEXT_PRIMARY,
+    fontSize: 13, fontFamily: FONT_NUM,
   },
   select: {
-    padding: '4px 6px', background: '#0d1117',
-    border: '1px solid #333', borderRadius: 4, color: '#eee', fontSize: 13,
+    padding: '5px 8px', background: BG_ROOT,
+    border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM, color: TEXT_PRIMARY, fontSize: 13,
   },
-  check: { width: 16, height: 16, cursor: 'pointer' },
+  check: { width: 16, height: 16, cursor: 'pointer', accentColor: COOL_COLOR },
   footer: {
     display: 'flex', justifyContent: 'flex-end', gap: 8,
-    padding: '12px 16px', borderTop: '1px solid #30363d',
+    padding: '14px 20px', borderTop: `1px solid ${BORDER_COLOR}`,
   },
   btnCancel: {
-    padding: '6px 16px', border: '1px solid #444', borderRadius: 4,
-    background: 'transparent', color: '#ccc', fontSize: 12, cursor: 'pointer',
+    padding: '7px 18px', border: `1px solid ${BORDER_COLOR}`, borderRadius: 99,
+    background: BG_CARD, color: TEXT_SECONDARY, fontSize: 12, cursor: 'pointer',
   },
   btnSave: {
-    padding: '6px 16px', border: 'none', borderRadius: 4,
-    background: '#238636', color: '#fff', fontSize: 12, cursor: 'pointer',
+    padding: '7px 18px', border: 'none', borderRadius: 99,
+    background: WIN_BASE, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
   },
 };

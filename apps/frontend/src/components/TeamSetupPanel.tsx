@@ -3,8 +3,10 @@ import type { ClientStatusPayload, ClientType, ProcessConfig } from '@u15/ws-typ
 import { FileDropZone } from './FileDropZone';
 import { LibrarySection } from './LibrarySection';
 import {
-  BG_PANEL, BORDER_COLOR, TEXT_SECONDARY, TEXT_DIM,
-  STATE_READY, STATE_CONNECTED, STATE_WAITING, ACCENT_BLUE,
+  BG_CARD, BORDER_COLOR, TEXT_SECONDARY, TEXT_MUTED, TEXT_PRIMARY,
+  STATE_READY, STATE_CONNECTED, STATE_WAITING,
+  SHADOW_SM, RADIUS_MD,
+  FONT_UI, FONT_NUM,
 } from '../styles/tokens';
 
 interface Props {
@@ -12,6 +14,7 @@ interface Props {
   label:           'COOL' | 'HOT';
   color:           string;
   bgColor:         string;
+  darkColor:       string;
   info:            ClientStatusPayload;
   httpBase:        string;
   onSetType:       (type: ClientType, cfg?: ProcessConfig) => void;
@@ -31,7 +34,7 @@ const TYPE_LABELS: { type: ClientType; label: string }[] = [
   { type: 'manual',  label: '手動操作'  },
 ];
 
-export function TeamSetupPanel({ slot, label, color, bgColor, info, httpBase, onSetType, onDeleteProgram }: Props) {
+export function TeamSetupPanel({ slot, label, color, bgColor, darkColor, info, httpBase, onSetType, onDeleteProgram }: Props) {
   const [tcpRuntime, setTcpRuntime] = useState('python');
 
   const stateColor = info.state === 'ready'     ? STATE_READY
@@ -62,66 +65,71 @@ export function TeamSetupPanel({ slot, label, color, bgColor, info, httpBase, on
     onDeleteProgram();
   };
 
+  const activeTypeBtn = { background: color, borderColor: color, color: '#fff' };
+
   return (
-    <div style={{ ...s.panel, borderColor: color, background: bgColor }}>
-      <div style={{ ...s.title, color }}>{label}</div>
-
-      {/* Mode selector */}
-      <div style={s.typeRow}>
-        {TYPE_LABELS.map(({ type, label: lbl }) => (
-          <button
-            key={type}
-            style={{ ...s.typeBtn, ...(info.type === type ? s.typeBtnActive : {}) }}
-            onClick={() => handleTypeChange(type)}
-          >
-            {lbl}
-          </button>
-        ))}
+    <div style={s.panel}>
+      <div style={{ ...s.header, background: `linear-gradient(135deg, ${color}, ${darkColor})` }}>
+        {label}
       </div>
-
-      {/* Program upload area */}
-      {info.type === 'process' && (
-        <div style={s.uploadSection}>
-          <FileDropZone
-            endpoint={progEndpoint}
-            accept={['.py', '.exe']}
-            label="プログラムファイルをドロップ"
-            onUploaded={handleProgramUploaded}
-          />
-          {info.state === 'ready' && (
-            <button style={s.resetBtn} onClick={handleDeleteProgram}>
-              プログラムを削除
+      <div style={{ ...s.body, background: bgColor }}>
+        {/* Mode selector */}
+        <div style={s.typeRow}>
+          {TYPE_LABELS.map(({ type, label: lbl }) => (
+            <button
+              key={type}
+              style={{ ...s.typeBtn, ...(info.type === type ? activeTypeBtn : {}) }}
+              onClick={() => handleTypeChange(type)}
+            >
+              {lbl}
             </button>
+          ))}
+        </div>
+
+        {/* Program upload area */}
+        {info.type === 'process' && (
+          <div style={s.uploadSection}>
+            <FileDropZone
+              endpoint={progEndpoint}
+              accept={['.py', '.exe']}
+              label="プログラムファイルをドロップ"
+              onUploaded={handleProgramUploaded}
+            />
+            {info.state === 'ready' && (
+              <button style={s.resetBtn} onClick={handleDeleteProgram}>
+                プログラムを削除
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* TCP mode: show port */}
+        {info.type === 'tcp' && (
+          <div style={s.tcpInfo}>
+            <span style={s.portLabel}>ポート</span>
+            <span style={s.portValue}>{info.port}</span>
+          </div>
+        )}
+
+        {/* Status badge */}
+        <div style={s.statusRow}>
+          <span style={{ ...s.badge, background: stateColor }}>
+            {STATE_LABEL[info.state] ?? info.state}
+          </span>
+          {info.state !== 'waiting' && info.name && (
+            <span style={s.playerName}>{info.name}</span>
+          )}
+          {info.error && (
+            <span style={s.errorText} title={info.error}>⚠ エラー</span>
           )}
         </div>
-      )}
+        {info.ip && <div style={s.ipSmall}>{info.ip}</div>}
 
-      {/* TCP mode: show port */}
-      {info.type === 'tcp' && (
-        <div style={s.tcpInfo}>
-          <span style={s.portLabel}>ポート</span>
-          <span style={s.portValue}>{info.port}</span>
-        </div>
-      )}
-
-      {/* Status badge */}
-      <div style={s.statusRow}>
-        <span style={{ ...s.badge, background: stateColor }}>
-          {STATE_LABEL[info.state] ?? info.state}
-        </span>
-        {info.state !== 'waiting' && info.name && (
-          <span style={s.playerName}>{info.name}</span>
-        )}
-        {info.error && (
-          <span style={s.errorText} title={info.error}>⚠ エラー</span>
+        {/* Library management */}
+        {info.type === 'process' && (
+          <LibrarySection slot={slot} httpBase={httpBase} />
         )}
       </div>
-      {info.ip && <div style={s.ipSmall}>{info.ip}</div>}
-
-      {/* Library management */}
-      {info.type === 'process' && (
-        <LibrarySection slot={slot} httpBase={httpBase} />
-      )}
     </div>
   );
 }
@@ -131,53 +139,68 @@ const s: Record<string, React.CSSProperties> = {
     flex: 1,
     display: 'flex',
     flexDirection: 'column',
-    gap: 10,
-    padding: '20px 18px',
-    border: '2px solid',
-    borderRadius: 8,
+    borderRadius: RADIUS_MD,
+    overflow: 'hidden',
+    boxShadow: SHADOW_SM,
     minWidth: 280,
     minHeight: 300,
+    background: BG_CARD,
+    fontFamily: FONT_UI,
   },
-  title:  { fontSize: 14, fontWeight: 'bold', letterSpacing: 3 },
-  typeRow: { display: 'flex', gap: 6 },
-  typeBtn: {
+  header: {
+    padding: '14px 18px',
+    color: '#fff',
+    fontWeight: 800,
+    fontSize: 15,
+    letterSpacing: '0.1em',
+  },
+  body: {
     flex: 1,
-    padding: '5px 0',
+    minWidth: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+    padding: '16px 18px',
+  },
+  typeRow: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 6 },
+  typeBtn: {
+    minWidth: 0,
+    padding: '6px 4px',
     border: `1px solid ${BORDER_COLOR}`,
-    borderRadius: 4,
-    background: 'transparent',
+    borderRadius: 99,
+    background: BG_CARD,
     color: TEXT_SECONDARY,
     fontSize: 11,
+    fontWeight: 600,
     cursor: 'pointer',
-  },
-  typeBtnActive: {
-    border: `1px solid ${ACCENT_BLUE}`,
-    background: '#1f3a5f',
-    color: ACCENT_BLUE,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
   },
   uploadSection: { display: 'flex', flexDirection: 'column', gap: 6 },
   resetBtn: {
     padding: '3px 10px',
     border: `1px solid ${BORDER_COLOR}`,
-    borderRadius: 3,
-    background: 'transparent',
-    color: TEXT_DIM,
+    borderRadius: 99,
+    background: BG_CARD,
+    color: TEXT_MUTED,
     fontSize: 10,
     cursor: 'pointer',
     alignSelf: 'flex-start',
   },
   tcpInfo: { display: 'flex', alignItems: 'center', gap: 8 },
-  portLabel: { fontSize: 11, color: TEXT_DIM },
-  portValue: { fontSize: 14, fontFamily: 'monospace' },
+  portLabel: { fontSize: 11, color: TEXT_MUTED },
+  portValue: { fontSize: 14, fontFamily: FONT_NUM, color: TEXT_PRIMARY },
   statusRow: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 },
   badge: {
     fontSize: 10,
-    padding: '2px 7px',
-    borderRadius: 4,
+    fontWeight: 700,
+    padding: '3px 9px',
+    borderRadius: 99,
     color: '#fff',
     letterSpacing: 1,
   },
-  playerName: { fontSize: 13, fontWeight: 'bold', fontFamily: 'monospace' },
+  playerName: { fontSize: 13, fontWeight: 700, fontFamily: FONT_NUM, color: TEXT_PRIMARY },
   errorText:  { fontSize: 11, color: '#c43a3a', cursor: 'help' },
-  ipSmall:    { fontSize: 10, color: TEXT_DIM, fontFamily: 'monospace' },
+  ipSmall:    { fontSize: 10, color: TEXT_MUTED, fontFamily: FONT_NUM },
 };

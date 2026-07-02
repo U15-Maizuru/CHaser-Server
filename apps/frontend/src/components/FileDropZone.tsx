@@ -1,6 +1,10 @@
 import { useRef, useState } from 'react';
 import { useFileUpload } from '../hooks/useFileUpload';
-import { BORDER_COLOR, TEXT_SECONDARY, ACCENT_BLUE, STATE_READY } from '../styles/tokens';
+import {
+  BG_CARD, BORDER_COLOR, TEXT_SECONDARY, TEXT_MUTED, TEXT_PRIMARY,
+  COOL_COLOR, WIN_BASE, WIN_PALE,
+  RADIUS_SM, FONT_NUM,
+} from '../styles/tokens';
 
 interface Props {
   endpoint:   string;
@@ -59,7 +63,7 @@ export function FileDropZone({ endpoint, accept, label, onUploaded }: Props) {
   }
 
   return (
-    <div style={{ ...s.zone, borderColor: dragging ? ACCENT_BLUE : (error ? '#c43a3a' : BORDER_COLOR) }}
+    <div style={{ ...s.zone, borderColor: dragging ? COOL_COLOR : (error ? '#c43a3a' : BORDER_COLOR) }}
       onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
@@ -95,11 +99,12 @@ export function FileDropZone({ endpoint, accept, label, onUploaded }: Props) {
 const s: Record<string, React.CSSProperties> = {
   zone: {
     border: '2px dashed',
-    borderRadius: 6,
+    borderRadius: RADIUS_SM,
     padding: '16px 12px',
     cursor: 'pointer',
     transition: 'border-color 0.15s',
     textAlign: 'center',
+    background: BG_CARD,
   },
   inner: {
     display: 'flex',
@@ -109,18 +114,18 @@ const s: Record<string, React.CSSProperties> = {
   },
   icon:     { fontSize: 22 },
   mainText: { fontSize: 12, color: TEXT_SECONDARY },
-  hint:     { fontSize: 10, color: '#555' },
+  hint:     { fontSize: 10, color: TEXT_MUTED },
   errorText:{ fontSize: 11, color: '#c43a3a', marginTop: 4 },
   progressBar: {
     width: '100%',
     height: 4,
-    background: '#333',
+    background: BORDER_COLOR,
     borderRadius: 2,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    background: ACCENT_BLUE,
+    background: COOL_COLOR,
     transition: 'width 0.1s',
   },
   done: {
@@ -128,18 +133,18 @@ const s: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: 8,
     padding: '8px 10px',
-    background: '#1a2a1a',
-    borderRadius: 6,
-    border: `1px solid ${STATE_READY}`,
+    background: WIN_PALE,
+    borderRadius: RADIUS_SM,
+    border: `1px solid ${WIN_BASE}`,
   },
-  check:    { color: '#3fb950', fontSize: 14 },
-  filename: { flex: 1, fontSize: 12, fontFamily: 'monospace', color: '#ccc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  check:    { color: WIN_BASE, fontSize: 14 },
+  filename: { flex: 1, fontSize: 12, fontFamily: FONT_NUM, color: TEXT_PRIMARY, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   deleteBtn: {
     padding: '2px 8px',
-    border: '1px solid #555',
-    borderRadius: 3,
-    background: 'transparent',
-    color: '#888',
+    border: `1px solid ${BORDER_COLOR}`,
+    borderRadius: 99,
+    background: BG_CARD,
+    color: TEXT_MUTED,
     fontSize: 11,
     cursor: 'pointer',
   },

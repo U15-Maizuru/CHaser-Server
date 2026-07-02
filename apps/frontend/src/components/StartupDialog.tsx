@@ -1,7 +1,14 @@
 import type { ClientType, ProcessConfig, ServerStatusPayload } from '@u15/ws-types';
 import { TeamSetupPanel } from './TeamSetupPanel';
 import { SetupFooter } from './SetupFooter';
-import { BG_PANEL, BORDER_COLOR, COOL_COLOR, HOT_COLOR, TEXT_SECONDARY, FONT_MONO } from '../styles/tokens';
+import {
+  BG_ROOT, BG_HEADER, BG_CARD,
+  BORDER_COLOR, COOL_COLOR, COOL_PALE, COOL_DARK, HOT_COLOR, HOT_PALE, HOT_DARK,
+  TURN_BASE, TURN_LIGHT,
+  TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
+  RADIUS_SM,
+  FONT_UI, FONT_NUM,
+} from '../styles/tokens';
 
 interface Props {
   status:          ServerStatusPayload;
@@ -16,7 +23,8 @@ interface Props {
 
 const TEAM_LABEL  = ['COOL', 'HOT']        as const;
 const TEAM_COLOR  = [COOL_COLOR, HOT_COLOR] as const;
-const TEAM_BGCOL  = ['#0d1520', '#1a0d0d'] as const;
+const TEAM_BGCOL  = [COOL_PALE, HOT_PALE]   as const;
+const TEAM_DARK   = [COOL_DARK, HOT_DARK]   as const;
 
 export function StartupDialog({
   status, httpBase,
@@ -54,6 +62,7 @@ export function StartupDialog({
             label={TEAM_LABEL[slot]}
             color={TEAM_COLOR[slot]}
             bgColor={TEAM_BGCOL[slot]}
+            darkColor={TEAM_DARK[slot]}
             info={status.clients[slot]}
             httpBase={httpBase}
             onSetType={(type, cfg) => onSetClient(slot, type, cfg)}
@@ -78,51 +87,53 @@ const s: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     height: '100vh',
-    background: '#0d1117',
-    color: '#eee',
-    fontFamily: FONT_MONO,
+    background: BG_ROOT,
+    color: TEXT_PRIMARY,
+    fontFamily: FONT_UI,
   },
   header: {
     display: 'flex',
     alignItems: 'center',
     gap: 12,
     padding: '10px 20px',
-    background: BG_PANEL,
+    background: BG_HEADER,
     borderBottom: `1px solid ${BORDER_COLOR}`,
     flexShrink: 0,
   },
-  title:    { fontSize: 16, fontWeight: 'bold', letterSpacing: 1 },
+  title:    { fontSize: 16, fontWeight: 800, letterSpacing: '0.04em', color: TEXT_PRIMARY },
   subtitle: { fontSize: 12, color: TEXT_SECONDARY, letterSpacing: 2 },
   ipBox: {
     display: 'flex',
     gap: 6,
     alignItems: 'center',
     padding: '3px 12px',
-    background: '#0d1117',
-    borderRadius: 4,
+    background: BG_CARD,
+    borderRadius: RADIUS_SM,
     border: `1px solid ${BORDER_COLOR}`,
   },
-  ipLabel: { fontSize: 10, color: TEXT_SECONDARY, letterSpacing: 1 },
-  ipValue: { fontSize: 14, fontWeight: 'bold', fontFamily: FONT_MONO, letterSpacing: 2 },
+  ipLabel: { fontSize: 10, color: TEXT_MUTED, letterSpacing: 1 },
+  ipValue: { fontSize: 14, fontWeight: 700, fontFamily: FONT_NUM, letterSpacing: 1, color: TEXT_PRIMARY },
   settingsBtn: {
     marginLeft: 'auto',
     background: 'none',
     border: 'none',
-    color: TEXT_SECONDARY,
+    color: TEXT_MUTED,
     fontSize: 18,
     cursor: 'pointer',
     padding: '0 4px',
   },
   roundBadge: {
     fontSize: 11,
-    padding: '2px 10px',
-    borderRadius: 4,
-    background: '#1f3a5f',
-    color: '#58a6ff',
+    fontWeight: 700,
+    padding: '3px 12px',
+    borderRadius: 99,
+    background: TURN_LIGHT,
+    color: TURN_BASE,
     letterSpacing: 1,
   },
   columns: {
     flex: 1,
+    minHeight: 0,
     display: 'flex',
     flexWrap: 'wrap',
     gap: 16,

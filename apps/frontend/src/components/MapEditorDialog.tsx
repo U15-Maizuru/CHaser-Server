@@ -2,6 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { MapObject } from '@u15/ws-types';
 import type { Point } from '@u15/ws-types';
 import { useTextures, type TextureKey } from '../hooks/useTextures';
+import {
+  BG_ROOT, BG_CARD, BORDER_COLOR, COOL_COLOR, COOL_PALE,
+  TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
+  WIN_BASE, SHADOW_MD, RADIUS_MD, RADIUS_SM,
+  FONT_UI, FONT_NUM,
+} from '../styles/tokens';
 
 export interface EditableMap {
   field: MapObject[][];
@@ -233,7 +239,7 @@ export function MapEditorDialog({ initialMap, theme, onSave, onClose }: Props) {
           <canvas
             ref={canvasRef}
             width={W} height={H}
-            style={{ display: 'block', cursor: 'crosshair', imageRendering: 'pixelated', border: '1px solid #30363d' }}
+            style={{ display: 'block', cursor: 'crosshair', imageRendering: 'pixelated', border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM }}
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
@@ -301,10 +307,10 @@ const TOOL_LABELS: Record<Tool, string> = {
 };
 
 function Label({ children }: { children: React.ReactNode }) {
-  return <div style={{ fontSize: 10, color: '#666', letterSpacing: 1, marginBottom: 4 }}>{children}</div>;
+  return <div style={{ fontSize: 10, color: TEXT_MUTED, letterSpacing: 1, marginBottom: 4 }}>{children}</div>;
 }
 function Divider() {
-  return <hr style={{ border: 'none', borderTop: '1px solid #30363d', margin: '8px 0' }} />;
+  return <hr style={{ border: 'none', borderTop: `1px solid ${BORDER_COLOR}`, margin: '8px 0' }} />;
 }
 function ToolBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -317,47 +323,47 @@ function ToolBtn({ active, onClick, children }: { active: boolean; onClick: () =
 
 const s: Record<string, React.CSSProperties> = {
   overlay: {
-    position: 'fixed', inset: 0, background: '#000000aa',
+    position: 'fixed', inset: 0, background: 'rgba(30,24,48,0.4)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
   },
   dialog: {
-    background: '#161b22', border: '1px solid #30363d', borderRadius: 8,
+    background: BG_CARD, borderRadius: RADIUS_MD, boxShadow: SHADOW_MD,
     display: 'flex', flexDirection: 'column', maxHeight: '95vh', overflow: 'hidden',
-    color: '#eee', fontFamily: 'monospace',
+    color: TEXT_PRIMARY, fontFamily: FONT_UI,
   },
   header: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    padding: '10px 14px', borderBottom: '1px solid #30363d', flexShrink: 0,
+    padding: '12px 16px', borderBottom: `1px solid ${BORDER_COLOR}`, flexShrink: 0,
   },
-  title:    { fontSize: 13, fontWeight: 'bold' },
-  closeBtn: { background: 'none', border: 'none', color: '#888', fontSize: 16, cursor: 'pointer' },
-  content:  { display: 'flex', gap: 12, padding: 12, overflow: 'auto' },
+  title:    { fontSize: 14, fontWeight: 800 },
+  closeBtn: { background: 'none', border: 'none', color: TEXT_MUTED, fontSize: 16, cursor: 'pointer' },
+  content:  { display: 'flex', flex: 1, minHeight: 0, gap: 12, padding: 12, overflow: 'auto', background: BG_ROOT },
   sidebar:  { display: 'flex', flexDirection: 'column', gap: 6, minWidth: 130 },
   select: {
-    padding: '3px 6px', background: '#0d1117', border: '1px solid #333',
-    borderRadius: 4, color: '#eee', fontSize: 11,
+    padding: '4px 8px', background: BG_CARD, border: `1px solid ${BORDER_COLOR}`,
+    borderRadius: RADIUS_SM, color: TEXT_PRIMARY, fontSize: 11,
   },
   numInput: {
-    width: 80, padding: '3px 6px', background: '#0d1117',
-    border: '1px solid #333', borderRadius: 4, color: '#eee',
-    fontSize: 12, fontFamily: 'monospace',
+    width: 80, padding: '4px 8px', background: BG_CARD,
+    border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM, color: TEXT_PRIMARY,
+    fontSize: 12, fontFamily: FONT_NUM,
   },
   toolBtn: {
-    padding: '5px 0', border: '1px solid #333', borderRadius: 4,
-    background: 'transparent', color: '#888', fontSize: 11, cursor: 'pointer', textAlign: 'left',
+    padding: '6px 0', border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM,
+    background: BG_CARD, color: TEXT_SECONDARY, fontSize: 11, cursor: 'pointer', textAlign: 'left',
     paddingLeft: 8,
   },
-  toolBtnActive: { border: '1px solid #58a6ff', background: '#1f3a5f', color: '#58a6ff' },
+  toolBtnActive: { border: `1px solid ${COOL_COLOR}`, background: COOL_PALE, color: COOL_COLOR },
   checkRow:  { display: 'flex', alignItems: 'center', gap: 6 },
-  checkLabel: { fontSize: 11, color: '#aaa' },
+  checkLabel: { fontSize: 11, color: TEXT_SECONDARY },
   countRow:  { display: 'flex', justifyContent: 'space-between', fontSize: 12 },
-  countLabel: { color: '#888' },
+  countLabel: { color: TEXT_SECONDARY },
   btnSm: {
-    padding: '5px 0', border: '1px solid #444', borderRadius: 4,
-    background: 'transparent', color: '#ccc', fontSize: 11, cursor: 'pointer',
+    padding: '6px 0', border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM,
+    background: BG_CARD, color: TEXT_SECONDARY, fontSize: 11, cursor: 'pointer',
   },
   btnPrimary: {
-    padding: '7px 0', border: 'none', borderRadius: 4,
-    background: '#238636', color: '#fff', fontSize: 12, cursor: 'pointer',
+    padding: '8px 0', border: 'none', borderRadius: RADIUS_SM,
+    background: WIN_BASE, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
   },
 };

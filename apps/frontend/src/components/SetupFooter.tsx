@@ -1,4 +1,4 @@
-import { BG_PANEL, BORDER_COLOR, TEXT_SECONDARY } from '../styles/tokens';
+import { BG_CARD, BORDER_COLOR, TEXT_SECONDARY, TEXT_MUTED, WIN_BASE, SHADOW_SM } from '../styles/tokens';
 
 interface Props {
   allReady:     boolean;
@@ -39,7 +39,7 @@ const s: Record<string, React.CSSProperties> = {
     justifyContent: 'space-between',
     gap: 20,
     padding: '12px 24px',
-    background: BG_PANEL,
+    background: BG_CARD,
     borderTop: `1px solid ${BORDER_COLOR}`,
     flexWrap: 'wrap',
   },
@@ -48,9 +48,9 @@ const s: Record<string, React.CSSProperties> = {
   btnSecondary: {
     padding: '6px 14px',
     border: `1px solid ${BORDER_COLOR}`,
-    borderRadius: 4,
-    background: 'transparent',
-    color: '#ccc',
+    borderRadius: 99,
+    background: BG_CARD,
+    color: TEXT_SECONDARY,
     fontSize: 12,
     cursor: 'pointer',
   },
@@ -58,13 +58,14 @@ const s: Record<string, React.CSSProperties> = {
   btnStart: {
     padding: '10px 40px',
     border: 'none',
-    borderRadius: 8,
-    background: '#238636',
+    borderRadius: 99,
+    background: WIN_BASE,
     color: '#fff',
     fontSize: 15,
-    fontWeight: 'bold',
+    fontWeight: 800,
     cursor: 'pointer',
     letterSpacing: 1,
+    boxShadow: SHADOW_SM,
   },
-  hint: { fontSize: 11, color: '#555' },
+  hint: { fontSize: 11, color: TEXT_MUTED },
 };

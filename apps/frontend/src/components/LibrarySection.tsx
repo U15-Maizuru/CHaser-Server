@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { FileDropZone } from './FileDropZone';
-import { BORDER_COLOR, TEXT_SECONDARY, STATE_READY } from '../styles/tokens';
+import { BORDER_COLOR, TEXT_SECONDARY, TEXT_PRIMARY, WIN_BASE, BG_CARD, FONT_NUM } from '../styles/tokens';
 
 interface Props {
   slot:     0 | 1;
@@ -77,13 +77,13 @@ const s: Record<string, React.CSSProperties> = {
   },
   body: { display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 6 },
   preinstalled: { display: 'flex', alignItems: 'center', gap: 6 },
-  check: { color: STATE_READY, fontSize: 12 },
+  check: { color: WIN_BASE, fontSize: 12 },
   label: { fontSize: 11, color: TEXT_SECONDARY },
   fileList: { display: 'flex', flexDirection: 'column', gap: 4 },
   fileRow: { display: 'flex', alignItems: 'center', gap: 8 },
-  fileName: { flex: 1, fontSize: 11, fontFamily: 'monospace', color: '#ccc' },
+  fileName: { flex: 1, fontSize: 11, fontFamily: FONT_NUM, color: TEXT_PRIMARY },
   deleteBtn: {
-    padding: '1px 6px', border: '1px solid #444', borderRadius: 3,
-    background: 'transparent', color: '#888', fontSize: 10, cursor: 'pointer',
+    padding: '1px 6px', border: `1px solid ${BORDER_COLOR}`, borderRadius: 99,
+    background: BG_CARD, color: TEXT_SECONDARY, fontSize: 10, cursor: 'pointer',
   },
 };
