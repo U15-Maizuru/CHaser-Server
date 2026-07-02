@@ -17,6 +17,7 @@ interface Props {
   darkColor:       string;
   info:            ClientStatusPayload;
   httpBase:        string;
+  roomId:          string;
   onSetType:       (type: ClientType, cfg?: ProcessConfig) => void;
   onDeleteProgram: () => void;
 }
@@ -34,14 +35,14 @@ const TYPE_LABELS: { type: ClientType; label: string }[] = [
   { type: 'manual',  label: '手動操作'  },
 ];
 
-export function TeamSetupPanel({ slot, label, color, bgColor, darkColor, info, httpBase, onSetType, onDeleteProgram }: Props) {
+export function TeamSetupPanel({ slot, label, color, bgColor, darkColor, info, httpBase, roomId, onSetType, onDeleteProgram }: Props) {
   const [tcpRuntime, setTcpRuntime] = useState('python');
 
   const stateColor = info.state === 'ready'     ? STATE_READY
                    : info.state === 'connected' ? STATE_CONNECTED
                    : STATE_WAITING;
 
-  const progEndpoint = `${httpBase}/api/upload/program?slot=${slot}`;
+  const progEndpoint = `${httpBase}/api/upload/program?slot=${slot}&room=${roomId}`;
 
   const handleTypeChange = (type: ClientType) => {
     if (type === 'cpu' || type === 'manual' || type === 'tcp') {
@@ -127,7 +128,7 @@ export function TeamSetupPanel({ slot, label, color, bgColor, darkColor, info, h
 
         {/* Library management */}
         {info.type === 'process' && (
-          <LibrarySection slot={slot} httpBase={httpBase} />
+          <LibrarySection slot={slot} httpBase={httpBase} roomId={roomId} />
         )}
       </div>
     </div>

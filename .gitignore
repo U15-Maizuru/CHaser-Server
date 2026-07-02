@@ -5,6 +5,7 @@ dist/
 
 # ビルド成果物
 apps/electron/release/
+apps/electron/vendor/
 
 # E2E テストの実行時生成物
 test-screenshots/

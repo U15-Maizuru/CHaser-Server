@@ -20,13 +20,21 @@ function startBackend(appPath: string): void {
 
   const backendEnv = isDev
     ? { ...process.env, U15_MODE: 'local' }
-    : { ...process.env, ELECTRON_RUN_AS_NODE: '1', U15_MODE: 'local' };
+    : {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: '1',
+        U15_MODE: 'local',
+        U15_PYTHON_EXE: path.join(process.resourcesPath, 'python', 'python.exe'),
+      };
 
   console.log('[main] backend entry:', backendEntry);
 
   backendProcess = spawn(exe, args, {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: backendEnv,
+    // インストール済みアプリはショートカット起動時の CWD が不定なため、
+    // 本番ではユーザーデータ保存先を明示的に固定する（dev は従来通り workspace 相対）。
+    cwd: isDev ? undefined : app.getPath('userData'),
   });
   backendProcess.stdout?.on('data', (d: Buffer) =>
     console.log('[backend]', d.toString().trimEnd()),

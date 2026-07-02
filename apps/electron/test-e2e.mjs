@@ -131,7 +131,9 @@ async function startViteServer() {
     }, 30000);
 
     proc.stdout.on('data', (d) => {
-      if (d.toString().includes('localhost:5173') && !ready) {
+      // eslint-disable-next-line no-control-regex
+      const plain = d.toString().replace(/\x1b\[[0-9;]*m/g, '');
+      if (plain.includes('localhost:5173') && !ready) {
         ready = true;
         clearTimeout(timer);
         setTimeout(() => resolve(proc), 800);

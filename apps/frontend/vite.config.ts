@@ -2,6 +2,7 @@ import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
+  base: './', // Electron の file:// 読み込み (本番パッケージ) でルート相対パスが解決できないため
   plugins: [react()],
   server: {
     port: 5173,

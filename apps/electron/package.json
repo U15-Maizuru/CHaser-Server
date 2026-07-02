@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "node dev.js",
     "build": "tsc",
-    "build:win": "pnpm build && pnpm build:frontend && electron-builder --win",
-    "build:frontend": "pnpm --filter frontend build"
+    "build:win": "pnpm build && pnpm build:backend && pnpm build:frontend && node scripts/fetch-python.mjs && electron-builder --win",
+    "build:backend": "pnpm --filter @u15/backend build",
+    "build:frontend": "pnpm --filter @u15/frontend build"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
@@ -20,12 +21,12 @@
   "build": {
     "appId": "jp.u15.server",
     "productName": "U15 Server Maizuru",
+    "npmRebuild": false,
     "directories": {
       "output": "release"
     },
     "win": {
-      "target": "nsis",
-      "icon": "assets/icon.ico"
+      "target": "nsis"
     },
     "nsis": {
       "oneClick": false,
@@ -47,6 +48,10 @@
       {
         "from": "../frontend/dist",
         "to": "frontend/dist"
+      },
+      {
+        "from": "vendor/python",
+        "to": "python"
       }
     ]
   }

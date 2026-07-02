@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node -e \"require('fs').mkdirSync('dist',{recursive:true})\" && esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js --external:node:* --banner:js=\"import{createRequire as __u15CreateRequire}from 'node:module';const require=__u15CreateRequire(import.meta.url);\" && node -e \"require('fs').copyFileSync('package.dist.json','dist/package.json')\"",
     "dev": "tsx src/index.ts",
     "test": "vitest run"
   },
@@ -17,6 +17,7 @@
     "@types/busboy": "^1.5.4",
     "@types/node": "^22.0.0",
     "@types/ws": "^8.5.13",
+    "esbuild": "^0.28.1",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "vitest": "^2.1.0"

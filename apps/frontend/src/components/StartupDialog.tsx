@@ -13,6 +13,7 @@ import {
 interface Props {
   status:          ServerStatusPayload;
   httpBase:        string;
+  roomId:          string;
   onSetClient:     (slot: 0 | 1, type: ClientType, cfg?: ProcessConfig) => void;
   onDeleteProgram: (slot: 0 | 1) => void;
   onStart:         () => void;
@@ -27,7 +28,7 @@ const TEAM_BGCOL  = [COOL_PALE, HOT_PALE]   as const;
 const TEAM_DARK   = [COOL_DARK, HOT_DARK]   as const;
 
 export function StartupDialog({
-  status, httpBase,
+  status, httpBase, roomId,
   onSetClient, onDeleteProgram,
   onStart, onLoadMap, onOpenEditor, onOpenSettings,
 }: Props) {
@@ -65,6 +66,7 @@ export function StartupDialog({
             darkColor={TEAM_DARK[slot]}
             info={status.clients[slot]}
             httpBase={httpBase}
+            roomId={roomId}
             onSetType={(type, cfg) => onSetClient(slot, type, cfg)}
             onDeleteProgram={() => onDeleteProgram(slot)}
           />

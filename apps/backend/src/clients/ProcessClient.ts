@@ -16,7 +16,7 @@ export class ProcessClient extends TcpClient {
     runtimeCommand: string,
     libPath?:       string,
   ): Promise<void> {
-    await this.listen(port);
+    // 呼び出し元 (SlotManager.startListening) が既に listen() 済みのソケットを渡す前提
 
     const env = buildEnv(libPath);
     const [command, args] = buildCommand(programType, programPath, runtimeCommand, port);
@@ -63,7 +63,10 @@ function buildCommand(
   port:        number,
 ): [string, string[]] {
   if (type === 'python') {
-    return [runtime, [programPath, '--host', '127.0.0.1', '--port', String(port)]];
+    // フロントエンドは常に既定値 'python' を送る。同梱 Python があればそちらを使う
+    // （main.ts が本番起動時に U15_PYTHON_EXE をセットする。dev では未設定 = PATH の python）。
+    const command = runtime === 'python' ? (process.env.U15_PYTHON_EXE ?? runtime) : runtime;
+    return [command, [programPath, '--host', '127.0.0.1', '--port', String(port)]];
   }
   return [runtime, [`a:127.0.0.1`, `p:${port}`, `n:BotProgram`]];
 }

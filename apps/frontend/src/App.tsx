@@ -13,8 +13,9 @@ import { MapObject } from '@u15/ws-types';
 import type { EditableMap } from './components/MapEditorDialog';
 
 // WS URL: 環境変数 > window.location.hostname (自動検出) の優先順位
+// file:// で読み込む Electron 本番ビルドでは hostname が空文字になるため localhost にフォールバック
 const WS_URL    = (import.meta as { env?: { VITE_WS_URL?: string } }).env?.VITE_WS_URL
-  ?? `ws://${window.location.hostname}:8765`;
+  ?? `ws://${window.location.hostname || 'localhost'}:8765`;
 const HTTP_BASE = WS_URL.replace(/^ws/, 'http');
 
 const params  = new URLSearchParams(window.location.search);
@@ -62,9 +63,6 @@ function ControlApp({ roomId }: { roomId: string }) {
     if (isConnected) state.setTurnDelay(settings.turnDelay);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.turnDelay, isConnected]);
-
-  // アップロード URL に roomId を含める
-  const httpBaseRoom = `${HTTP_BASE}?room=${roomId}`;
 
   const handleLoadMap = async () => {
     const input = document.createElement('input');
@@ -121,7 +119,8 @@ function ControlApp({ roomId }: { roomId: string }) {
       {phase === 'setup' ? (
         <StartupDialog
           status={serverStatus ?? defaultStatus}
-          httpBase={httpBaseRoom}
+          httpBase={HTTP_BASE}
+          roomId={roomId}
           onSetClient={state.setClient}
           onDeleteProgram={state.deleteProgram}
           onStart={state.requestStart}

@@ -5,16 +5,17 @@ import { BORDER_COLOR, TEXT_SECONDARY, TEXT_PRIMARY, WIN_BASE, BG_CARD, FONT_NUM
 interface Props {
   slot:     0 | 1;
   httpBase: string;
+  roomId:   string;
 }
 
-export function LibrarySection({ slot, httpBase }: Props) {
+export function LibrarySection({ slot, httpBase, roomId }: Props) {
   const [open,  setOpen]  = useState(false);
   const [files, setFiles] = useState<string[]>([]);
 
-  const libEndpoint = `${httpBase}/api/upload/library?slot=${slot}`;
+  const libEndpoint = `${httpBase}/api/upload/library?slot=${slot}&room=${roomId}`;
 
   const fetchFiles = () => {
-    fetch(`${httpBase}/api/libs?slot=${slot}`)
+    fetch(`${httpBase}/api/libs?slot=${slot}&room=${roomId}`)
       .then(r => r.json())
       .then((d: { files: string[] }) => setFiles(d.files))
       .catch(() => {});
@@ -26,7 +27,7 @@ export function LibrarySection({ slot, httpBase }: Props) {
   }, [open]);
 
   const handleDelete = (filename: string) => {
-    fetch(`${httpBase}/api/libs/${encodeURIComponent(filename)}?slot=${slot}`, { method: 'DELETE' })
+    fetch(`${httpBase}/api/libs/${encodeURIComponent(filename)}?slot=${slot}&room=${roomId}`, { method: 'DELETE' })
       .then(() => fetchFiles())
       .catch(() => {});
   };

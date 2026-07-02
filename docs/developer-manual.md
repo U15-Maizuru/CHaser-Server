@@ -540,8 +540,17 @@ NODE_ENV=production U15_MODE=web PORT=8765 node apps/backend/dist/index.js
 
 ```bash
 pnpm --filter @u15/electron build:win
-# → apps/electron/release/ に NSIS インストーラーが生成
+# → apps/electron/release/ に NSIS インストーラー (win-unpacked も同時生成)
 ```
+
+`build:win` は内部で以下を順に行い、**Node/pnpm も Python も入っていない端末でそのまま動く**単一インストーラーを作る。
+
+1. `@u15/backend` を `esbuild` で `dist/index.js` 単一ファイルにバンドル（`ws`/`busboy`/`@u15/ws-types` を inline 化。node_modules 同梱・pnpm シンボリックリンク解決は不要）
+2. `@u15/frontend` を `vite build`
+3. `apps/electron/scripts/fetch-python.mjs` が Python embeddable package (Windows x64) を `apps/electron/vendor/python/` に取得（初回のみダウンロード、以降はキャッシュ）
+4. `electron-builder` が上記 backend/frontend/python を `extraResources` として同梱し NSIS インストーラーを生成
+
+配布版アプリでは、対戦プログラム（Python, 単体 `.py` のみ対応）は同梱の Python で実行されるため、エンドユーザー側で Python をインストールする必要はない（`apps/backend/src/clients/ProcessClient.ts` が `U15_PYTHON_EXE` 環境変数を優先利用。未設定時は開発環境と同じく PATH 上の `python` にフォールバックする）。アップロードされたプログラム/マップの保存先も `app.getPath('userData')`（インストール先ディレクトリに依存しない、OS 標準のユーザーデータフォルダ）に固定される。
 
 ---
 
