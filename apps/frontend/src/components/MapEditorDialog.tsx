@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MapObject } from '@u15/ws-types';
 import type { Point } from '@u15/ws-types';
+import { useTextures, type TextureKey } from '../hooks/useTextures';
 
 export interface EditableMap {
   field: MapObject[][];
@@ -36,25 +37,6 @@ function mirrorPoint(p: Point, size: Point): Point {
 
 function countObj(field: MapObject[][], obj: MapObject): number {
   return field.flat().filter(c => c === obj).length;
-}
-
-type TextureKey = 'Floor' | 'Block' | 'Item' | 'Cool' | 'Hot';
-const KEYS: TextureKey[] = ['Floor', 'Block', 'Item', 'Cool', 'Hot'];
-
-function useTextures(theme: string): Partial<Record<TextureKey, HTMLImageElement>> {
-  const [tex, setTex] = useState<Partial<Record<TextureKey, HTMLImageElement>>>({});
-  useEffect(() => {
-    const loaded: Partial<Record<TextureKey, HTMLImageElement>> = {};
-    let rem = KEYS.length;
-    for (const k of KEYS) {
-      const img = new Image();
-      img.src = new URL(`../assets/Image/${theme}/${k}.png`, import.meta.url).href;
-      img.onload  = () => { loaded[k] = img; if (--rem === 0) setTex({ ...loaded }); };
-      img.onerror = () => { if (--rem === 0) setTex({ ...loaded }); };
-    }
-    setTex({});
-  }, [theme]);
-  return tex;
 }
 
 export function MapEditorDialog({ initialMap, theme, onSave, onClose }: Props) {

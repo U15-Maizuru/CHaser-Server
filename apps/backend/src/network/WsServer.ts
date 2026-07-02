@@ -4,6 +4,8 @@ import type { GameSession, GameResult } from '../game/Game.js';
 import type { GameState } from '../game/GameLogic.js';
 import type { ManualClient } from '../clients/ManualClient.js';
 import type { RoomManager } from '../RoomManager.js';
+import { LobbyRouter } from './LobbyRouter.js';
+import { GameMessageDispatch } from './GameMessageDispatch.js';
 import type {
   GameStateSnapshot,
   WsMessage,
@@ -17,6 +19,8 @@ export class WsServer {
   readonly httpServer: HttpServer;
 
   private rm: RoomManager | null = null;
+  private lobbyRouter:   LobbyRouter          | null = null;
+  private gameDispatch:  GameMessageDispatch  | null = null;
 
   private readonly socketToRoom    = new Map<WebSocket, string>();
   private readonly roomSockets     = new Map<string, Set<WebSocket>>();
@@ -42,6 +46,18 @@ export class WsServer {
 
   setRoomManager(rm: RoomManager): void {
     this.rm = rm;
+
+    this.lobbyRouter = new LobbyRouter(rm, {
+      joinWsToRoom:      (ws, roomId) => this.joinWsToRoom(ws, roomId),
+      getSocketRoom:     (ws)         => this.socketToRoom.get(ws),
+      getLastRoomStatus: (roomId)     => this.lastRoomStatus.get(roomId),
+      broadcastAll:      (msg)        => this.broadcastAll(msg),
+    });
+
+    this.gameDispatch = new GameMessageDispatch(rm, {
+      getRoomManualClients: (roomId) => this.roomManualClients.get(roomId),
+      sendError:            (ws, message) => this.sendError(ws, message),
+    });
 
     rm.onRoomStatus = (roomId, payload) => {
       this.lastRoomStatus.set(roomId, payload);
@@ -121,6 +137,11 @@ export class WsServer {
     }
   }
 
+  private sendError(ws: WebSocket, message: string): void {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'error', payload: { message } } satisfies LobbyMessage));
+  }
+
   private onMessage(ws: WebSocket, raw: string): void {
     let msg: FrontendMessage;
     try {
@@ -130,103 +151,14 @@ export class WsServer {
     }
     if (typeof msg !== 'object' || msg === null) return;
 
-    const rm = this.rm;
-    if (!rm) return;
+    if (!this.rm || !this.lobbyRouter || !this.gameDispatch) return;
 
-    // ── ロビーメッセージ ──────────────────────────────────────────────────────
+    if (this.lobbyRouter.tryHandle(ws, msg)) return;
 
-    if (msg.type === 'create_room') {
-      const room = rm.createRoom();
-      if (!room) {
-        ws.send(JSON.stringify({ type: 'error', payload: { message: 'サーバーが満員です' } } satisfies LobbyMessage));
-        return;
-      }
-      this.joinWsToRoom(ws, room.id);
-      ws.send(JSON.stringify({ type: 'room_created', payload: { roomId: room.id, ports: room.ports } } satisfies LobbyMessage));
-      this.broadcastAll({ type: 'room_list', payload: { rooms: rm.listRooms() } });
-      return;
-    }
-
-    if (msg.type === 'join_room') {
-      const room = rm.getRoom(msg.payload.roomId);
-      if (!room) {
-        ws.send(JSON.stringify({ type: 'error', payload: { message: 'ルームが見つかりません' } } satisfies LobbyMessage));
-        return;
-      }
-      this.joinWsToRoom(ws, room.id);
-      rm.touchRoom(room.id);
-      const lastStatus = this.lastRoomStatus.get(room.id);
-      if (lastStatus) {
-        ws.send(JSON.stringify({ type: 'server_status', payload: lastStatus } satisfies WsMessage));
-      }
-      ws.send(JSON.stringify({ type: 'room_joined', payload: { roomId: room.id, ports: room.ports } } satisfies LobbyMessage));
-      return;
-    }
-
-    if (msg.type === 'list_rooms') {
-      ws.send(JSON.stringify({ type: 'room_list', payload: { rooms: rm.listRooms() } } satisfies LobbyMessage));
-      return;
-    }
-
-    if (msg.type === 'destroy_room') {
-      const roomId = this.socketToRoom.get(ws);
-      if (roomId) {
-        rm.destroyRoom(roomId);
-        this.broadcastAll({ type: 'room_list', payload: { rooms: rm.listRooms() } });
-      }
-      return;
-    }
-
-    // ── ゲームメッセージ (ルーム内専用) ──────────────────────────────────────
-
+    // ゲームメッセージ (ルーム内専用): 未入室のソケットからは無視する
     const roomId = this.socketToRoom.get(ws);
     if (!roomId) return;
-    const room = rm.getRoom(roomId);
-    if (!room) return;
-    rm.touchRoom(roomId);
-
-    const manager = room.manager;
-
-    switch (msg.type) {
-      case 'set_client':
-        void manager.setClientType(msg.payload.slot, msg.payload.clientType, msg.payload.processConfig);
-        break;
-      case 'delete_program':
-        manager.deleteProgram(msg.payload.slot);
-        break;
-      case 'request_start':
-        this.roomManualClients.get(roomId)?.clear();
-        manager.requestStart().catch(console.error);
-        break;
-      case 'request_reset':
-        this.roomManualClients.get(roomId)?.clear();
-        manager.requestReset().catch(console.error);
-        break;
-      case 'load_map':
-        manager.loadMap(msg.payload.filePath);
-        break;
-      case 'set_map_params':
-        manager.setMapParams(msg.payload);
-        break;
-      case 'load_map_data':
-        manager.loadMapData(msg.payload);
-        break;
-      case 'set_double_mode':
-        manager.setDoubleMode(msg.payload.enabled);
-        break;
-      case 'set_turn_delay':
-        manager.setTurnDelay(msg.payload.ms);
-        break;
-      case 'request_next_round':
-        this.roomManualClients.get(roomId)?.clear();
-        manager.requestNextRound().catch(console.error);
-        break;
-      case 'manual_action': {
-        const mc = this.roomManualClients.get(roomId)?.get(msg.payload.slot);
-        if (mc) mc.receiveAction(msg.payload.action, msg.payload.rote);
-        break;
-      }
-    }
+    this.gameDispatch.handle(ws, roomId, msg);
   }
 
   attachRoom(roomId: string, session: GameSession, playerNames: [string, string]): void {

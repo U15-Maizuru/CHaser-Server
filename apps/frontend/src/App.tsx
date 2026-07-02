@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { useGameState }    from './hooks/useGameState';
-import { useSettings }     from './hooks/useSettings';
-import { useSound, useScoreSound } from './hooks/useSound';
+import { useGameState }      from './hooks/useGameState';
+import { useSettings }       from './hooks/useSettings';
+import { useGamePhaseSound } from './hooks/useGamePhaseSound';
 import { StartupDialog }   from './components/StartupDialog';
 import { MainWindow }      from './components/MainWindow';
 import { SettingDialog }   from './components/SettingDialog';
@@ -9,7 +9,7 @@ import { MapEditorDialog } from './components/MapEditorDialog';
 import { DisplayMode }     from './components/DisplayMode';
 import { Lobby }           from './components/Lobby';
 import type { ClientStatusPayload } from '@u15/ws-types';
-import { MapObject, Winner } from '@u15/ws-types';
+import { MapObject } from '@u15/ws-types';
 import type { EditableMap } from './components/MapEditorDialog';
 
 // WS URL: 環境変数 > window.location.hostname (自動検出) の優先順位
@@ -32,26 +32,11 @@ function ControlApp({ roomId }: { roomId: string }) {
   const state = useGameState(WS_URL, roomId);
   const { settings, update: updateSettings } = useSettings();
   const { serverStatus, isConnected, gameEnd, snapshot } = state;
-  const { play } = useSound();
 
-  useScoreSound(snapshot, settings.muted, play);
+  useGamePhaseSound(snapshot, serverStatus, gameEnd, settings.muted);
 
   const [showSettings,  setShowSettings]  = useState(false);
   const [showMapEditor, setShowMapEditor] = useState(false);
-
-  const prevPhase = useRef(serverStatus?.phase);
-
-  useEffect(() => {
-    if (settings.muted) return;
-    const phase = serverStatus?.phase;
-    if (prevPhase.current !== 'playing' && phase === 'playing') play('go');
-    if (phase === 'finished' && gameEnd) {
-      play('finish');
-      if (gameEnd.winner === Winner.COOL || gameEnd.winner === Winner.HOT)
-        setTimeout(() => play('win'), 800);
-    }
-    prevPhase.current = phase;
-  }, [serverStatus?.phase, gameEnd, play, settings.muted]);
 
   const didMount = useRef(false);
   useEffect(() => {

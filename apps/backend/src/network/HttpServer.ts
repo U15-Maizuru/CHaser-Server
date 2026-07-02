@@ -176,14 +176,16 @@ function handleUpload(
     return;
   }
 
-  let saved      = false;
+  let fileSeen   = false; // multipart に file パートが存在したか (同期的に確定)
   let serverPath = '';
 
   bb.on('file', (_field, stream, info) => {
+    fileSeen = true;
     const ext = path.extname(info.filename).toLowerCase();
     if (!allowed.includes(ext)) {
       stream.resume();
-      bb.destroy();
+      req.unpipe(bb);
+      req.resume(); // 残りのリクエストボディを読み捨てる (busboy への書き込みを止めて未捕捉例外を防ぐ)
       badRequest(res, `許可されていない拡張子です (${allowed.join(', ')} のみ)`);
       return;
     }
@@ -193,20 +195,27 @@ function handleUpload(
     serverPath    = outPath;
 
     const out = fs.createWriteStream(outPath);
+    out.on('error', () => {}); // limit到達によるdestroy()後の書き込み完了コールバックが
+                                // 'error' を発火した際に未捕捉例外化するのを防ぐ
     stream.pipe(out);
     stream.on('limit', () => {
+      stream.unpipe(out);
       out.destroy();
       fs.unlink(outPath, () => {});
-      bb.destroy();
+      stream.resume();
+      req.unpipe(bb);
+      req.resume(); // 残りのリクエストボディを読み捨てる (busboy への書き込みを止めて未捕捉例外を防ぐ)
       json(res, 413, { error: `ファイルサイズが上限 (${maxBytes / 1024}KB) を超えています` });
     });
-    out.on('close', () => { saved = true; });
+    out.on('close', () => {
+      // ディスク書き込み完了を待ってから成功レスポンスを返す
+      // (bb の close は out の close より先に発火しうるため、bb 側では返さない)
+      if (!res.headersSent) json(res, 200, { serverPath });
+    });
   });
 
   bb.on('close', () => {
-    if (saved) {
-      json(res, 200, { serverPath });
-    } else if (!res.headersSent) {
+    if (!fileSeen && !res.headersSent) {
       badRequest(res, 'ファイルが含まれていません');
     }
   });

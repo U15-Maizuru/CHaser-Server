@@ -77,6 +77,60 @@ describe('WsServer', () => {
     ws.close();
   });
 
+  it('create_room → room_created が返り、他クライアントに room_list がブロードキャストされる (LobbyRouter)', async () => {
+    const a = await connectWs(WS_PORT);
+    await a.wait('room_list');
+    const b = await connectWs(WS_PORT);
+    await b.wait('room_list');
+
+    const createdPromise  = a.wait('room_created');
+    const roomListPromise = b.wait('room_list');
+    a.ws.send(JSON.stringify({ type: 'create_room' }));
+
+    const created = await createdPromise;
+    expect(created.type).toBe('room_created');
+
+    const roomList = await roomListPromise;
+    expect(roomList.type).toBe('room_list');
+    if (roomList.type === 'room_list' && created.type === 'room_created') {
+      expect(roomList.payload.rooms.map(r => r.id)).toContain(created.payload.roomId);
+    }
+
+    a.ws.close();
+    b.ws.close();
+  });
+
+  it('list_rooms → room_list が返る (LobbyRouter)', async () => {
+    const { ws, wait } = await connectWs(WS_PORT);
+    await wait('room_list');
+
+    const roomListPromise = wait('room_list');
+    ws.send(JSON.stringify({ type: 'list_rooms' }));
+    const msg = await roomListPromise;
+    expect(msg.type).toBe('room_list');
+    ws.close();
+  });
+
+  it('destroy_room → 参加中の部屋が削除され room_list がブロードキャストされる (LobbyRouter)', async () => {
+    const { ws, wait } = await connectWs(WS_PORT);
+    await wait('room_list');
+
+    ws.send(JSON.stringify({ type: 'create_room' }));
+    const created = await wait('room_created');
+    if (created.type !== 'room_created') throw new Error('unexpected message');
+    const roomId = created.payload.roomId;
+    await wait('room_list'); // create_room 自身がブロードキャストする room_list (destroy 前) を消費
+
+    const roomListPromise = wait('room_list');
+    ws.send(JSON.stringify({ type: 'destroy_room' }));
+    const msg = await roomListPromise;
+    expect(msg.type).toBe('room_list');
+    if (msg.type === 'room_list') {
+      expect(msg.payload.rooms.map(r => r.id)).not.toContain(roomId);
+    }
+    ws.close();
+  });
+
   it('broadcastAll した JSON を受信できる', async () => {
     const { ws, wait } = await connectWs(WS_PORT);
     await wait('room_list'); // 初期 room_list を消費
@@ -157,6 +211,27 @@ describe('WsServer', () => {
     if (msg.type === 'game_end') {
       expect(msg.payload.winner).toBe(Winner.COOL);
       expect(msg.payload.finalScore).toEqual([5, 3]);
+    }
+    ws.close();
+  });
+
+  it('request_start が失敗した場合、コンソールに握りつぶさず error を発行元ソケットに送る', async () => {
+    const room = rm.createRoom()!;
+    room.manager.requestStart = () => Promise.reject(new Error('boom'));
+
+    const { ws, wait } = await connectWs(WS_PORT);
+    await wait('room_list');
+
+    ws.send(JSON.stringify({ type: 'join_room', payload: { roomId: room.id } }));
+    await wait('room_joined');
+
+    const errorPromise = wait('error');
+    ws.send(JSON.stringify({ type: 'request_start' }));
+
+    const msg = await errorPromise;
+    expect(msg.type).toBe('error');
+    if (msg.type === 'error') {
+      expect(msg.payload.message).toContain('boom');
     }
     ws.close();
   });

@@ -1,0 +1,144 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { ensureDirectories, handleHttpRequest } from './HttpServer.js';
+import { RoomManager } from '../RoomManager.js';
+
+const ROOM_ID = 'test-http-server';
+
+describe('HttpServer', () => {
+  let server: Server;
+  let baseUrl: string;
+  let rm: RoomManager;
+
+  beforeAll(async () => {
+    ensureDirectories();
+    rm = new RoomManager();
+    server = createServer((req, res) => handleHttpRequest(req, res, rm));
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const { port } = server.address() as AddressInfo;
+    baseUrl = `http://127.0.0.1:${port}`;
+  });
+
+  afterAll(async () => {
+    rm.shutdown();
+    await new Promise<void>((resolve, reject) => server.close((e) => (e ? reject(e) : resolve())));
+    fs.rmSync(path.resolve(`server/rooms/${ROOM_ID}`), { recursive: true, force: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(path.resolve(`server/rooms/${ROOM_ID}`), { recursive: true, force: true });
+  });
+
+  it('OPTIONS リクエストには 204 と CORS ヘッダーで応答する', async () => {
+    const res = await fetch(`${baseUrl}/api/libs?slot=0&room=${ROOM_ID}`, { method: 'OPTIONS' });
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-origin')).toBe('*');
+  });
+
+  describe('GET /api/default-room', () => {
+    it('ローカルルームが無い場合は 404', async () => {
+      const res = await fetch(`${baseUrl}/api/default-room`);
+      expect(res.status).toBe(404);
+    });
+
+    it('ローカルルームがあれば roomId と ports を返す', async () => {
+      const room = rm.createRoom('local', [39301, 39302]);
+      try {
+        const res = await fetch(`${baseUrl}/api/default-room`);
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body).toEqual({ roomId: 'local', ports: [39301, 39302] });
+      } finally {
+        rm.destroyRoom(room!.id);
+      }
+    });
+  });
+
+  describe('POST /api/upload/program', () => {
+    it('slot パラメータが無ければ 400', async () => {
+      const res = await fetch(`${baseUrl}/api/upload/program?room=${ROOM_ID}`, { method: 'POST' });
+      expect(res.status).toBe(400);
+    });
+
+    it('room パラメータが無ければ 400', async () => {
+      const res = await fetch(`${baseUrl}/api/upload/program?slot=0`, { method: 'POST' });
+      expect(res.status).toBe(400);
+    });
+
+    it('許可されていない拡張子は 400', async () => {
+      const form = new FormData();
+      form.append('file', new Blob(['print(1)']), 'player.txt');
+      const res = await fetch(`${baseUrl}/api/upload/program?slot=0&room=${ROOM_ID}`, {
+        method: 'POST',
+        body: form,
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('.py ファイルを正常にアップロードできる', async () => {
+      const form = new FormData();
+      form.append('file', new Blob(['print("hello")']), 'player.py');
+      const res = await fetch(`${baseUrl}/api/upload/program?slot=0&room=${ROOM_ID}`, {
+        method: 'POST',
+        body: form,
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.serverPath).toContain('player.py');
+      expect(fs.existsSync(body.serverPath)).toBe(true);
+    });
+
+    it('上限サイズを超えるファイルは 413', async () => {
+      const big = new Uint8Array(512 * 1024 + 1);
+      const form = new FormData();
+      form.append('file', new Blob([big]), 'big.py');
+      const res = await fetch(`${baseUrl}/api/upload/program?slot=0&room=${ROOM_ID}`, {
+        method: 'POST',
+        body: form,
+      });
+      expect(res.status).toBe(413);
+    });
+  });
+
+  describe('GET/DELETE /api/libs', () => {
+    it('アップロード済みライブラリを一覧・削除できる', async () => {
+      const uploadForm = new FormData();
+      uploadForm.append('file', new Blob(['# lib']), 'mylib.py');
+      const uploadRes = await fetch(`${baseUrl}/api/upload/library?slot=1&room=${ROOM_ID}`, {
+        method: 'POST',
+        body: uploadForm,
+      });
+      expect(uploadRes.status).toBe(200);
+
+      const listRes = await fetch(`${baseUrl}/api/libs?slot=1&room=${ROOM_ID}`);
+      expect(listRes.status).toBe(200);
+      const { files } = await listRes.json();
+      expect(files).toContain('mylib.py');
+
+      const deleteRes = await fetch(
+        `${baseUrl}/api/libs/${encodeURIComponent('mylib.py')}?slot=1&room=${ROOM_ID}`,
+        { method: 'DELETE' },
+      );
+      expect(deleteRes.status).toBe(204);
+
+      const listAfter = await fetch(`${baseUrl}/api/libs?slot=1&room=${ROOM_ID}`);
+      const { files: filesAfter } = await listAfter.json();
+      expect(filesAfter).not.toContain('mylib.py');
+    });
+
+    it('room が存在しないライブラリ一覧取得は空配列', async () => {
+      const res = await fetch(`${baseUrl}/api/libs?slot=0&room=nonexistent-room-xyz`);
+      expect(res.status).toBe(200);
+      const { files } = await res.json();
+      expect(files).toEqual([]);
+    });
+  });
+
+  it('未知のパスは 404', async () => {
+    const res = await fetch(`${baseUrl}/api/nope`);
+    expect(res.status).toBe(404);
+  });
+});

@@ -1,9 +1,7 @@
-import { useEffect, useRef } from 'react';
 import type { ServerStatusPayload } from '@u15/ws-types';
-import { Winner } from '@u15/ws-types';
 import { useGameState } from '../hooks/useGameState';
 import { useSettings } from '../hooks/useSettings';
-import { useSound, useScoreSound } from '../hooks/useSound';
+import { useGamePhaseSound } from '../hooks/useGamePhaseSound';
 import { MainWindow } from './MainWindow';
 import {
   BG_ROOT, BG_CARD, BG_HEADER,
@@ -20,24 +18,10 @@ import {
 export function DisplayMode({ wsUrl, roomId }: { wsUrl: string; roomId: string }) {
   const state   = useGameState(wsUrl, roomId);
   const { settings } = useSettings();
-  const { play } = useSound();
   const { serverStatus, snapshot, turnInfo, gameEnd, isConnected } = state;
   const phase = serverStatus?.phase ?? 'setup';
 
-  useScoreSound(snapshot, settings.muted, play);
-
-  const prevPhase = useRef(serverStatus?.phase);
-  useEffect(() => {
-    if (settings.muted) return;
-    const p = serverStatus?.phase;
-    if (prevPhase.current !== 'playing' && p === 'playing') play('go');
-    if (p === 'finished' && gameEnd) {
-      play('finish');
-      if (gameEnd.winner === Winner.COOL || gameEnd.winner === Winner.HOT)
-        setTimeout(() => play('win'), 800);
-    }
-    prevPhase.current = p;
-  }, [serverStatus?.phase, gameEnd, play, settings.muted]);
+  useGamePhaseSound(snapshot, serverStatus, gameEnd, settings.muted);
 
   if (!isConnected) {
     return (
