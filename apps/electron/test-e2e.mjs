@@ -259,7 +259,7 @@ async function testCpuVsCpu(page) {
     : fail('ゲームが正常に終了する', 'タイムアウト');
 
   const resultText = await bodyText(page);
-  resultText.includes('WIN!') || resultText.includes('DRAW')
+  resultText.includes('の勝ち') || resultText.includes('引き分け')
     ? pass('勝敗結果 (WIN / DRAW) が表示される')
     : fail('勝敗結果 (WIN / DRAW) が表示される');
 
@@ -360,7 +360,7 @@ async function testDoubleMatch(page) {
   // 合計ポイント / 最終勝者
   // 新UIでは TOTAL 合計ボックスに pt サフィックス付きで両スコアが表示される
   const finalText = await bodyText(page);
-  finalText.includes('合計') && finalText.includes('pt')
+  finalText.includes('TOTAL') && finalText.includes('pt')
     ? pass('最終結果 (合計ポイント) が表示される')
     : fail('最終結果 (合計ポイント) が表示される', `text: ${finalText.slice(0,200)}`);
 
@@ -537,15 +537,23 @@ async function main() {
       timeout:        30000,
     });
 
-    await wait(6000);
+    // 2ウィンドウ構成: 表示ウィンドウが先に作成されるため、固定時間待機だと
+    // まだ登録されていないウィンドウ一覧を早取りしてそちらを拾ってしまうことがある。
+    // コントロールウィンドウ (mode=control) が現れるまでポーリングして待つ。
+    let page = null;
+    const windowDeadline = Date.now() + 20000;
+    while (Date.now() < windowDeadline) {
+      page = app.windows().find(w => w.url().includes('mode=control'));
+      if (page) break;
+      await wait(300);
+    }
 
     const windows = app.windows();
     console.log(`      Windows: ${windows.length} [${windows.map(w => w.url()).join(', ')}]`);
 
-    // 2ウィンドウ構成: コントロールウィンドウ (mode=control) でテストを実行
-    const page = windows.find(w => w.url().includes('mode=control'))
-              ?? windows.find(w => w.url().includes('5173'))
-              ?? await app.firstWindow();
+    page = page
+        ?? windows.find(w => w.url().includes('5173'))
+        ?? await app.firstWindow();
 
     await page.waitForSelector('button', { timeout: 15000 }).catch(() => {});
     await wait(1000);

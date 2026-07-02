@@ -87,7 +87,7 @@ pnpm build
 ## リポジトリ構成
 
 ```
-U15-server-maizuru2/
+U15-server-maizuru/
 ├── apps/
 │   ├── backend/       Node.js ゲームサーバー
 │   ├── frontend/      React UI (Vite)
@@ -95,10 +95,12 @@ U15-server-maizuru2/
 ├── packages/
 │   └── ws-types/      共有型定義 (@u15/ws-types)
 ├── server/            アップロードファイル保存先 (実行時生成)
-│   ├── programs/cool/ COOLチームプログラム
-│   ├── programs/hot/  HOTチームプログラム
-│   ├── libs/          カスタムライブラリ
-│   └── maps/          マップファイル
+│   ├── maps/          マップファイル (全ルーム共通)
+│   └── rooms/<roomId>/
+│       ├── programs/cool/  COOLチームプログラム
+│       ├── programs/hot/   HOTチームプログラム
+│       ├── libs/cool/      COOLカスタムライブラリ
+│       └── libs/hot/       HOTカスタムライブラリ
 ├── docs/              マニュアル
 │   ├── user-manual.md     ユーザーマニュアル
 │   └── developer-manual.md デベロッパーマニュアル
@@ -110,6 +112,10 @@ U15-server-maizuru2/
 ## 開発
 
 ```bash
+# 単体テスト
+pnpm --filter @u15/backend test
+pnpm --filter @u15/frontend test
+
 # E2E 全自動テスト (37項目)
 pnpm test:e2e
 

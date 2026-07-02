@@ -77,7 +77,7 @@ Python AI:  python player.py --host server --port 13042
 ## 2. ディレクトリ構成
 
 ```
-U15-server-maizuru2/
+U15-server-maizuru/
 ├── apps/
 │   ├── backend/
 │   │   └── src/
@@ -93,15 +93,19 @@ U15-server-maizuru2/
 │   │       │   ├── GameLogic.ts
 │   │       │   ├── GameSystem.ts
 │   │       │   ├── Game.ts
-│   │       │   └── ServerManager.ts  ポート注入対応 constructor(ports)
+│   │       │   ├── ServerManager.ts    コーディネーター (ポート注入対応 constructor(ports))
+│   │       │   ├── SlotManager.ts      クライアント接続・スロット管理
+│   │       │   ├── MapManager.ts       マップ状態管理
+│   │       │   └── RoundController.ts  フェーズ・ラウンド制御
 │   │       ├── log/
 │   │       │   └── StableLog.ts
 │   │       └── network/
-│   │           ├── PortPool.ts     TCP ポートプール
+│   │           ├── PortPool.ts             TCP ポートプール
 │   │           ├── TcpClient.ts
-│   │           ├── WsServer.ts     ルーム対応 (setRoomManager)
-│   │           ├── HttpServer.ts   room別パス + /api/default-room
-│   │           └── ws-types.ts     @u15/ws-types 再エクスポート
+│   │           ├── WsServer.ts             ルーム対応 (setRoomManager) / ソケット⇔ルーム紐付けの薄いコーディネーター
+│   │           ├── LobbyRouter.ts          ロビー系メッセージ (create/join/list/destroy_room)
+│   │           ├── GameMessageDispatch.ts  ルーム内ゲームメッセージのディスパッチ
+│   │           └── HttpServer.ts           room別パス + /api/default-room
 │   │
 │   ├── frontend/
 │   │   └── src/
@@ -115,6 +119,8 @@ U15-server-maizuru2/
 │   │       ├── hooks/
 │   │       │   ├── useGameState.ts     roomId 引数 + join_room 送信
 │   │       │   ├── useLobby.ts         ロビー用 WS フック
+│   │       │   ├── useGamePhaseSound.ts  ControlApp/DisplayMode 共用のフェーズ遷移 SE
+│   │       │   ├── useTextures.ts        GameBoardCanvas/MapEditorDialog 共用のテクスチャ読込
 │   │       │   └── ...
 │   │       └── ...
 │   │
@@ -159,6 +165,8 @@ pnpm --filter @u15/ws-types build
 # 開発モード起動 (ローカルモード)
 pnpm --filter @u15/electron dev
 ```
+
+> **トラブルシューティング**: `pnpm install` で `[ERR_PNPM_IGNORED_BUILDS] Ignored build scripts: electron, esbuild...` という警告が出た場合、`electron` の実行バイナリ (`electron.exe`) がダウンロードされておらず `pnpm --filter @u15/electron dev` や E2E テストが動きません。`pnpm-workspace.yaml` の `allowBuilds` で `electron`/`esbuild` を許可済みですが、初回や pnpm のバージョンアップ後に再度出た場合は `pnpm approve-builds --all` を実行してください。
 
 ### 環境変数
 
@@ -233,7 +241,15 @@ class RoomManager {
 }
 ```
 
-**ServerManager** — 1つのゲームを管理 (変更点)
+**ServerManager** — 1つのゲームを管理するコーディネーター
+
+内部状態は3つのクラスに分割されており、ServerManager 自体はそれらを束ねて外部向けの薄い API (`setClientType` / `requestStart` / `requestReset` など) を提供するだけ。呼び出し側 (`WsServer` / `RoomManager`) から見た公開メソッド名・シグネチャは分割前と同一。
+
+| クラス | 責務 |
+|---|---|
+| `SlotManager` | スロットごとのクライアント接続 (Process/Tcp/Manual/Com) のライフサイクル管理。`setClientType` / `deleteProgram` / `startListening` など |
+| `MapManager` | マップ状態の保持・生成・読込 (`loadMap` / `setMapParams` / `loadMapData`) |
+| `RoundController` | フェーズ (`setup`/`playing`/`finished`)・2試合制のラウンド進行・ターン表示待機時間 |
 
 ```typescript
 // ポートをコンストラクタで注入 (デフォルト [12031, 12032] で後方互換)
@@ -245,10 +261,12 @@ shutdown(): void
 
 **WsServer** — ルーム対応の WebSocket サーバー
 
+ソケット⇔ルームの紐付け (`socketToRoom` / `roomSockets`) とブロードキャストを WsServer 自身が保持し、実際のメッセージ処理は2つのクラスに委譲する薄いコーディネーター。
+
 ```typescript
 class WsServer {
   constructor(port: number)
-  setRoomManager(rm: RoomManager): void   // 起動後に呼ぶ
+  setRoomManager(rm: RoomManager): void   // 起動後に呼ぶ (LobbyRouter/GameMessageDispatch もここで生成)
   broadcastToRoom(roomId, msg: WsMessage): void
   broadcastAll(msg: WsMessage | LobbyMessage): void
   attachRoom(roomId, session, playerNames): void  // セッション開始時
@@ -256,10 +274,15 @@ class WsServer {
 }
 ```
 
+| クラス | 責務 |
+|---|---|
+| `LobbyRouter` | `create_room` / `join_room` / `list_rooms` / `destroy_room` を処理。該当しなければ `false` を返す |
+| `GameMessageDispatch` | ルーム内専用メッセージ (`set_client` / `request_start` / `manual_action` など) を対応する `ServerManager` に dispatch |
+
 接続時の動作:
 - 全クライアントに `room_list` を即送信
 - `join_room` 受信 → ソケットをルームに紐付け → キャッシュ済みの `server_status` を送信 → `room_joined` を送信
-- ゲームメッセージ → `socketToRoom` でルームを特定 → そのルームの `ServerManager` に dispatch
+- ゲームメッセージ → `socketToRoom` でルームを特定 → `GameMessageDispatch` がそのルームの `ServerManager` に dispatch
 
 ### `@u15/frontend` (apps/frontend)
 
@@ -469,6 +492,8 @@ App.tsx
 | `useLobby(wsUrl)` | ロビー用 WS 接続・create_room / join_room |
 | `useSettings()` | localStorage への設定永続化 |
 | `useSound()` | SE 再生 |
+| `useGamePhaseSound(snapshot, serverStatus, gameEnd, muted)` | フェーズ遷移 (go/finish/win) とスコア変化の SE 再生。ControlApp と DisplayMode で共用 |
+| `useTextures(theme)` | テーマ別テクスチャ読込。GameBoardCanvas と MapEditorDialog で共用 |
 | `useFileUpload()` | XHR multipart アップロード |
 
 ### WS URL の自動検出
@@ -587,15 +612,25 @@ server/maps/                           ← マップ (全ルーム共通)
 
 ## 11. テスト
 
-### 単体テスト (Vitest)
+### 単体テスト (Vitest) — backend
 
 ```bash
 pnpm --filter @u15/backend test
 ```
 
-テストファイル: `GameLogic.test.ts`, `GameSystem.test.ts`, `TcpClient.test.ts`, `WsServer.test.ts`
+テストファイル: `GameLogic.test.ts`, `GameSystem.test.ts`, `ServerManager.test.ts`, `TcpClient.test.ts`, `WsServer.test.ts`, `RoomManager.test.ts`, `HttpServer.test.ts`
 
 `WsServer.test.ts` は `RoomManager` を使ってルーム対応の統合テストを行います。メッセージ受信はバッファ付き `connectWs()` で競合状態を回避しています。
+
+### 単体テスト (Vitest + React Testing Library) — frontend
+
+```bash
+pnpm --filter @u15/frontend test
+```
+
+`vite.config.ts` の `test` ブロック (environment: jsdom) で設定。テストファイル: `hooks/useTextures.test.ts`, `hooks/useGamePhaseSound.test.ts`。
+
+canvas を多用するコンポーネント (`MapEditorDialog` など) は E2E で既にカバーされているため、まず新規抽出したフック単位のテストを優先しています。
 
 ### E2E テスト (Playwright)
 
@@ -604,6 +639,8 @@ pnpm test:e2e
 # または
 node apps/electron/test-e2e.mjs
 ```
+
+前提: `apps/electron/node_modules/electron/dist/electron.exe` が存在すること（セットアップ節のトラブルシューティング参照）。ポート 5173 を他プロセスが使用していると Vite dev サーバーの起動検知がタイムアウトするため、事前に空けておくこと。
 
 テスト開始時に `localStorage.turnDelay = 0` を設定してゲームを高速化します。テストは `?room=local&mode=control` で操作します。
 
@@ -615,14 +652,14 @@ node apps/electron/test-e2e.mjs
 
 1. `packages/ws-types/src/index.ts` の `ClientType` に追加
 2. `apps/backend/src/clients/` に新クラスを作成 (`BaseClient` を継承)
-3. `ServerManager.ts` の `setClientType` と `startListening` で処理追加
+3. `apps/backend/src/game/SlotManager.ts` の `setClientType` と `startListening` で処理追加
 4. `apps/frontend/src/components/TeamSetupPanel.tsx` の `TYPE_LABELS` に追加
 
 ### 新しい WebSocket メッセージの追加
 
 1. `packages/ws-types/src/index.ts` の `FrontendMessage` / `WsMessage` / `LobbyMessage` に追加
 2. `pnpm --filter @u15/ws-types build`
-3. `apps/backend/src/network/WsServer.ts` の `onMessage` switch に追加
+3. ロビー系メッセージなら `apps/backend/src/network/LobbyRouter.ts`、ルーム内ゲームメッセージなら `apps/backend/src/network/GameMessageDispatch.ts` の switch に追加
 4. `apps/frontend/src/hooks/useGameState.ts` に送信関数を追加
 
 ### DisplayMode のカスタマイズ

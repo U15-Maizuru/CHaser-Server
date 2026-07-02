@@ -1,5 +1,0 @@
-onlyBuiltDependencies:
-  - electron
-  - esbuild
-publicHoistPattern:
-  - "*electron*"
