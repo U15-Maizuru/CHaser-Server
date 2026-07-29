@@ -2,6 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { createServer, type Server as HttpServer } from 'node:http';
 import type { GameSession, GameResult } from '../game/Game.js';
 import type { GameState } from '../game/GameLogic.js';
+import type { MapObject } from '../game/types.js';
 import type { ManualClient } from '../clients/ManualClient.js';
 import type { RoomManager } from '../RoomManager.js';
 import { LobbyRouter } from './LobbyRouter.js';
@@ -202,7 +203,7 @@ export class WsServer {
 
 function toSnapshot(state: GameState, playerNames: [string, string]): GameStateSnapshot {
   return {
-    field:       state.map.field.map((row: import('../game/types.js').MapObject[]) => [...row]),
+    field:       state.map.field.map((row: MapObject[]) => [...row]),
     size:        { ...state.map.size },
     teamPos:     [{ ...state.teamPos[0] }, { ...state.teamPos[1] }],
     teamScore:   [...state.teamScore] as [number, number],

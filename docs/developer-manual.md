@@ -36,6 +36,10 @@
 │  │ ?room=local&mode=    │   │  ?room=local&mode=       │    │
 │  │   display           │   │    control               │    │
 │  └──────────────────────┘   └──────────────────────────┘    │
+│  ┌──────────────────────────────────────────────────────┐    │
+│  │ 手動操作ウィンドウ (COOL/HOT 独立、必要時のみ)          │    │
+│  │ ?room=local&mode=manual&slot=0|1                       │    │
+│  └──────────────────────────────────────────────────────┘    │
 └──────┬──────────────────────────────────┬───────────────────┘
        │  child_process.spawn             │
 ┌──────▼──────────────────────────────────▼───────────────────┐
@@ -50,6 +54,11 @@
 │                      └── TcpClient (port 12032)             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+手動操作ウィンドウは、コントロールウィンドウがいずれかのスロットを `clientType='manual'` に
+設定すると `manual:openWindow` IPC 経由で自動的に開く (`apps/electron/src/main.ts` の
+`createManualWindow`)。COOL/HOT それぞれ独立したウィンドウで、`ManualControls.tsx` の
+矢印キー操作またはボタンで `manual_action` メッセージを送信する。
 
 ### Web サービスモード (U15_MODE=web)
 
@@ -93,7 +102,7 @@ U15-server-maizuru/
 │   │       │   ├── GameLogic.ts
 │   │       │   ├── GameSystem.ts
 │   │       │   ├── Game.ts
-│   │       │   ├── ServerManager.ts    コーディネーター (ポート注入対応 constructor(ports))
+│   │       │   ├── ServerManager.ts    1ゲームを管理するコーディネーター (コンストラクタでポート番号ペアを受け取る)
 │   │       │   ├── SlotManager.ts      クライアント接続・スロット管理
 │   │       │   ├── MapManager.ts       マップ状態管理
 │   │       │   └── RoundController.ts  フェーズ・ラウンド制御
@@ -102,35 +111,43 @@ U15-server-maizuru/
 │   │       └── network/
 │   │           ├── PortPool.ts             TCP ポートプール
 │   │           ├── TcpClient.ts
-│   │           ├── WsServer.ts             ルーム対応 (setRoomManager) / ソケット⇔ルーム紐付けの薄いコーディネーター
-│   │           ├── LobbyRouter.ts          ロビー系メッセージ (create/join/list/destroy_room)
-│   │           ├── GameMessageDispatch.ts  ルーム内ゲームメッセージのディスパッチ
-│   │           └── HttpServer.ts           room別パス + /api/default-room
+│   │           ├── WsServer.ts             WebSocket サーバー。setRoomManager でルームマネージャを注入し、ソケット⇔ルームの紐付けを管理する薄いコーディネーター
+│   │           ├── LobbyRouter.ts          ロビー系メッセージ (create/join/list/destroy_room) を処理
+│   │           ├── GameMessageDispatch.ts  ルーム内ゲームメッセージを対応する ServerManager へディスパッチ
+│   │           └── HttpServer.ts           静的配信 + room別パスでのファイルアップロード + /api/default-room
 │   │
 │   ├── frontend/
 │   │   └── src/
-│   │       ├── App.tsx             ?room= ルーティング + Lobby 分岐
+│   │       ├── App.tsx             ?room=/?mode= に応じて Lobby/DisplayMode/ControlApp/ManualMode に分岐
 │   │       ├── components/
 │   │       │   ├── Lobby.tsx           ロビー画面 (Web モード)
-│   │       │   ├── DisplayMode.tsx     wsUrl/roomId props 対応
+│   │       │   ├── DisplayMode.tsx     対戦表示 (wsUrl/roomId を props で受け取る)
 │   │       │   ├── StartupDialog.tsx
-│   │       │   ├── MainWindow.tsx
+│   │       │   ├── MainWindow.tsx      盤面・スコア・進行状況の表示 (対戦表示/コントロール共用)
+│   │       │   ├── ManualMode.tsx      手動操作ウィンドウのルート
+│   │       │   ├── ManualControls.tsx  手動操作の入力パネル (矢印キー/ボタン)
+│   │       │   ├── ErrorBoundary.tsx   描画エラーを捕捉して各ウィンドウの落ちを防ぐ
 │   │       │   └── ...
 │   │       ├── hooks/
-│   │       │   ├── useGameState.ts     roomId 引数 + join_room 送信
+│   │       │   ├── useGameState.ts     WS 接続・roomId 引数・join_room 送信・ゲーム状態管理
 │   │       │   ├── useLobby.ts         ロビー用 WS フック
 │   │       │   ├── useGamePhaseSound.ts  ControlApp/DisplayMode 共用のフェーズ遷移 SE
 │   │       │   ├── useTextures.ts        GameBoardCanvas/MapEditorDialog 共用のテクスチャ読込
+│   │       │   ├── useBgm.ts             フェーズに応じた BGM 再生
+│   │       │   ├── useStartCountdown.ts  試合開始カウントダウンの表示制御
 │   │       │   └── ...
+│   │       ├── lib/
+│   │       │   └── roundSide.ts        2試合制のラウンド番号から画面左右の team-index を算出
 │   │       └── ...
 │   │
 │   └── electron/
 │       └── src/
-│           └── main.ts   /api/default-room で roomId 取得後にウィンドウを開く
+│           └── main.ts   バックエンド起動 → /api/default-room から roomId を取得 → 対戦表示/コントロール
+│                          ウィンドウを開く。手動操作ウィンドウは manual:openWindow IPC で必要時に開く
 │
 ├── packages/
 │   └── ws-types/
-│       └── src/index.ts    RoomSummary, LobbyMessage, 新 FrontendMessage 追加
+│       └── src/index.ts    バックエンド・フロントエンド共有のプロトコル型・メッセージ型を定義
 │
 ├── server/
 │   ├── maps/                       マップファイル (全ルーム共通)
@@ -186,13 +203,13 @@ pnpm --filter @u15/electron dev
 **バックエンドとフロントエンドが共有する型定義の唯一の場所。**
 
 ```typescript
-// ゲーム型 (変更なし)
+// ゲームの状態・結果を表す型
 enum MapObject, Winner, Reason
 interface GameStateSnapshot, TurnStartPayload, ScoreData, GameEndPayload
 interface RoundResult, ServerStatusPayload, ClientStatusPayload
 type ServerPhase, ClientType, ClientState
 
-// ルーム / ロビー型 (追加)
+// ルーム / ロビーを表す型
 interface RoomSummary { id, phase, ports, createdAt }
 type LobbyMessage =
   | { type: 'room_created'; payload: { roomId, ports } }
@@ -200,11 +217,22 @@ type LobbyMessage =
   | { type: 'room_list';    payload: { rooms: RoomSummary[] } }
   | { type: 'error';        payload: { message } }
 
-// フロントエンド → バックエンド (ゲーム + ロビー)
+// フロントエンド → バックエンド (ゲーム操作 + ロビー操作)
 type FrontendMessage =
-  | ... (既存ゲームコマンド)
+  | { type: 'set_client'; payload: { slot, clientType, processConfig? } }
+  | { type: 'delete_program'; payload: { slot } }
+  | { type: 'request_start' } | { type: 'request_reset' }
+  | { type: 'load_map'; payload: { filePath } }
+  | { type: 'set_map_params'; payload: MapParams }
+  | { type: 'load_map_data'; payload: InlineMapData }
+  | { type: 'set_double_mode' | 'set_repeat_mode' | 'set_demo_mode' | 'set_dark_mode'; payload: { enabled } }
+  | { type: 'set_turn_delay' | 'set_tcp_timeout'; payload: { ms } }
+  | { type: 'set_log_dir'; payload: { dir } }
+  | { type: 'set_python_command'; payload: { command } }
+  | { type: 'request_next_round' } | { type: 'request_repeat' }
+  | { type: 'manual_action'; payload: { slot, action, rote } }
   | { type: 'create_room' }
-  | { type: 'join_room';  payload: { roomId } }
+  | { type: 'join_room'; payload: { roomId } }
   | { type: 'list_rooms' }
   | { type: 'destroy_room' }
 ```
@@ -243,21 +271,28 @@ class RoomManager {
 
 **ServerManager** — 1つのゲームを管理するコーディネーター
 
-内部状態は3つのクラスに分割されており、ServerManager 自体はそれらを束ねて外部向けの薄い API (`setClientType` / `requestStart` / `requestReset` など) を提供するだけ。呼び出し側 (`WsServer` / `RoomManager`) から見た公開メソッド名・シグネチャは分割前と同一。
+内部状態は3つのクラスに分割されており、ServerManager 自体はそれらを束ねて `setClientType` / `requestStart` / `requestReset` などの薄い外部向け API を提供する。
 
 | クラス | 責務 |
 |---|---|
 | `SlotManager` | スロットごとのクライアント接続 (Process/Tcp/Manual/Com) のライフサイクル管理。`setClientType` / `deleteProgram` / `startListening` など |
 | `MapManager` | マップ状態の保持・生成・読込 (`loadMap` / `setMapParams` / `loadMapData`) |
-| `RoundController` | フェーズ (`setup`/`playing`/`finished`)・2試合制のラウンド進行・ターン表示待機時間 |
+| `RoundController` | フェーズ (`setup`/`playing`/`finished`)・2試合制のラウンド進行・デモ/リピートモード・ターン表示待機時間 |
 
 ```typescript
-// ポートをコンストラクタで注入 (デフォルト [12031, 12032] で後方互換)
+// ポートはコンストラクタで指定する (省略時は [12031, 12032])
 constructor(ports: [number, number] = [12031, 12032])
 
 // 部屋削除時の安全なクリーンアップ (TCP を閉じるだけ、再起動しない)
 shutdown(): void
 ```
+
+デモモード (`setDemoMode`) は、全スロットが ready になった時点で自動的に `requestStart` を、
+2試合制の1試合目終了時に自動的に `requestNextRound` を、リピートモード併用時は最終戦終了時に
+自動的に `requestRepeat` を発行する (`DemoDelaysMs` で各ステップの待機時間を調整可能)。
+ログ保存先 (`setLogDir`) と Python 実行コマンド (`setPythonCommand`) の上書きは、
+`U15_MODE=local` のときのみ有効になる。Web モードではリモートのクライアントがサーバー上の
+任意パスへの書き込みや任意コマンドの実行経路に触れないよう、常に無視される。
 
 **WsServer** — ルーム対応の WebSocket サーバー
 
@@ -335,7 +370,15 @@ ws.onopen = () => {
 | `request_reset` | — | リセット |
 | `request_next_round` | — | 次試合開始 |
 | `set_double_mode` | `{enabled}` | 2試合制 ON/OFF |
+| `set_repeat_mode` | `{enabled}` | リピートモード ON/OFF (setup フェーズのみ変更可) |
+| `set_demo_mode` | `{enabled}` | デモモード (無人自動進行) ON/OFF (setup フェーズのみ変更可) |
+| `set_dark_mode` | `{enabled}` | 対戦表示のダークモード ON/OFF |
 | `set_turn_delay` | `{ms}` | ターン表示待機時間 |
+| `set_tcp_timeout` | `{ms}` | TCP クライアントの応答タイムアウト |
+| `set_log_dir` | `{dir}` | ログ保存先 (ローカルモードのみ有効) |
+| `set_python_command` | `{command}` | Python 実行コマンドの上書き (ローカルモードのみ有効) |
+| `request_next_round` | — | 2試合制: 次ラウンドの準備 (先後を入れ替えて再接続待ちにする) |
+| `request_repeat` | — | 最終戦終了後、接続 (type) を維持したまま先後を入れ替えて再戦準備する |
 | `manual_action` | `{slot, action, rote}` | 手動操作 |
 | `load_map` | `{filePath}` | マップ読み込み |
 | `set_map_params` | `{...}` | ランダムマップパラメータ |
@@ -439,11 +482,19 @@ if (turnDelayMs > 0) await sleep(ms);
 // 次フェーズへ
 ```
 
-### ポイント計算 (`calculatePoints`)
+### 2試合制のラウンド別ボーナス (`calculateBonusBreakdown`)
+
+決着理由が `SCORE` (ターン切れによるアイテム数判定) の場合はボーナスなし。それ以外の決着では:
 
 ```typescript
-score * 10 + (isWinner ? remainingTurns : 0) + (isWinner && allItemsTaken ? 100 : 0)
+// 「一撃」— 反則負け (自縛/衝突/通信エラー) の場合のみ、敗者に -3×自スコアの罰点
+strikeBonus[loserIdx] = isBlunder(status) ? -3 * scores[loserIdx] : 0;
+// 「総取り」— 勝者に、決着時点の残アイテム数×7 のボーナス
+sweepBonus[winnerIdx] = 7 * leaveItems;
 ```
+
+各ラウンドの `RoundResult` (`scores` + `strikeBonus` + `sweepBonus`) を合算して2試合制の最終
+順位を決める。
 
 ### 判定優先順位 (`judgeGame`)
 
@@ -470,19 +521,26 @@ H: [HOTスタートX],[HOTスタートY]
 ### コンポーネントツリー
 
 ```
-App.tsx
+App.tsx (ErrorBoundary でラップ)
 ├── Lobby.tsx               (?room なし — Web サービスモードのロビー)
 │
 ├── DisplayMode.tsx         (?room=xxx&mode=display)
 │   ├── SetupWaiting        (setup フェーズの待機画面, ポートを動的表示)
 │   └── MainWindow.tsx      (playing/finished フェーズ)
 │
-└── ControlApp              (?room=xxx&mode=control)
-    ├── SettingDialog.tsx
-    ├── MapEditorDialog.tsx
-    ├── StartupDialog.tsx
-    └── MainWindow.tsx
+├── ControlApp              (?room=xxx&mode=control)
+│   ├── SettingDialog.tsx
+│   ├── MapEditorDialog.tsx
+│   ├── StartupDialog.tsx
+│   └── MainWindow.tsx
+│
+└── ManualMode.tsx           (?room=xxx&mode=manual&slot=0|1 — 手動操作ウィンドウ)
+    └── ManualControls.tsx
 ```
+
+盤面反転・左右スコア表示・差分アニメーションのリセット判定 (`MainWindow.tsx` /
+`GameBoardCanvas.tsx`) は、バックエンドから明示的な「新ラウンド開始」通知が来ないため、
+`turnCount` が前回より増加したことを検知してラウンド境界とみなす設計になっている。
 
 ### 主要フック
 
@@ -494,6 +552,8 @@ App.tsx
 | `useSound()` | SE 再生 |
 | `useGamePhaseSound(snapshot, serverStatus, gameEnd, muted)` | フェーズ遷移 (go/finish/win) とスコア変化の SE 再生。ControlApp と DisplayMode で共用 |
 | `useTextures(theme)` | テーマ別テクスチャ読込。GameBoardCanvas と MapEditorDialog で共用 |
+| `useBgm(phase, muted)` | フェーズに応じた BGM 再生・停止 |
+| `useStartCountdown(phase, turnInfo)` | 試合開始カウントダウンの表示制御 |
 | `useFileUpload()` | XHR multipart アップロード |
 
 ### WS URL の自動検出
@@ -515,6 +575,10 @@ pnpm --filter @u15/electron dev
 # U15_MODE=local で自動起動
 # ?room=local&mode=display と ?room=local&mode=control で2ウィンドウが開く
 ```
+
+Electron の `main.ts` はバックエンドプロセスを起動した後、`/api/default-room` に一定間隔で
+ポーリングして roomId を取得してからウィンドウを開く (バックエンドから明示的な起動完了通知が
+来ないための設計)。取得に失敗し続けた場合は `roomId='local'` にフォールバックする。
 
 ### Web サービスとしてデプロイ
 

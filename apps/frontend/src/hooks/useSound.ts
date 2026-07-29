@@ -43,11 +43,13 @@ export function useScoreSound(
   const prevH = useRef(0);
 
   useEffect(() => {
-    if (muted) return;
     const sc = snapshot?.teamScore;
     if (!sc) return;
-    if (sc[0] > prevC.current) play('get_C');
-    if (sc[1] > prevH.current) play('get_H');
+    // スコア追跡は mute の状態に関わらず常時継続し、play() 呼び出しのみ mute でゲートする
+    if (!muted) {
+      if (sc[0] > prevC.current) play('get_C');
+      if (sc[1] > prevH.current) play('get_H');
+    }
     prevC.current = sc[0];
     prevH.current = sc[1];
   }, [snapshot?.teamScore, muted, play]);

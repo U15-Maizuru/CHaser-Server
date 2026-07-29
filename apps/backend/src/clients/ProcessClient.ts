@@ -10,16 +10,17 @@ export class ProcessClient extends TcpClient {
   }
 
   async startProgram(
-    port:           number,
-    programType:    'python' | 'bot',
-    programPath:    string,
-    runtimeCommand: string,
-    libPath?:       string,
+    port:               number,
+    programType:        'python' | 'bot',
+    programPath:        string,
+    runtimeCommand:     string,
+    libPath?:           string,
+    pythonExeOverride?: string,
   ): Promise<void> {
     // 呼び出し元 (SlotManager.startListening) が既に listen() 済みのソケットを渡す前提
 
     const env = buildEnv(libPath);
-    const [command, args] = buildCommand(programType, programPath, runtimeCommand, port);
+    const [command, args] = buildCommand(programType, programPath, runtimeCommand, port, pythonExeOverride);
     this.proc = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], env });
     this.proc.stdout?.on('data', (d: Buffer) =>
       process.stdout.write(`[proc] ${d.toString().trimEnd()}\n`),
@@ -57,15 +58,18 @@ function buildEnv(libPath?: string): NodeJS.ProcessEnv {
 }
 
 function buildCommand(
-  type:        'python' | 'bot',
-  programPath: string,
-  runtime:     string,
-  port:        number,
+  type:               'python' | 'bot',
+  programPath:        string,
+  runtime:            string,
+  port:               number,
+  pythonExeOverride?: string,
 ): [string, string[]] {
   if (type === 'python') {
-    // フロントエンドは常に既定値 'python' を送る。同梱 Python があればそちらを使う
-    // （main.ts が本番起動時に U15_PYTHON_EXE をセットする。dev では未設定 = PATH の python）。
-    const command = runtime === 'python' ? (process.env.U15_PYTHON_EXE ?? runtime) : runtime;
+    // フロントエンドは常に既定値 'python' を送る。優先順位: 管理画面での上書き
+    // > 同梱 Python (main.ts が本番起動時にセットする U15_PYTHON_EXE) > PATH の python。
+    const command = runtime === 'python'
+      ? (pythonExeOverride || process.env.U15_PYTHON_EXE || runtime)
+      : runtime;
     return [command, [programPath, '--host', '127.0.0.1', '--port', String(port)]];
   }
   return [runtime, [`a:127.0.0.1`, `p:${port}`, `n:BotProgram`]];

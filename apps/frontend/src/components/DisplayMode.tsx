@@ -2,26 +2,30 @@ import type { ServerStatusPayload } from '@u15/ws-types';
 import { useGameState } from '../hooks/useGameState';
 import { useSettings } from '../hooks/useSettings';
 import { useGamePhaseSound } from '../hooks/useGamePhaseSound';
+import { useStartCountdown } from '../hooks/useStartCountdown';
+import { useBgm } from '../hooks/useBgm';
 import { MainWindow } from './MainWindow';
 import {
-  BG_ROOT, BG_CARD, BG_HEADER,
+  BG_ROOT,
   COOL_COLOR, COOL_LIGHT, COOL_DARK, COOL_PALE,
   HOT_COLOR,  HOT_LIGHT,  HOT_DARK,  HOT_PALE,
   TURN_BASE, TURN_LIGHT,
-  WIN_BASE, WIN_LIGHT, WIN_PALE,
+  WIN_BASE, WIN_LIGHT,
   TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
-  SHADOW_MD, BORDER_COLOR,
-  RADIUS_MD, RADIUS_LG,
+  SHADOW_MD,
+  RADIUS_MD,
   FONT_UI, FONT_NUM,
 } from '../styles/tokens';
 
-export function DisplayMode({ wsUrl, roomId }: { wsUrl: string; roomId: string }) {
+export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId: string; httpBase: string }) {
   const state   = useGameState(wsUrl, roomId);
   const { settings } = useSettings();
   const { serverStatus, snapshot, turnInfo, gameEnd, isConnected } = state;
   const phase = serverStatus?.phase ?? 'setup';
 
-  useGamePhaseSound(snapshot, serverStatus, gameEnd, settings.muted);
+  useGamePhaseSound(snapshot, serverStatus, gameEnd, turnInfo, settings.muted, true);
+  const countdown = useStartCountdown(serverStatus?.phase, turnInfo);
+  useBgm(httpBase, serverStatus?.phase, settings.bgmTrack, settings.bgmMuted, true);
 
   if (!isConnected) {
     return (
@@ -45,10 +49,11 @@ export function DisplayMode({ wsUrl, roomId }: { wsUrl: string; roomId: string }
       isConnected={isConnected}
       phase={phase}
       theme={settings.theme}
-      manualRequest={state.manualRequest}
+      variant="display"
+      countdown={countdown}
       onReset={() => {}}
       onNextRound={() => {}}
-      onManualAction={() => {}}
+      onRepeat={() => {}}
       onOpenSettings={() => {}}
     />
   );
@@ -72,7 +77,6 @@ function stateBadgeStyle(state: string): React.CSSProperties {
 
 function SetupWaiting({ serverStatus }: { serverStatus: ServerStatusPayload | null }) {
   const clients      = serverStatus?.clients;
-  const localIP      = serverStatus?.localIP ?? '...';
   const doubleMode   = serverStatus?.doubleMode ?? false;
   const currentRound = serverStatus?.currentRound ?? 0;
 
@@ -93,32 +97,22 @@ function SetupWaiting({ serverStatus }: { serverStatus: ServerStatusPayload | nu
             label="COOL" color={COOL_COLOR} darkColor={COOL_DARK}
             paleColor={COOL_PALE} lightColor={COOL_LIGHT}
             name={clients[0].name || '---'} state={clients[0].state}
-            port={clients[0].port}
           />
           <div style={sw.vs}>VS</div>
           <TeamCard
             label="HOT"  color={HOT_COLOR}  darkColor={HOT_DARK}
             paleColor={HOT_PALE}  lightColor={HOT_LIGHT}
             name={clients[1].name || '---'} state={clients[1].state}
-            port={clients[1].port}
           />
         </div>
       )}
-
-      {/* IP情報 */}
-      <div style={sw.infoCard}>
-        <span style={sw.infoLabel}>ローカル IP</span>
-        <span style={sw.infoIP}>{localIP}</span>
-        <span style={sw.infoSep}>|</span>
-        <span style={sw.infoPort}>COOL: {clients ? clients[0].port : '…'} &nbsp; HOT: {clients ? clients[1].port : '…'}</span>
-      </div>
     </div>
   );
 }
 
-function TeamCard({ label, color, darkColor, paleColor, lightColor, name, state, port }: {
+function TeamCard({ label, color, darkColor, paleColor, lightColor, name, state }: {
   label: string; color: string; darkColor: string; paleColor: string; lightColor: string;
-  name: string; state: string; port: number;
+  name: string; state: string;
 }) {
   const badge = stateBadgeStyle(state);
   return (
@@ -128,7 +122,6 @@ function TeamCard({ label, color, darkColor, paleColor, lightColor, name, state,
       </div>
       <div style={{ ...tc.name, color: darkColor }}>{name}</div>
       <div style={{ ...tc.badge, ...badge }}>{STATE_LABEL[state] ?? state}</div>
-      <div style={tc.port}>port {port}</div>
     </div>
   );
 }
@@ -159,16 +152,6 @@ const sw: Record<string, React.CSSProperties> = {
     fontSize: 28, fontWeight: 800, color: TEXT_MUTED,
     fontFamily: FONT_NUM, letterSpacing: '0.1em',
   },
-  infoCard: {
-    display: 'flex', alignItems: 'center', gap: 12,
-    padding: '10px 24px', background: BG_CARD,
-    borderRadius: RADIUS_LG, boxShadow: SHADOW_MD,
-    border: `1px solid ${BORDER_COLOR}`,
-  },
-  infoLabel: { fontSize: 11, color: TEXT_MUTED, letterSpacing: '0.04em' },
-  infoIP:    { fontFamily: FONT_NUM, fontWeight: 700, fontSize: 18, color: TEXT_PRIMARY },
-  infoSep:   { color: BORDER_COLOR },
-  infoPort:  { fontSize: 12, color: TEXT_SECONDARY, fontFamily: FONT_NUM },
 };
 
 const tc: Record<string, React.CSSProperties> = {
@@ -192,5 +175,4 @@ const tc: Record<string, React.CSSProperties> = {
     fontWeight: 700, fontSize: 12,
     padding: '5px 18px', borderRadius: 99, letterSpacing: '0.06em',
   },
-  port: { fontSize: 11, color: TEXT_MUTED, fontFamily: FONT_NUM },
 };

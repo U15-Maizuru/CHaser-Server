@@ -105,4 +105,33 @@ describe('createRandomMap', () => {
       }
     }
   });
+
+  it('チーム初期位置は外周マスに配置されない (開始直後の囲まれ判定を防ぐ)', () => {
+    for (let i = 0; i < 10; i++) {
+      const map = createRandomMap();
+      for (const fp of map.teamFirstPoint) {
+        expect(fp.x).not.toBe(0);
+        expect(fp.x).not.toBe(map.size.x - 1);
+        expect(fp.y).not.toBe(0);
+        expect(fp.y).not.toBe(map.size.y - 1);
+      }
+    }
+  });
+
+  it('チーム初期位置に隣接する4マスにブロックがない (開始直後の囲まれ判定を防ぐ)', () => {
+    for (let i = 0; i < 10; i++) {
+      const map = createRandomMap();
+      for (const fp of map.teamFirstPoint) {
+        const neighbors = [
+          { x: fp.x, y: fp.y - 1 },
+          { x: fp.x, y: fp.y + 1 },
+          { x: fp.x - 1, y: fp.y },
+          { x: fp.x + 1, y: fp.y },
+        ];
+        for (const n of neighbors) {
+          expect(map.field[n.y][n.x]).not.toBe(MapObject.BLOCK);
+        }
+      }
+    }
+  });
 });

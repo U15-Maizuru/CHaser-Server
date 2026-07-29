@@ -2,11 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { useGameState }      from './hooks/useGameState';
 import { useSettings }       from './hooks/useSettings';
 import { useGamePhaseSound } from './hooks/useGamePhaseSound';
+import { useStartCountdown } from './hooks/useStartCountdown';
 import { StartupDialog }   from './components/StartupDialog';
 import { MainWindow }      from './components/MainWindow';
 import { SettingDialog }   from './components/SettingDialog';
 import { MapEditorDialog } from './components/MapEditorDialog';
 import { DisplayMode }     from './components/DisplayMode';
+import { ManualMode }      from './components/ManualMode';
+import { ErrorBoundary }   from './components/ErrorBoundary';
 import { Lobby }           from './components/Lobby';
 import type { ClientStatusPayload } from '@u15/ws-types';
 import { MapObject } from '@u15/ws-types';
@@ -21,12 +24,18 @@ const HTTP_BASE = WS_URL.replace(/^ws/, 'http');
 const params  = new URLSearchParams(window.location.search);
 const ROOM_ID = params.get('room');
 const MODE    = params.get('mode') ?? 'display';
+const SLOT    = params.get('slot') === '1' ? 1 : 0;
 
 export default function App() {
   // room パラメータなし → ロビー (Web サービスモード)
   if (!ROOM_ID) return <Lobby wsUrl={WS_URL} />;
-  if (MODE === 'display') return <DisplayMode wsUrl={WS_URL} roomId={ROOM_ID} />;
-  return <ControlApp roomId={ROOM_ID} />;
+  if (MODE === 'display') {
+    return <ErrorBoundary><DisplayMode wsUrl={WS_URL} roomId={ROOM_ID} httpBase={HTTP_BASE} /></ErrorBoundary>;
+  }
+  if (MODE === 'manual') {
+    return <ErrorBoundary><ManualMode wsUrl={WS_URL} roomId={ROOM_ID} slot={SLOT} /></ErrorBoundary>;
+  }
+  return <ErrorBoundary><ControlApp roomId={ROOM_ID} /></ErrorBoundary>;
 }
 
 function ControlApp({ roomId }: { roomId: string }) {
@@ -34,11 +43,15 @@ function ControlApp({ roomId }: { roomId: string }) {
   const { settings, update: updateSettings } = useSettings();
   const { serverStatus, isConnected, gameEnd, snapshot } = state;
 
-  useGamePhaseSound(snapshot, serverStatus, gameEnd, settings.muted);
+  // コントロール窓では SE を鳴らさない (観戦窓との二重再生を防ぐため)
+  useGamePhaseSound(snapshot, serverStatus, gameEnd, state.turnInfo, settings.muted, false);
+  const countdown = useStartCountdown(serverStatus?.phase, state.turnInfo);
 
   const [showSettings,  setShowSettings]  = useState(false);
   const [showMapEditor, setShowMapEditor] = useState(false);
 
+  // 初回マウント時はスキップする: settings に保存されているマップ生成パラメータ
+  // (ランダムマップの既定値) を、アップロード済み/読み込み済みのマップに上書きしないため
   const didMount = useRef(false);
   useEffect(() => {
     if (!didMount.current) { didMount.current = true; return; }
@@ -58,11 +71,50 @@ function ControlApp({ roomId }: { roomId: string }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.doubleMode, serverStatus?.phase]);
 
+  useEffect(() => {
+    if (serverStatus?.phase === 'setup') {
+      state.setRepeatMode(settings.repeatMode);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.repeatMode, serverStatus?.phase]);
+
+  useEffect(() => {
+    if (serverStatus?.phase === 'setup') {
+      state.setDemoMode(settings.demoMode);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.demoMode, serverStatus?.phase]);
+
+  // 手動操作コントローラー: スロットが「手動」に設定されたら独立ウィンドウを自動で開く
+  useEffect(() => {
+    serverStatus?.clients.forEach((c, i) => {
+      if (c.type === 'manual') void window.electronAPI?.openManualWindow(i as 0 | 1);
+    });
+  }, [serverStatus?.clients]);
+
   // turnDelay: 接続時 + 設定変更時に同期
   useEffect(() => {
     if (isConnected) state.setTurnDelay(settings.turnDelay);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.turnDelay, isConnected]);
+
+  // TCP タイムアウト (秒→ミリ秒): 接続時 + 設定変更時に同期
+  useEffect(() => {
+    if (isConnected) state.setTcpTimeout(settings.timeout * 1000);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.timeout, isConnected]);
+
+  // 環境設定 (ログ保存先・Pythonコマンド): Electron ローカル起動時のみ意味を持つ
+  // (バックエンド側も U15_MODE!=='local' なら無視するが、そもそも空文字なら送らない)
+  useEffect(() => {
+    if (isConnected && settings.logDir) state.setLogDir(settings.logDir);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.logDir, isConnected]);
+
+  useEffect(() => {
+    if (isConnected && window.electronAPI) state.setPythonCommand(settings.pythonCommand);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.pythonCommand, isConnected]);
 
   const handleLoadMap = async () => {
     const input = document.createElement('input');
@@ -82,6 +134,12 @@ function ControlApp({ roomId }: { roomId: string }) {
     input.click();
   };
 
+  const handleUploadMusic = async (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    await fetch(`${HTTP_BASE}/api/upload/music`, { method: 'POST', body: fd });
+  };
+
   const handleMapEditorSave = (map: EditableMap) => {
     state.loadMapData({
       field: map.field,
@@ -99,10 +157,24 @@ function ControlApp({ roomId }: { roomId: string }) {
 
   return (
     <>
+      {window.electronAPI && (
+        <button
+          style={fullscreenBtn}
+          title="観戦画面を全画面化"
+          onClick={() => void window.electronAPI?.toggleDisplayFullscreen()}
+        >
+          ⛶ 観戦画面を全画面化
+        </button>
+      )}
+
       {showSettings && (
         <SettingDialog
           settings={settings}
+          darkMode={serverStatus?.darkMode ?? false}
+          httpBase={HTTP_BASE}
           onSave={updateSettings}
+          onSetDarkMode={state.setDarkMode}
+          onUploadMusic={handleUploadMusic}
           onClose={() => setShowSettings(false)}
         />
       )}
@@ -137,10 +209,11 @@ function ControlApp({ roomId }: { roomId: string }) {
           isConnected={isConnected}
           phase={phase}
           theme={settings.theme}
-          manualRequest={state.manualRequest}
+          variant="control"
+          countdown={countdown}
           onReset={state.requestReset}
           onNextRound={state.requestNextRound}
-          onManualAction={state.sendManualAction}
+          onRepeat={state.requestRepeat}
           onOpenSettings={() => setShowSettings(true)}
         />
       )}
@@ -154,6 +227,12 @@ const connecting: React.CSSProperties = {
   background: '#0d1117', color: '#666', fontFamily: 'monospace', fontSize: 16,
 };
 
+const fullscreenBtn: React.CSSProperties = {
+  position: 'fixed', top: 8, right: 8, zIndex: 200,
+  padding: '5px 12px', border: '1px solid #ccc', borderRadius: 99,
+  background: '#ffffffdd', color: '#333', fontSize: 11, cursor: 'pointer',
+};
+
 const defaultStatus = {
   phase:        'setup' as const,
   localIP:      '...',
@@ -162,8 +241,11 @@ const defaultStatus = {
     { type: 'process' as const, state: 'waiting' as const, name: '', ip: '', port: 12032 },
   ] as [ClientStatusPayload, ClientStatusPayload],
   doubleMode:   false,
+  repeatMode:   false,
+  demoMode:     false,
   currentRound: 0 as const,
   roundResults: [],
+  darkMode:     false,
 };
 
 const defaultEditableMap: EditableMap = {

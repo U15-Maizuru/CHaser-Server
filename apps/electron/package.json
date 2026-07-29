@@ -4,7 +4,7 @@
   "private": true,
   "main": "dist/main.js",
   "scripts": {
-    "dev": "node dev.js",
+    "dev": "tsc && node dev.js",
     "build": "tsc",
     "build:win": "pnpm build && pnpm build:backend && pnpm build:frontend && node scripts/fetch-python.mjs && electron-builder --win",
     "build:backend": "pnpm --filter @u15/backend build",

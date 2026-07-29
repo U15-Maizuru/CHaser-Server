@@ -27,7 +27,14 @@ export interface GameStateHook {
   requestReset:     () => void;
   requestNextRound: () => void;
   setDoubleMode:    (enabled: boolean) => void;
+  setRepeatMode:    (enabled: boolean) => void;
+  requestRepeat:    () => void;
+  setDemoMode:      (enabled: boolean) => void;
+  setDarkMode:      (enabled: boolean) => void;
   setTurnDelay:     (ms: number) => void;
+  setTcpTimeout:    (ms: number) => void;
+  setLogDir:        (dir: string) => void;
+  setPythonCommand: (command: string) => void;
   sendManualAction: (slot: 0 | 1, action: number, rote: number) => void;
   loadMap:          (filePath: string) => void;
   setMapParams:     (params: MapParams) => void;
@@ -67,6 +74,8 @@ export function useGameState(wsUrl: string, roomId: string): GameStateHook {
     ws.onmessage = (event: MessageEvent) => {
       const msg = JSON.parse(event.data as string) as WsMessage | LobbyMessage;
       switch (msg.type) {
+        // ロビー向けメッセージ。ルーム参加後のこのフックでは扱わない (呼び出し側の
+        // ロビー画面が別途 WebSocket を張って処理する)
         case 'room_joined':
         case 'room_list':
         case 'room_created':
@@ -87,6 +96,7 @@ export function useGameState(wsUrl: string, roomId: string): GameStateHook {
         case 'turn_start':
           setTurnInfo(msg.payload);
           break;
+        // スコアは game_state (snapshot) 経由で伝わるため、通知のみで状態更新は不要
         case 'score_update':
           break;
         case 'manual_request':
@@ -127,7 +137,14 @@ export function useGameState(wsUrl: string, roomId: string): GameStateHook {
     requestReset:     ()                           => send({ type: 'request_reset' }),
     requestNextRound: ()                           => send({ type: 'request_next_round' }),
     setDoubleMode:    (enabled)                    => send({ type: 'set_double_mode',   payload: { enabled } }),
+    setRepeatMode:    (enabled)                    => send({ type: 'set_repeat_mode',   payload: { enabled } }),
+    requestRepeat:    ()                           => send({ type: 'request_repeat' }),
+    setDemoMode:      (enabled)                    => send({ type: 'set_demo_mode',     payload: { enabled } }),
+    setDarkMode:      (enabled)                    => send({ type: 'set_dark_mode',     payload: { enabled } }),
     setTurnDelay:     (ms)                         => send({ type: 'set_turn_delay',    payload: { ms } }),
+    setTcpTimeout:    (ms)                         => send({ type: 'set_tcp_timeout',   payload: { ms } }),
+    setLogDir:        (dir)                        => send({ type: 'set_log_dir',       payload: { dir } }),
+    setPythonCommand: (command)                    => send({ type: 'set_python_command', payload: { command } }),
     sendManualAction: (slot, action, rote)         => send({ type: 'manual_action',     payload: { slot, action, rote } }),
     loadMap:          (filePath)                   => send({ type: 'load_map',          payload: { filePath } }),
     setMapParams:     (params)                     => send({ type: 'set_map_params',    payload: params }),

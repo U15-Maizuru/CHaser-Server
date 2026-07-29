@@ -141,4 +141,46 @@ describe('HttpServer', () => {
     const res = await fetch(`${baseUrl}/api/nope`);
     expect(res.status).toBe(404);
   });
+
+  describe('BGM (music)', () => {
+    afterEach(() => {
+      fs.rmSync(path.resolve('server/music'), { recursive: true, force: true });
+    });
+
+    it('許可されていない拡張子は 400', async () => {
+      const form = new FormData();
+      form.append('file', new Blob(['not audio']), 'note.txt');
+      const res = await fetch(`${baseUrl}/api/upload/music`, { method: 'POST', body: form });
+      expect(res.status).toBe(400);
+    });
+
+    it('mp3 をアップロードして一覧・再生取得できる', async () => {
+      const form = new FormData();
+      form.append('file', new Blob(['fake mp3 bytes']), 'theme.mp3');
+      const uploadRes = await fetch(`${baseUrl}/api/upload/music`, { method: 'POST', body: form });
+      expect(uploadRes.status).toBe(200);
+
+      const listRes = await fetch(`${baseUrl}/api/music`);
+      expect(listRes.status).toBe(200);
+      const { files } = await listRes.json();
+      expect(files).toContain('theme.mp3');
+
+      const playRes = await fetch(`${baseUrl}/api/music/${encodeURIComponent('theme.mp3')}`);
+      expect(playRes.status).toBe(200);
+      expect(playRes.headers.get('content-type')).toBe('audio/mpeg');
+      expect(await playRes.text()).toBe('fake mp3 bytes');
+    });
+
+    it('存在しないファイルの再生取得は 404', async () => {
+      const res = await fetch(`${baseUrl}/api/music/${encodeURIComponent('nothing.mp3')}`);
+      expect(res.status).toBe(404);
+    });
+
+    it('BGM フォルダが無い場合の一覧取得は空配列', async () => {
+      const res = await fetch(`${baseUrl}/api/music`);
+      expect(res.status).toBe(200);
+      const { files } = await res.json();
+      expect(files).toEqual([]);
+    });
+  });
 });

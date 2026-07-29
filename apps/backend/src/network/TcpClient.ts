@@ -18,12 +18,17 @@ export class TcpClient extends BaseClient {
   private socket: net.Socket | null = null;
   private rxBuf = '';
   private pendingRead: ((line: string | null) => void) | null = null;
-  private readonly timeout: number;
+  private timeout: number;
 
-  constructor(timeout = 5000) {
+  constructor(timeout = 10_000) {
     super();
     this.timeout = timeout;
     this.server = net.createServer();
+  }
+
+  /** 実行中でも変更できるように — 待機中の readLine() には反映されないが、次回以降のタイムアウトから有効になる。 */
+  updateTimeout(ms: number): void {
+    this.timeout = ms;
   }
 
   listen(port: number): Promise<void> {

@@ -29,6 +29,8 @@ interface SlotInfo {
 //   'manual_client_created' (mc: ManualClient)
 export class SlotManager extends EventEmitter {
   private slots: [SlotInfo, SlotInfo];
+  private timeoutMs = 10_000;
+  private pythonCommandOverride: string | undefined;
 
   constructor(ports: [number, number]) {
     super();
@@ -122,20 +124,26 @@ export class SlotManager extends EventEmitter {
     }
   }
 
+  /** 両スロットの type と processConfig を入れ替える (2試合制の先後入れ替え用) */
   swapSlotConfigs(): void {
-    const cfg0 = this.slots[0].processConfig;
-    const cfg1 = this.slots[1].processConfig;
-    const type0 = this.slots[0].type;
-    const type1 = this.slots[1].type;
-    this.slots[0].processConfig = cfg1;
-    this.slots[1].processConfig = cfg0;
-    // process タイプは保持、cpu/manual/tcp はそのまま交換
-    this.slots[0].type = type1 === 'process' || type1 === 'tcp' || type1 === 'manual' ? type1 : type0;
-    this.slots[1].type = type0 === 'process' || type0 === 'tcp' || type0 === 'manual' ? type0 : type1;
-    // cpuタイプは入れ替え後も維持
-    if (type0 === 'cpu') { this.slots[1].type = 'cpu'; }
-    if (type1 === 'cpu') { this.slots[0].type = 'cpu'; }
+    [this.slots[0].type, this.slots[1].type] =
+      [this.slots[1].type, this.slots[0].type];
+    [this.slots[0].processConfig, this.slots[1].processConfig] =
+      [this.slots[1].processConfig, this.slots[0].processConfig];
     console.log(`[SlotManager] slots swapped: slot0=${this.slots[0].type}, slot1=${this.slots[1].type}`);
+  }
+
+  /** 次に spawnProgram するプロセスから有効になる (実行中のプロセスには影響しない) */
+  setPythonCommand(command: string | undefined): void {
+    this.pythonCommandOverride = command;
+  }
+
+  /** 実行中の接続にも即座に反映する。次に生成するクライアントの既定値としても使う。 */
+  setTcpTimeout(ms: number): void {
+    this.timeoutMs = ms;
+    for (const slot of this.slots) {
+      slot.tcp?.updateTimeout(ms);
+    }
   }
 
   allReady(): boolean {
@@ -153,7 +161,7 @@ export class SlotManager extends EventEmitter {
   buildClients(): [BaseClient, BaseClient] {
     return this.slots.map((slot, i) => {
       if (slot.type === 'cpu') {
-        const com = new ComClient();
+        const com = new ComClient(i as 0 | 1);
         com.startup();
         return com;
       }
@@ -164,7 +172,7 @@ export class SlotManager extends EventEmitter {
         return mc;
       }
       return slot.tcp!;
-    }) as [BaseClient, BaseClient];
+    }) as unknown as [BaseClient, BaseClient];
   }
 
   /** 両スロットの listening を順番に (再) 開始する */
@@ -199,12 +207,13 @@ export class SlotManager extends EventEmitter {
     }
     if (info.type !== 'tcp' && info.type !== 'process') return;
 
-    const tcp = info.type === 'process' ? new ProcessClient() : new TcpClient();
+    const tcp = info.type === 'process' ? new ProcessClient(this.timeoutMs) : new TcpClient(this.timeoutMs);
     info.tcp = tcp;
 
     try {
       await tcp.listen(info.port);
     } catch (e) {
+      if (info.tcp !== tcp) return; // listen() 待ち中に setClientType 等で型が切り替わっていたら無視する
       const msg = (e as Error).message;
       console.error(`[slot ${slot}] listen failed on port ${info.port}:`, msg);
       info.state = 'waiting';
@@ -213,6 +222,7 @@ export class SlotManager extends EventEmitter {
       return;
     }
 
+    if (info.tcp !== tcp) return; // listen() 待ち中に setClientType 等で型が切り替わっていたら無視する
     console.log(`[slot ${slot}] listening on port ${info.port}`);
     info.state = 'waiting';
     info.error = undefined;
@@ -240,7 +250,7 @@ export class SlotManager extends EventEmitter {
   private async spawnProgram(slot: 0 | 1, tcp: ProcessClient, cfg: NonNullable<SlotInfo['processConfig']>): Promise<void> {
     const info = this.slots[slot];
     try {
-      await tcp.startProgram(info.port, cfg.programType, cfg.programPath, cfg.runtimeCommand, cfg.libPath);
+      await tcp.startProgram(info.port, cfg.programType, cfg.programPath, cfg.runtimeCommand, cfg.libPath, this.pythonCommandOverride);
       if (info.tcp !== tcp) return;
       info.state = 'ready';
       info.name  = tcp.name;

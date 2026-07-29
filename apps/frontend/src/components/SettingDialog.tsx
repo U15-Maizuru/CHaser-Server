@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { AppSettings } from '../hooks/useSettings';
 import {
   BG_ROOT, BG_CARD, BORDER_COLOR, COOL_COLOR,
@@ -8,22 +8,38 @@ import {
 } from '../styles/tokens';
 
 interface Props {
-  settings: AppSettings;
-  onSave:   (patch: Partial<AppSettings>) => void;
-  onClose:  () => void;
+  settings:      AppSettings;
+  darkMode:      boolean;
+  httpBase:      string;
+  onSave:        (patch: Partial<AppSettings>) => void;
+  onSetDarkMode: (enabled: boolean) => void;
+  onUploadMusic: (file: File) => Promise<void>;
+  onClose:       () => void;
 }
 
 const THEMES = ['Jewel', 'Light', 'Heavy', 'RPG'] as const;
 
-export function SettingDialog({ settings, onSave, onClose }: Props) {
-  const [tab, setTab]       = useState<'game' | 'map'>('game');
-  const [draft, setDraft]   = useState<AppSettings>({ ...settings });
+export function SettingDialog({ settings, darkMode, httpBase, onSave, onSetDarkMode, onUploadMusic, onClose }: Props) {
+  const [tab, setTab]             = useState<'game' | 'map' | 'bgm' | 'env'>('game');
+  const [draft, setDraft]         = useState<AppSettings>({ ...settings });
+  const [draftDarkMode, setDraftDarkMode] = useState(darkMode);
+  const [musicFiles, setMusicFiles] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${httpBase}/api/music`)
+      .then(res => res.json() as Promise<{ files: string[] }>)
+      .then(({ files }) => { if (!cancelled) setMusicFiles(files); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [httpBase]);
 
   const set = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) =>
     setDraft(d => ({ ...d, [key]: value }));
 
   const handleSave = () => {
     onSave(draft);
+    onSetDarkMode(draftDarkMode);
     onClose();
   };
 
@@ -40,6 +56,10 @@ export function SettingDialog({ settings, onSave, onClose }: Props) {
         <div style={s.tabs}>
           <TabBtn active={tab === 'game'} onClick={() => setTab('game')}>ゲーム</TabBtn>
           <TabBtn active={tab === 'map'}  onClick={() => setTab('map')}>ランダムマップ</TabBtn>
+          <TabBtn active={tab === 'bgm'}  onClick={() => setTab('bgm')}>BGM</TabBtn>
+          {window.electronAPI && (
+            <TabBtn active={tab === 'env'} onClick={() => setTab('env')}>環境</TabBtn>
+          )}
         </div>
 
         {/* コンテンツ */}
@@ -90,6 +110,30 @@ export function SettingDialog({ settings, onSave, onClose }: Props) {
                     style={s.check}
                   />
                 </Row>
+                <Row label="リピートモード (終了後、接続を保ったまま再戦)">
+                  <input
+                    type="checkbox"
+                    checked={draft.repeatMode}
+                    onChange={e => set('repeatMode', e.target.checked)}
+                    style={s.check}
+                  />
+                </Row>
+                <Row label="デモモード (無人自動進行)">
+                  <input
+                    type="checkbox"
+                    checked={draft.demoMode}
+                    onChange={e => set('demoMode', e.target.checked)}
+                    style={s.check}
+                  />
+                </Row>
+                <Row label="ダークモード (視界のみ表示)">
+                  <input
+                    type="checkbox"
+                    checked={draftDarkMode}
+                    onChange={e => setDraftDarkMode(e.target.checked)}
+                    style={s.check}
+                  />
+                </Row>
               </tbody>
             </table>
           )}
@@ -128,6 +172,84 @@ export function SettingDialog({ settings, onSave, onClose }: Props) {
                     onChange={e => set('mirror', e.target.checked)}
                     style={s.check}
                   />
+                </Row>
+              </tbody>
+            </table>
+          )}
+
+          {tab === 'bgm' && (
+            <table style={s.table}>
+              <tbody>
+                <Row label="再生する BGM">
+                  <select
+                    value={draft.bgmTrack}
+                    onChange={e => set('bgmTrack', e.target.value)}
+                    style={s.select}
+                  >
+                    <option value="none">なし</option>
+                    {musicFiles.map(f => (
+                      <option key={f} value={f}>{f}</option>
+                    ))}
+                  </select>
+                </Row>
+                <Row label="BGM ミュート">
+                  <input
+                    type="checkbox"
+                    checked={draft.bgmMuted}
+                    onChange={e => set('bgmMuted', e.target.checked)}
+                    style={s.check}
+                  />
+                </Row>
+                <Row label="BGM ファイルを追加 (mp3/wav)">
+                  <input
+                    type="file"
+                    accept=".mp3,.wav"
+                    onChange={async e => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      await onUploadMusic(file);
+                      const res = await fetch(`${httpBase}/api/music`);
+                      const { files } = await res.json() as { files: string[] };
+                      setMusicFiles(files);
+                      e.target.value = '';
+                    }}
+                    style={s.select}
+                  />
+                </Row>
+              </tbody>
+            </table>
+          )}
+
+          {tab === 'env' && (
+            <table style={s.table}>
+              <tbody>
+                <Row label="ログ保存先">
+                  <div style={s.pathRow}>
+                    <span style={s.pathText} title={draft.logDir}>{draft.logDir || '(既定のまま)'}</span>
+                    <button
+                      style={s.pathBtn}
+                      onClick={async () => {
+                        const dir = await window.electronAPI?.openDirectory();
+                        if (dir) set('logDir', dir);
+                      }}
+                    >
+                      選択
+                    </button>
+                  </div>
+                </Row>
+                <Row label="Python コマンド">
+                  <div style={s.pathRow}>
+                    <span style={s.pathText} title={draft.pythonCommand}>{draft.pythonCommand || '(既定のまま)'}</span>
+                    <button
+                      style={s.pathBtn}
+                      onClick={async () => {
+                        const exe = await window.electronAPI?.openPythonExe();
+                        if (exe) set('pythonCommand', exe);
+                      }}
+                    >
+                      選択
+                    </button>
+                  </div>
                 </Row>
               </tbody>
             </table>
@@ -201,6 +323,15 @@ const s: Record<string, React.CSSProperties> = {
     border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM, color: TEXT_PRIMARY, fontSize: 13,
   },
   check: { width: 16, height: 16, cursor: 'pointer', accentColor: COOL_COLOR },
+  pathRow: { display: 'flex', alignItems: 'center', gap: 6 },
+  pathText: {
+    flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+    fontSize: 11, color: TEXT_SECONDARY, fontFamily: FONT_NUM,
+  },
+  pathBtn: {
+    padding: '4px 12px', border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM,
+    background: BG_ROOT, color: TEXT_PRIMARY, fontSize: 11, cursor: 'pointer', flexShrink: 0,
+  },
   footer: {
     display: 'flex', justifyContent: 'flex-end', gap: 8,
     padding: '14px 20px', borderTop: `1px solid ${BORDER_COLOR}`,

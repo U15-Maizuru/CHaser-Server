@@ -3,6 +3,9 @@
 
 export interface Point { x: number; y: number }
 
+// 試合開始時のカウントダウン秒数 (フロント表示・バックエンドのターン開始待機の両方で使う単一情報源)
+export const START_COUNTDOWN_SECONDS = 3;
+
 // Protocol enums (values must match the game engine integers)
 export enum MapObject {
   NOTHING = 0,
@@ -64,10 +67,15 @@ export interface RoundResult {
   round:          0 | 1;
   winner:         Winner;
   reason:         Reason;
-  scores:         [number, number];  // [cool_score, hot_score]
+  /** 各チームの取得アイテム数 (COOL, HOT の順) */
+  scores:         [number, number];
   remainingTurns: number;
-  points:         [number, number];  // 計算後ポイント [cool_pt, hot_pt]
-  playerNames:    [string, string];  // ラウンド開始時のプレイヤー名
+  /** 「一撃」— 反則負け(自縛/衝突/通信エラー)の場合のみ、敗者に -3×自スコアの罰点 (それ以外は0) */
+  strikeBonus:    [number, number];
+  /** 「総取り」— 勝者に、決着時点の残アイテム数×7 のボーナス */
+  sweepBonus:     [number, number];
+  /** ラウンド開始時のプレイヤー名 */
+  playerNames:    [string, string];
 }
 
 // --- Server lifecycle ---
@@ -90,8 +98,11 @@ export interface ServerStatusPayload {
   localIP:      string;
   clients:      [ClientStatusPayload, ClientStatusPayload];
   doubleMode:   boolean;
+  repeatMode:   boolean;
+  demoMode:     boolean;
   currentRound: 0 | 1;
   roundResults: RoundResult[];
+  darkMode:     boolean;
 }
 
 // --- Commands (Frontend → Backend) ---
@@ -126,8 +137,15 @@ export type FrontendMessage =
   | { type: 'set_map_params';    payload: MapParams }
   | { type: 'load_map_data';     payload: InlineMapData }
   | { type: 'set_double_mode';   payload: { enabled: boolean } }
+  | { type: 'set_repeat_mode';   payload: { enabled: boolean } }
+  | { type: 'set_demo_mode';     payload: { enabled: boolean } }
   | { type: 'set_turn_delay';    payload: { ms: number } }
+  | { type: 'set_tcp_timeout';   payload: { ms: number } }
+  | { type: 'set_log_dir';       payload: { dir: string } }
+  | { type: 'set_python_command'; payload: { command: string } }
   | { type: 'request_next_round' }
+  | { type: 'request_repeat' }
+  | { type: 'set_dark_mode';     payload: { enabled: boolean } }
   | { type: 'manual_action';     payload: { slot: 0 | 1; action: number; rote: number } }
   | { type: 'create_room' }
   | { type: 'join_room';         payload: { roomId: string } }

@@ -1,9 +1,20 @@
 import { BaseClient } from '../network/BaseClient.js';
-import { Action, type AroundData, type Method, Rote, Team } from '../game/types.js';
+import { Action, type AroundData, MapObject, type Method, Rote, Team } from '../game/types.js';
+
+// getAroundData (GameLogic.ts) の並び: 0=NW,1=N,2=NE,3=W,4=自分,5=E,6=SW,7=S,8=SE
+const DIRS = [
+  { rote: Rote.UP,    idx: 1 },
+  { rote: Rote.DOWN,  idx: 7 },
+  { rote: Rote.RIGHT, idx: 5 },
+  { rote: Rote.LEFT,  idx: 3 },
+] as const;
 
 export class ComClient extends BaseClient {
-  constructor() {
+  private readonly team: Team;
+
+  constructor(slot: 0 | 1) {
     super();
+    this.team = slot === 0 ? Team.COOL : Team.HOT;
     this.name = 'CPU';
     this.ip = 'ローカル';
   }
@@ -17,8 +28,12 @@ export class ComClient extends BaseClient {
     return true;
   }
 
-  async waitReturnMethod(_around: AroundData): Promise<Method> {
-    return { team: Team.UNKNOWN, action: Action.SEARCH, rote: Rote.UP };
+  async waitReturnMethod(around: AroundData): Promise<Method> {
+    const walkable = DIRS.filter(d => around.data[d.idx] !== MapObject.BLOCK);
+    const toItem   = walkable.find(d => around.data[d.idx] === MapObject.ITEM);
+    const choice    = toItem ?? walkable[Math.floor(Math.random() * walkable.length)];
+
+    return { team: this.team, action: Action.WALK, rote: choice?.rote ?? Rote.UP };
   }
 
   async waitEndSharp(_around: AroundData): Promise<boolean> {

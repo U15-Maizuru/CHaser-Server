@@ -13,4 +13,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   openProgramFile: (): Promise<string | null> =>
     ipcRenderer.invoke('dialog:openProgramFile'),
+
+  openDirectory: (): Promise<string | null> =>
+    ipcRenderer.invoke('dialog:openDirectory'),
+
+  openPythonExe: (): Promise<string | null> =>
+    ipcRenderer.invoke('dialog:openPythonExe'),
+
+  toggleDisplayFullscreen: (): Promise<boolean> =>
+    ipcRenderer.invoke('display:toggleFullscreen'),
+
+  openManualWindow: (slot: 0 | 1): Promise<void> =>
+    ipcRenderer.invoke('manual:openWindow', slot),
 });

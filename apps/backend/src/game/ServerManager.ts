@@ -1,12 +1,15 @@
 import { EventEmitter } from 'node:events';
 import os from 'node:os';
+import fs from 'node:fs';
+import path from 'node:path';
 import { GameSession } from './Game.js';
 import { StableLog } from '../log/StableLog.js';
-import { calculatePoints } from './GameLogic.js';
+import { calculateBonusBreakdown } from './GameLogic.js';
+import type { GameStatus } from './types.js';
 import { SlotManager } from './SlotManager.js';
 import { MapManager } from './MapManager.js';
 import { RoundController } from './RoundController.js';
-import { Winner } from '@u15/ws-types';
+import { START_COUNTDOWN_SECONDS, Winner } from '@u15/ws-types';
 import type { ManualClient } from '../clients/ManualClient.js';
 import type {
   ClientType,
@@ -18,6 +21,14 @@ import type {
   Reason,
 } from '@u15/ws-types';
 
+// デモモード (無人自動進行) で、各フェーズ完了から次の操作を自動実行するまでの待機時間
+export interface DemoDelaysMs {
+  start:     number; // setup 完了 → 自動 requestStart
+  nextRound: number; // 2試合制: 1試合目終了 → 自動 requestNextRound
+  repeat:    number; // 最終戦終了 (repeatMode 併用時) → 自動 requestRepeat
+}
+const DEFAULT_DEMO_DELAYS_MS: DemoDelaysMs = { start: 3_000, nextRound: 5_000, repeat: 10_000 };
+
 // Events emitted:
 //   'status'          (payload: ServerStatusPayload)
 //   'session_created' (session: GameSession, playerNames: [string, string])
@@ -27,15 +38,29 @@ export class ServerManager extends EventEmitter {
   private readonly mapManager: MapManager;
   private readonly round: RoundController;
   private readonly localIP: string;
+  private readonly startDelayMs: number;
+  private readonly demoDelaysMs: DemoDelaysMs;
+  private darkMode = false;
+  private demoTimer: ReturnType<typeof setTimeout> | null = null;
+  private logDir = '.';
 
-  constructor(ports: [number, number] = [12031, 12032]) {
+  constructor(
+    ports: [number, number] = [12031, 12032],
+    startDelayMs = START_COUNTDOWN_SECONDS * 1000,
+    demoDelaysMs: DemoDelaysMs = DEFAULT_DEMO_DELAYS_MS,
+  ) {
     super();
     this.localIP   = getLocalIP();
+    this.startDelayMs = startDelayMs;
+    this.demoDelaysMs = demoDelaysMs;
     this.slots     = new SlotManager(ports);
     this.mapManager = new MapManager();
     this.round     = new RoundController();
 
-    this.slots.on('change', () => this.emitStatus());
+    this.slots.on('change', () => {
+      this.emitStatus();
+      this.maybeAutoStartDemo();
+    });
     this.slots.on('manual_client_created', (mc: ManualClient) => this.emit('manual_client_created', mc));
   }
 
@@ -57,8 +82,50 @@ export class ServerManager extends EventEmitter {
     this.emitStatus();
   }
 
+  setRepeatMode(enabled: boolean): void {
+    if (!this.round.canStart()) return; // setup フェーズ以外は変更不可
+    this.round.setRepeatMode(enabled);
+    this.emitStatus();
+  }
+
+  setDemoMode(enabled: boolean): void {
+    if (!this.round.canStart()) return; // setup フェーズ以外は変更不可
+    this.round.setDemoMode(enabled);
+    if (!enabled) this.clearDemoTimer();
+    this.emitStatus();
+  }
+
+  setDarkMode(enabled: boolean): void {
+    this.darkMode = enabled;
+    this.emitStatus();
+  }
+
   setTurnDelay(ms: number): void {
     this.round.setTurnDelay(ms);
+  }
+
+  setTcpTimeout(ms: number): void {
+    this.slots.setTcpTimeout(Math.max(1000, Math.min(60000, ms)));
+  }
+
+  /**
+   * ログ保存先・Pythonコマンドの上書きはローカルの Electron アプリからのみ許可する。
+   * U15_MODE=web (ブラウザから誰でもルームを作成できる公開モード) では、リモートの
+   * クライアントがサーバー上の任意パスへの書き込み・任意コマンドの実行経路に触れる
+   * ことになるため、常に無視する。
+   */
+  private isLocalMode(): boolean {
+    return (process.env['U15_MODE'] ?? 'local') === 'local';
+  }
+
+  setLogDir(dir: string): void {
+    if (!this.isLocalMode()) return;
+    this.logDir = dir;
+  }
+
+  setPythonCommand(command: string): void {
+    if (!this.isLocalMode()) return;
+    this.slots.setPythonCommand(command || undefined);
   }
 
   loadMap(filePath: string): void {
@@ -88,15 +155,14 @@ export class ServerManager extends EventEmitter {
 
     this.emit('session_created', session, playerNames);
 
-    const log    = new StableLog('game.log');
-    const result = await session.run(clients, this.mapManager.map, log, this.round.turnDelayMs);
+    const log    = new StableLog(this.buildLogFilePath());
+    const result = await session.run(clients, this.mapManager.map, log, this.round.turnDelayMs, this.startDelayMs);
     console.log('Game finished:', result.status);
 
     // ラウンド結果を記録
     const roundResult = buildRoundResult(
       this.round.currentRound,
-      result.status.winner as unknown as Winner,
-      result.status.reason as unknown as Reason,
+      result.status,
       result.state.teamScore,
       result.state.turnCount,
       result.state.leaveItems,
@@ -110,6 +176,7 @@ export class ServerManager extends EventEmitter {
     }
     this.round.advanceAfterRound();
     this.emitStatus();
+    this.maybeAutoAdvanceDemo();
   }
 
   async requestNextRound(): Promise<void> {
@@ -122,7 +189,21 @@ export class ServerManager extends EventEmitter {
     await this.slots.startListeningBoth();
   }
 
+  /** リピートモード: 接続 (processConfig) は維持したまま COOL/HOT を入れ替えて新しい対戦を始める */
+  async requestRepeat(): Promise<void> {
+    if (!this.round.canRepeat()) return;
+
+    this.slots.swapSlotConfigs();
+    this.slots.resetForNextRound();
+    this.mapManager.regenerate();
+    this.round.resetForNewGame();
+
+    await this.slots.startListeningBoth();
+    this.emitStatus();
+  }
+
   async requestReset(): Promise<void> {
+    this.clearDemoTimer();
     this.slots.resetAllToDefault();
     this.mapManager.regenerate();
     this.round.resetForNewGame();
@@ -132,6 +213,7 @@ export class ServerManager extends EventEmitter {
   }
 
   shutdown(): void {
+    this.clearDemoTimer();
     this.slots.shutdown();
   }
 
@@ -141,8 +223,11 @@ export class ServerManager extends EventEmitter {
       localIP:      this.localIP,
       clients:      this.slots.getStatuses(),
       doubleMode:   this.round.doubleMode,
+      repeatMode:   this.round.repeatMode,
+      demoMode:     this.round.demoMode,
       currentRound: this.round.currentRound,
       roundResults: this.round.roundResults,
+      darkMode:     this.darkMode,
     };
   }
 
@@ -151,21 +236,72 @@ export class ServerManager extends EventEmitter {
   private emitStatus(): void {
     this.emit('status', this.getStatus());
   }
+
+  /** デモモード: setup で両スロットが ready になったら自動的に対戦を開始する */
+  private maybeAutoStartDemo(): void {
+    if (!this.round.demoMode) return;
+    if (!this.round.canStart()) return;
+    if (!this.slots.allReady()) return;
+    if (this.demoTimer) return; // 既に予約済み
+
+    this.demoTimer = setTimeout(() => {
+      this.demoTimer = null;
+      void this.requestStart();
+    }, this.demoDelaysMs.start);
+  }
+
+  /** デモモード: 対戦終了後、次戦 (2試合制) またはリピートへ自動的に進める */
+  private maybeAutoAdvanceDemo(): void {
+    if (!this.round.demoMode) return;
+    if (this.demoTimer) return; // 既に予約済み
+
+    if (this.round.canGoNextRound()) {
+      this.demoTimer = setTimeout(() => {
+        this.demoTimer = null;
+        void this.requestNextRound();
+      }, this.demoDelaysMs.nextRound);
+    } else if (this.round.canRepeat()) {
+      this.demoTimer = setTimeout(() => {
+        this.demoTimer = null;
+        void this.requestRepeat();
+      }, this.demoDelaysMs.repeat);
+    }
+  }
+
+  /** 試合ごとに一意なログファイルパスを組み立てる (日時+ラウンド番号)。保存先ディレクトリも用意する。 */
+  private buildLogFilePath(): string {
+    fs.mkdirSync(this.logDir, { recursive: true });
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    return path.join(this.logDir, `game-${timestamp}-round${this.round.currentRound}.log`);
+  }
+
+  private clearDemoTimer(): void {
+    if (this.demoTimer) {
+      clearTimeout(this.demoTimer);
+      this.demoTimer = null;
+    }
+  }
 }
 
 function buildRoundResult(
   round:          0 | 1,
-  winner:         Winner,
-  reason:         Reason,
+  status:         GameStatus,
   scores:         [number, number],
   remainingTurns: number,
   leaveItems:     number,
   playerNames:    [string, string],
 ): RoundResult {
-  const allItemsTaken = leaveItems === 0;
-  const pt0 = calculatePoints(scores[0], remainingTurns, winner === Winner.COOL, allItemsTaken);
-  const pt1 = calculatePoints(scores[1], remainingTurns, winner === Winner.HOT,  allItemsTaken);
-  return { round, winner, reason, scores, remainingTurns, points: [pt0, pt1], playerNames };
+  const { strikeBonus, sweepBonus } = calculateBonusBreakdown(status, scores, leaveItems);
+  return {
+    round,
+    winner: status.winner,
+    reason: status.reason,
+    scores,
+    remainingTurns,
+    strikeBonus,
+    sweepBonus,
+    playerNames,
+  };
 }
 
 function getLocalIP(): string {

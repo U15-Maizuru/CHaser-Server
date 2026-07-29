@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import type { ServerStatusPayload } from '@u15/ws-types';
 import {
   BG_CARD,
   COOL_COLOR, COOL_LIGHT, COOL_PALE, COOL_DARK,
@@ -21,24 +20,19 @@ const ROTE_RIGHT = 2;
 const ROTE_LEFT  = 3;
 
 interface Props {
-  serverStatus:  ServerStatusPayload | null;
+  slot:          0 | 1;
   manualRequest: { slot: 0 | 1; aroundData: number[] } | null;
   onAction:      (slot: 0 | 1, action: number, rote: number) => void;
 }
 
-export function ManualControls({ serverStatus, manualRequest, onAction }: Props) {
+export function ManualControls({ slot, manualRequest, onAction }: Props) {
   const [selectedAction, setSelectedAction] = useState(ACTION_WALK);
 
-  const manualSlots = (serverStatus?.clients ?? [])
-    .map((c, i) => ({ slot: i as 0 | 1, type: c.type }))
-    .filter(x => x.type === 'manual');
-
-  const activeSlot = manualRequest?.slot ?? manualSlots[0]?.slot ?? 0;
-  const isWaiting  = manualRequest !== null;
+  const isWaiting  = manualRequest?.slot === slot;
 
   const send = (rote: number) => {
     if (!isWaiting) return;
-    onAction(activeSlot, selectedAction, rote);
+    onAction(slot, selectedAction, rote);
   };
 
   useEffect(() => {
@@ -52,15 +46,13 @@ export function ManualControls({ serverStatus, manualRequest, onAction }: Props)
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isWaiting, selectedAction, activeSlot]);
+  }, [isWaiting, selectedAction, slot]);
 
-  if (manualSlots.length === 0) return null;
-
-  const base  = activeSlot === 0 ? COOL_COLOR : HOT_COLOR;
-  const light = activeSlot === 0 ? COOL_LIGHT : HOT_LIGHT;
-  const pale  = activeSlot === 0 ? COOL_PALE  : HOT_PALE;
-  const dark  = activeSlot === 0 ? COOL_DARK  : HOT_DARK;
-  const label = activeSlot === 0 ? 'COOL' : 'HOT';
+  const base  = slot === 0 ? COOL_COLOR : HOT_COLOR;
+  const light = slot === 0 ? COOL_LIGHT : HOT_LIGHT;
+  const pale  = slot === 0 ? COOL_PALE  : HOT_PALE;
+  const dark  = slot === 0 ? COOL_DARK  : HOT_DARK;
+  const label = slot === 0 ? 'COOL' : 'HOT';
 
   return (
     <>

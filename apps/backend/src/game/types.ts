@@ -12,18 +12,9 @@ export enum Team {
   UNKNOWN = 2,
 }
 
-export enum Cause {
-  NOGETREADY,
-  RESEND,
-  UNKNOWNACTION,
-  UNKNOWNROTE,
-  NONE,
-}
-
 export interface GameStatus {
   winner: Winner;
   reason: Reason;
-  cause:  Cause;
 }
 
 export enum ConnectingStatus {

@@ -51,7 +51,6 @@ export function StartupDialog({
               : `第${(status.currentRound ?? 0) + 1}試合`}
           </div>
         )}
-        <button style={s.settingsBtn} onClick={onOpenSettings} title="設定">⚙</button>
       </div>
 
       {/* Two-column team panels */}
@@ -79,6 +78,7 @@ export function StartupDialog({
         onStart={onStart}
         onLoadMap={onLoadMap}
         onOpenEditor={onOpenEditor}
+        onOpenSettings={onOpenSettings}
       />
     </div>
   );
@@ -115,15 +115,6 @@ const s: Record<string, React.CSSProperties> = {
   },
   ipLabel: { fontSize: 10, color: TEXT_MUTED, letterSpacing: 1 },
   ipValue: { fontSize: 14, fontWeight: 700, fontFamily: FONT_NUM, letterSpacing: 1, color: TEXT_PRIMARY },
-  settingsBtn: {
-    marginLeft: 'auto',
-    background: 'none',
-    border: 'none',
-    color: TEXT_MUTED,
-    fontSize: 18,
-    cursor: 'pointer',
-    padding: '0 4px',
-  },
   roundBadge: {
     fontSize: 11,
     fontWeight: 700,

@@ -68,6 +68,20 @@ describe('TcpClient', () => {
     sock.destroy();
   });
 
+  it('updateTimeout — 接続済みクライアントにも新しいタイムアウト値が反映される', async () => {
+    const connectPromise = server.waitForClient();
+    const sock = await connectClient(TEST_PORT);
+    sock.write('Team\n');
+    await connectPromise;
+
+    server.updateTimeout(50);
+    const start = Date.now();
+    const result = await server.waitGetReady(); // no response → 50ms でタイムアウトするはず
+    expect(result).toBe(false);
+    expect(Date.now() - start).toBeLessThan(500);
+    sock.destroy();
+  });
+
   it('waitReturnMethod — wu を受け取り WALK+UP を返す', async () => {
     const connectPromise = server.waitForClient();
     const sock = await connectClient(TEST_PORT);

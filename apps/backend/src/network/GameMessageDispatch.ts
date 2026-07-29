@@ -46,8 +46,30 @@ export class GameMessageDispatch {
       case 'set_double_mode':
         manager.setDoubleMode(msg.payload.enabled);
         break;
+      case 'set_repeat_mode':
+        manager.setRepeatMode(msg.payload.enabled);
+        break;
+      case 'set_demo_mode':
+        manager.setDemoMode(msg.payload.enabled);
+        break;
+      case 'request_repeat':
+        this.deps.getRoomManualClients(roomId)?.clear();
+        manager.requestRepeat().catch((e) => this.deps.sendError(ws, `リピート開始に失敗しました: ${(e as Error).message}`));
+        break;
+      case 'set_dark_mode':
+        manager.setDarkMode(msg.payload.enabled);
+        break;
       case 'set_turn_delay':
         manager.setTurnDelay(msg.payload.ms);
+        break;
+      case 'set_tcp_timeout':
+        manager.setTcpTimeout(msg.payload.ms);
+        break;
+      case 'set_log_dir':
+        manager.setLogDir(msg.payload.dir);
+        break;
+      case 'set_python_command':
+        manager.setPythonCommand(msg.payload.command);
         break;
       case 'request_next_round':
         this.deps.getRoomManualClients(roomId)?.clear();

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { type IncomingMessage, type ServerResponse } from 'node:http';
+import type { Readable } from 'node:stream';
 import busboy from 'busboy';
 import type { RoomManager } from '../RoomManager.js';
 
@@ -22,7 +23,9 @@ const FRONTEND_DIST = isDev
         : fs.existsSync(fromRelative) ? fromRelative : null;
     })();
 
-const MAPS_DIR = path.resolve('server/maps');
+const MAPS_DIR  = path.resolve('server/maps');
+const MUSIC_DIR = path.resolve('server/music'); // BGM再生用 (原本の ./Music フォルダに相当)
+const MUSIC_EXTENSIONS = ['.mp3', '.wav'];
 
 function roomDirs(roomId: string) {
   return {
@@ -35,6 +38,7 @@ function roomDirs(roomId: string) {
 
 export function ensureDirectories(): void {
   fs.mkdirSync(MAPS_DIR, { recursive: true });
+  fs.mkdirSync(MUSIC_DIR, { recursive: true });
 }
 
 export function handleHttpRequest(
@@ -120,6 +124,38 @@ export function handleHttpRequest(
     return;
   }
 
+  // POST /api/upload/music (BGM はグローバル共有)
+  if (req.method === 'POST' && url.pathname === '/api/upload/music') {
+    fs.mkdirSync(MUSIC_DIR, { recursive: true });
+    handleUpload(req, res, MUSIC_DIR, MUSIC_EXTENSIONS, 10 * 1024 * 1024);
+    return;
+  }
+
+  // GET /api/music → 利用可能な BGM ファイル一覧
+  if (req.method === 'GET' && url.pathname === '/api/music') {
+    const files = fs.existsSync(MUSIC_DIR)
+      ? fs.readdirSync(MUSIC_DIR).filter(f => MUSIC_EXTENSIONS.includes(path.extname(f).toLowerCase()))
+      : [];
+    json(res, 200, { files });
+    return;
+  }
+
+  // GET /api/music/:filename → BGM ファイルの再生用ストリーム
+  const musicMatch = url.pathname.match(/^\/api\/music\/(.+)$/);
+  if (req.method === 'GET' && musicMatch) {
+    const filename = sanitizeFilename(decodeURIComponent(musicMatch[1]));
+    const filepath = path.join(MUSIC_DIR, filename);
+    if (!filename || !fs.existsSync(filepath)) {
+      res.writeHead(404);
+      res.end('Not found');
+      return;
+    }
+    const ext = path.extname(filepath).toLowerCase();
+    res.writeHead(200, { 'Content-Type': ext === '.wav' ? 'audio/wav' : 'audio/mpeg' });
+    fs.createReadStream(filepath).pipe(res);
+    return;
+  }
+
   // 本番: フロントエンド静的ファイル配信 (SPA フォールバック付き)
   if (FRONTEND_DIST && req.method === 'GET') {
     serveStatic(req, res, FRONTEND_DIST);
@@ -161,6 +197,13 @@ function serveStatic(req: IncomingMessage, res: ServerResponse, distDir: string)
   fs.createReadStream(filePath).pipe(res);
 }
 
+/** アップロードを中断し、残りのリクエストボディを読み捨てる (busboy への書き込みを止めて未捕捉例外を防ぐ) */
+function abortUpload(req: IncomingMessage, bb: ReturnType<typeof busboy>, stream: Readable): void {
+  stream.resume();
+  req.unpipe(bb);
+  req.resume();
+}
+
 function handleUpload(
   req:      IncomingMessage,
   res:      ServerResponse,
@@ -183,9 +226,7 @@ function handleUpload(
     fileSeen = true;
     const ext = path.extname(info.filename).toLowerCase();
     if (!allowed.includes(ext)) {
-      stream.resume();
-      req.unpipe(bb);
-      req.resume(); // 残りのリクエストボディを読み捨てる (busboy への書き込みを止めて未捕捉例外を防ぐ)
+      abortUpload(req, bb, stream);
       badRequest(res, `許可されていない拡張子です (${allowed.join(', ')} のみ)`);
       return;
     }
@@ -202,9 +243,7 @@ function handleUpload(
       stream.unpipe(out);
       out.destroy();
       fs.unlink(outPath, () => {});
-      stream.resume();
-      req.unpipe(bb);
-      req.resume(); // 残りのリクエストボディを読み捨てる (busboy への書き込みを止めて未捕捉例外を防ぐ)
+      abortUpload(req, bb, stream);
       json(res, 413, { error: `ファイルサイズが上限 (${maxBytes / 1024}KB) を超えています` });
     });
     out.on('close', () => {

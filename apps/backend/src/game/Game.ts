@@ -28,6 +28,7 @@ export class GameSession extends EventEmitter {
     map:          GameMap,
     log?:         StableLog,
     turnDelayMs = 0,
+    startDelayMs = 0,
   ): Promise<GameResult> {
     let state: GameState = {
       map,
@@ -40,6 +41,9 @@ export class GameSession extends EventEmitter {
 
     // Broadcast initial state
     this.emit('stateUpdate', state);
+
+    // 開始カウントダウン演出 (フロント) と同じ時間だけ、実際のターン処理開始を待つ
+    if (startDelayMs > 0) await sleep(startDelayMs);
 
     while (state.turnCount > 0) {
       for (let player = 0; player < TEAM_COUNT; player++) {
@@ -86,11 +90,7 @@ export class GameSession extends EventEmitter {
         // Judge after GetReady phase
         let status = judgeGame(state, player);
         if (status.winner !== Winner.CONTINUE) {
-          log?.write(formatResult(status) + '\r\n');
-          await notifyOtherPlayer(clients, state, player);
-          const result: GameResult = { status, state };
-          this.emit('gameEnd', result);
-          return result;
+          return await this.finishGame(status, state, player, clients, log);
         }
 
         // ====== EndSharp phase: send updated around, wait # ======
@@ -106,11 +106,7 @@ export class GameSession extends EventEmitter {
         // Judge after EndSharp phase
         status = judgeGame(state, player);
         if (status.winner !== Winner.CONTINUE) {
-          log?.write(formatResult(status) + '\r\n');
-          await notifyOtherPlayer(clients, state, player);
-          const result: GameResult = { status, state };
-          this.emit('gameEnd', result);
-          return result;
+          return await this.finishGame(status, state, player, clients, log);
         }
       }
 
@@ -121,6 +117,21 @@ export class GameSession extends EventEmitter {
     // Turn 0: score judgment
     const status = judgeGame({ ...state, turnCount: 0 }, TEAM_COUNT - 1);
     log?.write(formatResult(status) + '\r\n');
+    const result: GameResult = { status, state };
+    this.emit('gameEnd', result);
+    return result;
+  }
+
+  /** ターン処理の途中で決着した場合の共通の終了処理: ログ出力・相手プレイヤーへの決着通知・gameEnd 通知 */
+  private async finishGame(
+    status:  GameStatus,
+    state:   GameState,
+    player:  number,
+    clients: [BaseClient, BaseClient],
+    log?:    StableLog,
+  ): Promise<GameResult> {
+    log?.write(formatResult(status) + '\r\n');
+    await notifyOtherPlayer(clients, state, player);
     const result: GameResult = { status, state };
     this.emit('gameEnd', result);
     return result;

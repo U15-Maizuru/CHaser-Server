@@ -93,10 +93,12 @@ function checkBlockRole(pos: Point, map: GameMap): boolean {
   // 外周禁止
   if (pos.x === 0 || pos.x === map.size.x - 1 || pos.y === 0 || pos.y === map.size.y - 1)
     return false;
-  // Search終点禁止
   for (let i = 0; i < TEAM_COUNT; i++) {
     const fp = map.teamFirstPoint[i];
+    // Search終点禁止
     if ((pos.x === fp.x && Math.abs(pos.y - fp.y) === 9)) return false;
+    // スポーン地点自身+隣接4マス禁止 (開始直後の「囲まれ」判定を構造的に防ぐ)
+    if (Math.abs(pos.x - fp.x) + Math.abs(pos.y - fp.y) <= 1) return false;
   }
   return true;
 }
@@ -116,9 +118,15 @@ export function createRandomMap(
 
   const rand = (n: number) => Math.floor(Math.random() * n);
 
+  // スポーン地点が外周マスだと、getAroundData が範囲外を BLOCK 扱いするため
+  // 開始直後から「囲まれ」判定が成立しうる。外周には配置しない。
+  const isOuterRing = (pos: Point) =>
+    pos.x === 0 || pos.x === size.x - 1 || pos.y === 0 || pos.y === size.y - 1;
+
   // COOL 配置 (盤面左側)
   while (true) {
     const pos: Point = { x: rand(size.x), y: rand(size.y) };
+    if (isOuterRing(pos)) continue;
     if (uniformNorm({ x: pos.x - Math.floor(size.x / 2), y: pos.y - Math.floor(size.y / 2) }) <= 1) continue;
     if (pos.x < Math.floor(size.x / 2) || (pos.x === Math.floor(size.x / 2) && pos.y < Math.floor(size.y / 2))) {
       map.teamFirstPoint[0] = pos;
@@ -131,6 +139,7 @@ export function createRandomMap(
   } else {
     while (true) {
       const pos: Point = { x: rand(size.x), y: rand(size.y) };
+      if (isOuterRing(pos)) continue;
       if (uniformNorm({ x: pos.x - Math.floor(size.x / 2), y: pos.y - Math.floor(size.y / 2) }) <= 1) continue;
       if (pos.x > Math.floor(size.x / 2) || (pos.x === Math.floor(size.x / 2) && pos.y >= Math.floor(size.y / 2))) {
         map.teamFirstPoint[1] = pos;

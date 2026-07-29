@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { GameSession } from '../game/Game.js';
 import { createRandomMap } from '../game/GameSystem.js';
 import { countItems } from '../game/GameLogic.js';
-import { Winner, Reason, Cause } from '../game/types.js';
+import { Winner, Reason } from '../game/types.js';
 import { WsServer } from './WsServer.js';
 import { RoomManager } from '../RoomManager.js';
 import type { WsMessage, LobbyMessage } from '@u15/ws-types';
@@ -195,7 +195,7 @@ describe('WsServer', () => {
     const msgPromise = wait('game_end');
     const map = createRandomMap();
     session.emit('gameEnd', {
-      status: { winner: Winner.COOL, reason: Reason.SCORE, cause: Cause.NONE },
+      status: { winner: Winner.COOL, reason: Reason.SCORE },
       state: {
         map,
         teamPos:        [map.teamFirstPoint[0], map.teamFirstPoint[1]],

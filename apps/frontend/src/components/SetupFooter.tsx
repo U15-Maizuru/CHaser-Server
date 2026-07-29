@@ -1,19 +1,21 @@
 import { BG_CARD, BORDER_COLOR, TEXT_SECONDARY, TEXT_MUTED, WIN_BASE, SHADOW_SM } from '../styles/tokens';
 
 interface Props {
-  allReady:     boolean;
-  onStart:      () => void;
-  onLoadMap:    () => void;
-  onOpenEditor: () => void;
+  allReady:       boolean;
+  onStart:        () => void;
+  onLoadMap:      () => void;
+  onOpenEditor:   () => void;
+  onOpenSettings: () => void;
 }
 
-export function SetupFooter({ allReady, onStart, onLoadMap, onOpenEditor }: Props) {
+export function SetupFooter({ allReady, onStart, onLoadMap, onOpenEditor, onOpenSettings }: Props) {
   return (
     <div style={s.footer}>
       <div style={s.mapControls}>
         <span style={s.mapLabel}>マップ</span>
         <button style={s.btnSecondary} onClick={onLoadMap}>アップロード...</button>
         <button style={s.btnSecondary} onClick={onOpenEditor}>エディタ...</button>
+        <button style={s.btnSecondary} onClick={onOpenSettings}>設定</button>
       </div>
 
       <div style={s.startArea}>

@@ -6,35 +6,53 @@ const isDev = process.env['NODE_ENV'] === 'development';
 
 let backendProcess: ChildProcess | null = null;
 
-function startBackend(appPath: string): void {
+/** dev/パッケージ版それぞれのバックエンド起動設定 (実行ファイル・引数・環境変数・作業ディレクトリ) */
+function getBackendLaunchConfig(appPath: string): {
+  exe: string;
+  args: string[];
+  env: NodeJS.ProcessEnv;
+  cwd: string | undefined;
+} {
   const backendEntry = isDev
     ? path.join(appPath, '../../../apps/backend/src/index.ts')
     : path.join(process.resourcesPath, 'backend/dist/index.js');
 
-  const [exe, args] = isDev
-    ? ['node', [
+  if (isDev) {
+    return {
+      exe: 'node',
+      args: [
         path.join(appPath, '../../../apps/backend/node_modules/tsx/dist/cli.cjs'),
         backendEntry,
-      ]]
-    : [process.execPath, [backendEntry]];
+      ],
+      env: { ...process.env, U15_MODE: 'local' },
+      // ワークスペースルート (プロセスの起動時 cwd) からの相対パス解決を前提にしているため未指定
+      cwd: undefined,
+    };
+  }
 
-  const backendEnv = isDev
-    ? { ...process.env, U15_MODE: 'local' }
-    : {
-        ...process.env,
-        ELECTRON_RUN_AS_NODE: '1',
-        U15_MODE: 'local',
-        U15_PYTHON_EXE: path.join(process.resourcesPath, 'python', 'python.exe'),
-      };
+  return {
+    exe: process.execPath,
+    args: [backendEntry],
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+      U15_MODE: 'local',
+      U15_PYTHON_EXE: path.join(process.resourcesPath, 'python', 'python.exe'),
+    },
+    // インストール済みアプリはショートカット起動時の CWD が不定なため、
+    // ユーザーデータ保存先を明示的に固定する
+    cwd: app.getPath('userData'),
+  };
+}
 
-  console.log('[main] backend entry:', backendEntry);
+function startBackend(appPath: string): void {
+  const { exe, args, env, cwd } = getBackendLaunchConfig(appPath);
+  console.log('[main] backend entry:', args[args.length - 1]);
 
   backendProcess = spawn(exe, args, {
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: backendEnv,
-    // インストール済みアプリはショートカット起動時の CWD が不定なため、
-    // 本番ではユーザーデータ保存先を明示的に固定する（dev は従来通り workspace 相対）。
-    cwd: isDev ? undefined : app.getPath('userData'),
+    env,
+    cwd,
   });
   backendProcess.stdout?.on('data', (d: Buffer) =>
     console.log('[backend]', d.toString().trimEnd()),
@@ -104,8 +122,8 @@ let controlWindow: BrowserWindow | null = null;
 
 function createControlWindow(roomId: string): void {
   controlWindow = new BrowserWindow({
-    width: 820,
-    height: 920,
+    width: 1280,
+    height: 800,
     title: 'U15 Server Maizuru — コントロール',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), ...WEB_PREFS },
   });
@@ -115,6 +133,28 @@ function createControlWindow(roomId: string): void {
     controlWindow = null;
     app.quit();
   });
+}
+
+// ── 手動操作ウィンドウ (COOL / HOT 独立) ────────────────────────────────────
+const manualWindows: [BrowserWindow | null, BrowserWindow | null] = [null, null];
+const MANUAL_LABEL = ['COOL', 'HOT'] as const;
+
+function createManualWindow(roomId: string, slot: 0 | 1): void {
+  const existing = manualWindows[slot];
+  if (existing && !existing.isDestroyed()) {
+    existing.focus();
+    return;
+  }
+
+  const win = new BrowserWindow({
+    width: 360,
+    height: 560,
+    title: `U15 Server Maizuru — 手動操作 (${MANUAL_LABEL[slot]})`,
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), ...WEB_PREFS },
+  });
+  loadUrl(win, `?room=${roomId}&mode=manual&slot=${slot}`);
+  win.on('closed', () => { manualWindows[slot] = null; });
+  manualWindows[slot] = win;
 }
 
 app.whenReady().then(async () => {
@@ -145,11 +185,40 @@ app.whenReady().then(async () => {
     return result.canceled ? null : result.filePaths[0] ?? null;
   });
 
+  ipcMain.handle('dialog:openDirectory', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    return result.canceled ? null : result.filePaths[0] ?? null;
+  });
+
+  ipcMain.handle('dialog:openPythonExe', async () => {
+    const result = await dialog.showOpenDialog({
+      filters: [
+        { name: 'Python 実行ファイル', extensions: ['exe'] },
+        { name: 'All files', extensions: ['*'] },
+      ],
+      properties: ['openFile'],
+    });
+    return result.canceled ? null : result.filePaths[0] ?? null;
+  });
+
+  ipcMain.handle('display:toggleFullscreen', () => {
+    if (!displayWindow) return false;
+    const next = !displayWindow.isFullScreen();
+    displayWindow.setFullScreen(next);
+    return next;
+  });
+
   startBackend(__dirname);
 
   // バックエンドが起動してデフォルトルームが作成されるまで待つ
   const roomId = await fetchDefaultRoom();
   console.log('[main] default room:', roomId);
+
+  ipcMain.handle('manual:openWindow', (_e, slot: 0 | 1) => {
+    createManualWindow(roomId, slot);
+  });
 
   createDisplayWindow(roomId);
   createControlWindow(roomId);

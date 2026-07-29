@@ -4,6 +4,10 @@ U15プログラミングコンテスト舞鶴大会 向けゲームサーバー�
 
 Python で書かれた AI プログラムを対戦させる **CHaser 系 2人対戦ゲーム**のサーバー実装です。Electron デスクトップアプリとして動作し、リモートブラウザからも操作可能な WebSocket/HTTP API を備えています。
 
+Electron アプリとして1台のPCで動かす**ローカルモード**に加え、`U15_MODE=web` で起動すると
+ブラウザから複数のルーム(対戦)を同時に作成・観戦できる**Webサービスモード**としても動作します。
+詳細は [docs/developer-manual.md](docs/developer-manual.md#10-マルチルーム--web-サービスモード) を参照してください。
+
 ---
 
 ## 2ウィンドウ構成
@@ -116,7 +120,7 @@ U15-server-maizuru/
 pnpm --filter @u15/backend test
 pnpm --filter @u15/frontend test
 
-# E2E 全自動テスト (37項目)
+# E2E 全自動テスト
 pnpm test:e2e
 
 # 型チェック (全ワークスペース)
