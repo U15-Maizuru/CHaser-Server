@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { FileDropZone } from './FileDropZone';
-import { BORDER_COLOR, TEXT_SECONDARY, TEXT_PRIMARY, WIN_BASE, BG_CARD, FONT_NUM } from '../styles/tokens';
+import { BORDER_COLOR, TEXT_SECONDARY, TEXT_PRIMARY, TEXT_MUTED, WIN_BASE, BG_CARD, FONT_NUM } from '../styles/tokens';
 
 interface Props {
   slot:     0 | 1;
@@ -8,11 +8,14 @@ interface Props {
   roomId:   string;
 }
 
+const DEFAULT_LIBRARY = 'pyCHaser.py';
+
 export function LibrarySection({ slot, httpBase, roomId }: Props) {
   const [open,  setOpen]  = useState(false);
   const [files, setFiles] = useState<string[]>([]);
 
-  const libEndpoint = `${httpBase}/api/upload/library?slot=${slot}&room=${roomId}`;
+  const libEndpoint  = `${httpBase}/api/upload/library?slot=${slot}&room=${roomId}`;
+  const customFiles  = files.filter(f => f !== DEFAULT_LIBRARY);
 
   const fetchFiles = () => {
     fetch(`${httpBase}/api/libs?slot=${slot}&room=${roomId}`)
@@ -42,24 +45,27 @@ export function LibrarySection({ slot, httpBase, roomId }: Props) {
         <div style={s.body}>
           <div style={s.preinstalled}>
             <span style={s.check}>✓</span>
-            <span style={s.label}>プリインストール: pychaser</span>
+            <span style={s.label}>標準ライブラリ: lib.pyCHaser（常に利用可能）</span>
           </div>
 
-          {files.length > 0 && (
+          {customFiles.length > 0 && (
             <div style={s.fileList}>
-              {files.map(f => (
+              {customFiles.map(f => (
                 <div key={f} style={s.fileRow}>
-                  <span style={s.fileName}>{f}</span>
+                  <span style={s.fileName}>lib.{f.replace(/\.py$/, '')}</span>
                   <button style={s.deleteBtn} onClick={() => handleDelete(f)}>削除</button>
                 </div>
               ))}
             </div>
           )}
 
+          <span style={s.hint}>
+            追加した .py ファイルは、プログラムから lib.ファイル名 として import できます
+          </span>
           <FileDropZone
             endpoint={libEndpoint}
             accept={['.py']}
-            label=".py ライブラリファイルをドロップ"
+            label="カスタムライブラリ (.py) をドロップ"
             onUploaded={() => fetchFiles()}
           />
         </div>
@@ -81,6 +87,7 @@ const s: Record<string, React.CSSProperties> = {
   check: { color: WIN_BASE, fontSize: 12 },
   label: { fontSize: 11, color: TEXT_SECONDARY },
   fileList: { display: 'flex', flexDirection: 'column', gap: 4 },
+  hint: { fontSize: 10, color: TEXT_MUTED },
   fileRow: { display: 'flex', alignItems: 'center', gap: 8 },
   fileName: { flex: 1, fontSize: 11, fontFamily: FONT_NUM, color: TEXT_PRIMARY },
   deleteBtn: {

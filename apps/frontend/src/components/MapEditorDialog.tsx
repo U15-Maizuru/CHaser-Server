@@ -17,10 +17,13 @@ export interface EditableMap {
 }
 
 interface Props {
-  initialMap: EditableMap;
-  theme:      string;
-  onSave:     (map: EditableMap) => void;
-  onClose:    () => void;
+  initialMap:      EditableMap;
+  theme:           string;
+  httpBase:        string;
+  onApply:         (map: EditableMap) => void;
+  onSaveToLibrary: (map: EditableMap, displayName: string) => void;
+  onDownload:      (map: EditableMap, displayName: string) => void;
+  onClose:         () => void;
 }
 
 type Tool = 'nothing' | 'block' | 'item' | 'start';
@@ -45,7 +48,7 @@ function countObj(field: MapObject[][], obj: MapObject): number {
   return field.flat().filter(c => c === obj).length;
 }
 
-export function MapEditorDialog({ initialMap, theme, onSave, onClose }: Props) {
+export function MapEditorDialog({ initialMap, theme, httpBase, onApply, onSaveToLibrary, onDownload, onClose }: Props) {
   const [map,      setMap]      = useState<EditableMap>(() => ({
     ...initialMap,
     field: initialMap.field.map(r => [...r]),
@@ -54,6 +57,7 @@ export function MapEditorDialog({ initialMap, theme, onSave, onClose }: Props) {
   const [tool,     setTool]     = useState<Tool>('nothing');
   const [symmetry, setSymmetry] = useState(true);
   const [sizeIdx,  setSizeIdx]  = useState(0);
+  const [generating, setGenerating] = useState(false);
   const dragging = useRef(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -160,55 +164,26 @@ export function MapEditorDialog({ initialMap, theme, onSave, onClose }: Props) {
   };
   const onMouseUp = () => { dragging.current = false; };
 
-  // ── Random generate ────────────────────────────────────────────────────────
-  const handleRandom = () => {
+  // ── Random generate ──────────────────────────────────────────────────────
+  // 実際の生成アルゴリズムはバックエンド (GameSystem.createRandomMap) 側の一箇所のみに存在させ、
+  // フロントエンドはここで再実装しない (挙動の重複・drift を防ぐため)。
+  const handleRandom = async () => {
     const sz = SIZES[sizeIdx];
     const size: Point = { x: sz.x, y: sz.y };
-
-    const field = emptyField(size.x, size.y);
-    const rand = (n: number) => Math.floor(Math.random() * n);
-
-    // team first point (COOL 左側)
-    let p0: Point;
-    const cx = Math.floor(size.x / 2), cy = Math.floor(size.y / 2);
-    while (true) {
-      const p = { x: rand(size.x), y: rand(size.y) };
-      if (Math.max(Math.abs(p.x - cx), Math.abs(p.y - cy)) <= 1) continue;
-      if (p.x < cx || (p.x === cx && p.y < cy)) { p0 = p; break; }
+    setGenerating(true);
+    try {
+      const res = await fetch(`${httpBase}/api/maps/random`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ size, blockNum: 20, itemNum: 51, turnNum: map.turn, mirror: symmetry }),
+      });
+      if (res.ok) {
+        const { data } = await res.json() as { data: { field: MapObject[][]; size: Point; turn: number; teamFirstPoint: [Point, Point] } };
+        setMap({ field: data.field, size: data.size, turn: data.turn, teamFirstPoint: data.teamFirstPoint });
+      }
+    } finally {
+      setGenerating(false);
     }
-    const p1 = mirrorPoint(p0!, size);
-
-    // blocks
-    let placed = 0;
-    while (placed < 20) {
-      const pos = { x: rand(size.x), y: rand(size.y) };
-      const mp  = mirrorPoint(pos, size);
-      if (pos.x === 0 || pos.x === size.x - 1 || pos.y === 0 || pos.y === size.y - 1) continue;
-      if ((pos.x === p0!.x && pos.y === p0!.y) || (pos.x === p1.x && pos.y === p1.y)) continue;
-      if (pos.x === cx && pos.y === cy) continue;
-      if (field[pos.y][pos.x] !== MapObject.NOTHING) continue;
-      field[pos.y][pos.x] = MapObject.BLOCK;
-      field[mp.y][mp.x]   = MapObject.BLOCK;
-      placed += 2;
-    }
-
-    // center item + mirrored items
-    field[cy][cx] = MapObject.ITEM;
-    let itemPlaced = 1;
-    while (itemPlaced < 51) {
-      const pos = { x: rand(size.x), y: rand(size.y) };
-      const mp  = mirrorPoint(pos, size);
-      const tooClose =
-        Math.max(Math.abs(p0!.x - pos.x), Math.abs(p0!.y - pos.y)) <= 1 ||
-        Math.max(Math.abs(p1.x  - pos.x), Math.abs(p1.y  - pos.y)) <= 1;
-      if (tooClose) continue;
-      if (field[pos.y][pos.x] !== MapObject.NOTHING) continue;
-      field[pos.y][pos.x] = MapObject.ITEM;
-      field[mp.y][mp.x]   = MapObject.ITEM;
-      itemPlaced += 2;
-    }
-
-    setMap({ field, size, turn: map.turn, teamFirstPoint: [p0!, p1] });
   };
 
   // ── Clear ─────────────────────────────────────────────────────────────────
@@ -217,9 +192,19 @@ export function MapEditorDialog({ initialMap, theme, onSave, onClose }: Props) {
   };
 
   // ── Save ──────────────────────────────────────────────────────────────────
-  const handleSave = () => {
-    onSave(map);
+  const handleApply = () => {
+    onApply(map);
     onClose();
+  };
+  const handleSaveToLibrary = () => {
+    const name = window.prompt('ライブラリに保存する名前を入力してください');
+    if (!name) return;
+    onSaveToLibrary(map, name);
+  };
+  const handleDownload = () => {
+    const name = window.prompt('ダウンロードするファイル名を入力してください');
+    if (!name) return;
+    onDownload(map, name);
   };
 
   const blocks = countObj(map.field, MapObject.BLOCK);
@@ -253,7 +238,9 @@ export function MapEditorDialog({ initialMap, theme, onSave, onClose }: Props) {
             <select value={sizeIdx} onChange={e => setSizeIdx(Number(e.target.value))} style={s.select}>
               {SIZES.map((sz, i) => <option key={i} value={i}>{sz.label}</option>)}
             </select>
-            <button style={s.btnSm} onClick={handleRandom}>ランダム生成</button>
+            <button style={s.btnSm} onClick={handleRandom} disabled={generating}>
+              {generating ? '生成中...' : 'ランダム生成'}
+            </button>
 
             <Divider />
 
@@ -290,7 +277,9 @@ export function MapEditorDialog({ initialMap, theme, onSave, onClose }: Props) {
             <Divider />
 
             <button style={s.btnSm} onClick={handleClear}>全消し</button>
-            <button style={s.btnPrimary} onClick={handleSave}>保存して閉じる</button>
+            <button style={s.btnSm} onClick={handleSaveToLibrary}>ライブラリに保存...</button>
+            <button style={s.btnSm} onClick={handleDownload}>ダウンロード</button>
+            <button style={s.btnPrimary} onClick={handleApply}>適用して閉じる</button>
             <button style={s.btnSm} onClick={onClose}>キャンセル</button>
           </div>
         </div>

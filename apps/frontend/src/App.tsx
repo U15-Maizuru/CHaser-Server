@@ -1,17 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useGameState }      from './hooks/useGameState';
 import { useSettings }       from './hooks/useSettings';
 import { useGamePhaseSound } from './hooks/useGamePhaseSound';
 import { useStartCountdown } from './hooks/useStartCountdown';
 import { StartupDialog }   from './components/StartupDialog';
 import { MainWindow }      from './components/MainWindow';
+import { BottomBar }       from './components/BottomBar';
 import { SettingDialog }   from './components/SettingDialog';
 import { MapEditorDialog } from './components/MapEditorDialog';
+import { MapManagementDialog } from './components/MapManagementDialog';
 import { DisplayMode }     from './components/DisplayMode';
 import { ManualMode }      from './components/ManualMode';
 import { ErrorBoundary }   from './components/ErrorBoundary';
 import { Lobby }           from './components/Lobby';
-import type { ClientStatusPayload } from '@u15/ws-types';
+import type { ClientStatusPayload, InlineMapData, MapCatalogEntry } from '@u15/ws-types';
 import { MapObject } from '@u15/ws-types';
 import type { EditableMap } from './components/MapEditorDialog';
 
@@ -47,22 +49,11 @@ function ControlApp({ roomId }: { roomId: string }) {
   useGamePhaseSound(snapshot, serverStatus, gameEnd, state.turnInfo, settings.muted, false);
   const countdown = useStartCountdown(serverStatus?.phase, state.turnInfo);
 
-  const [showSettings,  setShowSettings]  = useState(false);
-  const [showMapEditor, setShowMapEditor] = useState(false);
-
-  // 初回マウント時はスキップする: settings に保存されているマップ生成パラメータ
-  // (ランダムマップの既定値) を、アップロード済み/読み込み済みのマップに上書きしないため
-  const didMount = useRef(false);
-  useEffect(() => {
-    if (!didMount.current) { didMount.current = true; return; }
-    state.setMapParams({
-      itemNum:  settings.itemNum,
-      blockNum: settings.blockNum,
-      turnNum:  settings.turnNum,
-      mirror:   settings.mirror,
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.itemNum, settings.blockNum, settings.turnNum, settings.mirror]);
+  const [showSettings,      setShowSettings]      = useState(false);
+  const [showMapManagement, setShowMapManagement] = useState(false);
+  const [showMapEditor,     setShowMapEditor]     = useState(false);
+  const [currentMap,        setCurrentMap]        = useState<InlineMapData | null>(null);
+  const [editorSeed,        setEditorSeed]        = useState<EditableMap | null>(null);
 
   useEffect(() => {
     if (serverStatus?.phase === 'setup') {
@@ -116,37 +107,75 @@ function ControlApp({ roomId }: { roomId: string }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.pythonCommand, isConnected]);
 
-  const handleLoadMap = async () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.map';
-    input.onchange = async () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      const fd = new FormData();
-      fd.append('file', file);
-      const res = await fetch(`${HTTP_BASE}/api/upload/map`, { method: 'POST', body: fd });
-      if (res.ok) {
-        const { serverPath } = await res.json() as { serverPath: string };
-        state.loadMap(serverPath);
-      }
-    };
-    input.click();
-  };
-
   const handleUploadMusic = async (file: File) => {
     const fd = new FormData();
     fd.append('file', file);
     await fetch(`${HTTP_BASE}/api/upload/music`, { method: 'POST', body: fd });
   };
 
-  const handleMapEditorSave = (map: EditableMap) => {
-    state.loadMapData({
-      field: map.field,
-      size:  map.size,
-      turn:  map.turn,
-      teamFirstPoint: map.teamFirstPoint,
+  const fetchCurrentMap = async (): Promise<InlineMapData | null> => {
+    try {
+      const res = await fetch(`${HTTP_BASE}/api/maps/current?room=${roomId}`);
+      if (!res.ok) return null;
+      const { data } = await res.json() as { data: InlineMapData };
+      return data;
+    } catch {
+      return null;
+    }
+  };
+
+  const openMapManagement = async () => {
+    setCurrentMap(await fetchCurrentMap());
+    setShowMapManagement(true);
+  };
+
+  const openMapEditor = async () => {
+    const data = await fetchCurrentMap();
+    setEditorSeed(data
+      ? { field: data.field as MapObject[][], size: data.size, turn: data.turn, teamFirstPoint: data.teamFirstPoint }
+      : defaultEditableMap);
+    setShowMapManagement(false);
+    setShowMapEditor(true);
+  };
+
+  const handleApplyMapEntry = (entry: MapCatalogEntry) => {
+    state.loadMap(entry.mapPath);
+    setShowMapManagement(false);
+  };
+
+  const handleApplyGeneratedMap = (data: InlineMapData) => {
+    state.loadMapData(data);
+    setCurrentMap(data);
+  };
+
+  const handleMapEditorApply = (map: EditableMap) => {
+    state.loadMapData({ field: map.field, size: map.size, turn: map.turn, teamFirstPoint: map.teamFirstPoint });
+  };
+
+  const handleMapEditorSaveToLibrary = (map: EditableMap, displayName: string) => {
+    void fetch(`${HTTP_BASE}/api/maps/save-inline`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ displayName, data: { field: map.field, size: map.size, turn: map.turn, teamFirstPoint: map.teamFirstPoint } }),
     });
+  };
+
+  const handleMapEditorDownload = (map: EditableMap, displayName: string) => {
+    void (async () => {
+      const res = await fetch(`${HTTP_BASE}/api/maps/export`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ displayName, data: { field: map.field, size: map.size, turn: map.turn, teamFirstPoint: map.teamFirstPoint } }),
+      });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url;
+      a.download = `${displayName}.map`;
+      a.click();
+      URL.revokeObjectURL(url);
+    })();
   };
 
   if (!isConnected) {
@@ -179,47 +208,79 @@ function ControlApp({ roomId }: { roomId: string }) {
         />
       )}
 
-      {showMapEditor && (
-        <MapEditorDialog
-          initialMap={defaultEditableMap}
+      {showMapManagement && (
+        <MapManagementDialog
+          httpBase={HTTP_BASE}
+          roomId={roomId}
           theme={settings.theme}
-          onSave={handleMapEditorSave}
+          currentMap={currentMap}
+          onApplyEntry={handleApplyMapEntry}
+          onApplyInline={handleApplyGeneratedMap}
+          onOpenEditor={() => void openMapEditor()}
+          onClose={() => setShowMapManagement(false)}
+        />
+      )}
+
+      {showMapEditor && editorSeed && (
+        <MapEditorDialog
+          initialMap={editorSeed}
+          theme={settings.theme}
+          httpBase={HTTP_BASE}
+          onApply={handleMapEditorApply}
+          onSaveToLibrary={handleMapEditorSaveToLibrary}
+          onDownload={handleMapEditorDownload}
           onClose={() => setShowMapEditor(false)}
         />
       )}
 
-      {phase === 'setup' ? (
-        <StartupDialog
-          status={serverStatus ?? defaultStatus}
-          httpBase={HTTP_BASE}
-          roomId={roomId}
-          onSetClient={state.setClient}
-          onDeleteProgram={state.deleteProgram}
-          onStart={state.requestStart}
-          onLoadMap={handleLoadMap}
-          onOpenEditor={() => setShowMapEditor(true)}
-          onOpenSettings={() => setShowSettings(true)}
-        />
-      ) : (
-        <MainWindow
-          snapshot={state.snapshot}
-          turnInfo={state.turnInfo}
-          gameEnd={state.gameEnd}
-          serverStatus={serverStatus}
+      <div style={controlLayout}>
+        <div style={controlContent}>
+          {phase === 'setup' ? (
+            <StartupDialog
+              status={serverStatus ?? defaultStatus}
+              httpBase={HTTP_BASE}
+              roomId={roomId}
+              onSetClient={state.setClient}
+              onDeleteProgram={state.deleteProgram}
+            />
+          ) : (
+            <MainWindow
+              snapshot={state.snapshot}
+              turnInfo={state.turnInfo}
+              gameEnd={state.gameEnd}
+              serverStatus={serverStatus}
+              isConnected={isConnected}
+              phase={phase}
+              theme={settings.theme}
+              variant="control"
+              countdown={countdown}
+              onOpenSettings={() => setShowSettings(true)}
+            />
+          )}
+        </div>
+
+        <BottomBar
           isConnected={isConnected}
-          phase={phase}
-          theme={settings.theme}
-          variant="control"
-          countdown={countdown}
-          onReset={state.requestReset}
+          status={serverStatus ?? defaultStatus}
+          onStart={state.requestStart}
           onNextRound={state.requestNextRound}
           onRepeat={state.requestRepeat}
+          onReset={state.requestReset}
+          onOpenMapManagement={() => void openMapManagement()}
           onOpenSettings={() => setShowSettings(true)}
         />
-      )}
+      </div>
     </>
   );
 }
+
+const controlLayout: React.CSSProperties = {
+  display: 'flex', flexDirection: 'column', height: '100vh',
+};
+
+const controlContent: React.CSSProperties = {
+  flex: 1, minHeight: 0, overflow: 'hidden',
+};
 
 const connecting: React.CSSProperties = {
   display: 'flex', height: '100vh',
@@ -246,6 +307,7 @@ const defaultStatus = {
   currentRound: 0 as const,
   roundResults: [],
   darkMode:     false,
+  mapIsCustom:  false,
 };
 
 const defaultEditableMap: EditableMap = {

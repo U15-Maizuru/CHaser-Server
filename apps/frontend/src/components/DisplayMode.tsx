@@ -41,21 +41,20 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
   }
 
   return (
-    <MainWindow
-      snapshot={snapshot}
-      turnInfo={turnInfo}
-      gameEnd={gameEnd}
-      serverStatus={serverStatus}
-      isConnected={isConnected}
-      phase={phase}
-      theme={settings.theme}
-      variant="display"
-      countdown={countdown}
-      onReset={() => {}}
-      onNextRound={() => {}}
-      onRepeat={() => {}}
-      onOpenSettings={() => {}}
-    />
+    <div style={{ height: '100vh' }}>
+      <MainWindow
+        snapshot={snapshot}
+        turnInfo={turnInfo}
+        gameEnd={gameEnd}
+        serverStatus={serverStatus}
+        isConnected={isConnected}
+        phase={phase}
+        theme={settings.theme}
+        variant="display"
+        countdown={countdown}
+        onOpenSettings={() => {}}
+      />
+    </div>
   );
 }
 

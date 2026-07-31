@@ -29,9 +29,6 @@ interface Props {
   theme?:          string;
   variant:         'control' | 'display';
   countdown:       number | null;
-  onReset:         () => void;
-  onNextRound:     () => void;
-  onRepeat:        () => void;
   onOpenSettings:  () => void;
 }
 
@@ -73,7 +70,7 @@ function drawText(gameEnd: GameEndPayload): string {
 export function MainWindow({
   snapshot, turnInfo, gameEnd, serverStatus, isConnected, phase,
   theme = 'Jewel', variant, countdown,
-  onReset, onNextRound, onRepeat, onOpenSettings,
+  onOpenSettings,
 }: Props) {
   const darkMode = (serverStatus?.darkMode ?? false) && countdown === null;
 
@@ -93,8 +90,6 @@ export function MainWindow({
   const winnerTeamIdx = gameEnd?.winner === Winner.COOL ? 0 : gameEnd?.winner === Winner.HOT ? 1 : null;
   const isDraw         = gameEnd?.winner === Winner.DRAW;
   const doubleMode   = serverStatus?.doubleMode   ?? false;
-  const repeatMode   = serverStatus?.repeatMode   ?? false;
-  const roundResults = serverStatus?.roundResults ?? [];
   const currentRound  = serverStatus?.currentRound ?? 0;
 
   // 盤面反転・左右スコア表示に使う「表示中のラウンド番号」は、今表示している snapshot が
@@ -121,11 +116,6 @@ export function MainWindow({
   // 中身の team-index は displayRound に応じて入れ替わる leftIdx/rightIdx で判定する
   const leftIsWinner  = winnerTeamIdx !== null && winnerTeamIdx === leftIdx;
   const rightIsWinner = winnerTeamIdx !== null && winnerTeamIdx === rightIdx;
-
-  const showNextRound = phase === 'finished' && doubleMode && roundResults.length === 1;
-  const matchFinished  = phase === 'finished' && (!doubleMode || roundResults.length >= 2);
-  const showRepeat     = matchFinished && repeatMode;
-  const showReset      = matchFinished && !repeatMode;
 
   // ── メイン行 (3カラム) の実サイズを計測 ────────────────────────────────
   // mainRef (行コンテナ) 自体の幅・高さは子要素 (盤面のセルサイズやサイドパネル幅) に
@@ -190,16 +180,13 @@ export function MainWindow({
 
   return (
     <div style={s.root}>
-      {/* ── ヘッダーバー ──────────────────────────────────────── */}
-      <div style={s.headerBar}>
-        {variant === 'control' && (
+      {/* ── ヘッダーバー (観覧用画面では非表示) ──────────────────── */}
+      {variant === 'control' && (
+        <div style={s.headerBar}>
           <button style={s.settingsBtn} onClick={onOpenSettings} title="設定">⚙</button>
-        )}
-        <span style={s.title}>U15 Server Maizuru</span>
-        <span style={{ ...s.badge, background: isConnected ? '#33aa77' : '#cc4455' }}>
-          {isConnected ? '● CONNECTED' : '○ DISCONNECTED'}
-        </span>
-      </div>
+          <span style={s.title}>U15 Server Maizuru</span>
+        </div>
+      )}
 
       {/* ── スコアバー ─────────────────────────────────────────── */}
       {snapshot && (
@@ -300,25 +287,17 @@ export function MainWindow({
               <span style={s.drawPill}>{drawText(gameEnd)}</span>
             )}
 
-            {/* 列3 (右): 右側チームが勝者のときは結果ピル、加えて常にボタン領域 */}
-            <div style={s.bottomBtnCol}>
-              {gameEnd && rightIsWinner && (
-                <span style={{
-                  ...s.resultPill,
-                  background: rightIdx === 0 ? COOL_LIGHT : HOT_LIGHT,
-                  color: TEXT_PRIMARY,
-                }}>
-                  {winnerText(gameEnd, gameEnd.playerNames[rightIdx])}
-                </span>
-              )}
-              {variant === 'control' && showNextRound ? (
-                <button style={s.nextBtn} onClick={onNextRound}>次戦スタート ▶</button>
-              ) : variant === 'control' && showRepeat ? (
-                <button style={s.nextBtn} onClick={onRepeat}>もう一度対戦 ▶</button>
-              ) : variant === 'control' && showReset ? (
-                <button style={s.resetBtn} onClick={onReset}>セットアップに戻る</button>
-              ) : null}
-            </div>
+            {/* 列3 (右): 右側チームが勝者のときだけ結果ピルを表示。列1と対称構造
+                (アクションボタンは BottomBar.tsx が別途担当するため、ここでは扱わない) */}
+            {gameEnd && rightIsWinner && (
+              <span style={{
+                ...s.resultPill, gridColumn: '3',
+                background: rightIdx === 0 ? COOL_LIGHT : HOT_LIGHT,
+                color: TEXT_PRIMARY,
+              }}>
+                {winnerText(gameEnd, gameEnd.playerNames[rightIdx])}
+              </span>
+            )}
           </div>
         </div>
       )}
@@ -328,13 +307,17 @@ export function MainWindow({
 
 // ── スタイル ──────────────────────────────────────────────────────────────────
 
+// ボトムバーの中央行 (結果ピル/引き分けピル/ターンゲージ) で共有する一行の高さ。
+// 状態が切り替わってもフッターの高さが変わらないよう、3者で同じ値を使う。
+const FOOTER_ROW_H = 'clamp(24px, 3.2vh, 34px)';
+
 const s: Record<string, React.CSSProperties> = {
   root: {
-    display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden',
+    display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden',
     background: BG_ROOT, color: TEXT_PRIMARY, fontFamily: FONT_UI,
   },
 
-  // ヘッダーバー
+  // ヘッダーバー (コントロール画面のみ)
   headerBar: {
     display: 'flex', alignItems: 'center', gap: 10,
     padding: '0.4vh 14px', background: BG_HEADER, flexShrink: 0,
@@ -348,11 +331,6 @@ const s: Record<string, React.CSSProperties> = {
   settingsBtn: {
     background: 'none', border: 'none', color: TEXT_MUTED,
     fontSize: 'clamp(14px, 1.4vw, 22px)', cursor: 'pointer', padding: '0 4px',
-  },
-  badge: {
-    fontSize: 'clamp(0.5rem, 0.85vw, 0.85rem)',
-    padding: '2px 10px', borderRadius: 99,
-    letterSpacing: 1, color: '#fff', fontWeight: 600, whiteSpace: 'nowrap',
   },
 
   // スコアバー
@@ -417,15 +395,18 @@ const s: Record<string, React.CSSProperties> = {
     padding: '0 14px 0.6vh', flexShrink: 0,
   },
   bottomCard: {
-    display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center',
-    gap: 12, padding: '0.6vh 16px',
+    display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)', alignItems: 'center',
+    gap: 12, padding: '0.6vh 16px', minHeight: FOOTER_ROW_H,
     background: BG_CARD, borderRadius: RADIUS_LG, boxShadow: SHADOW_SM,
   },
   resultPill: {
-    gridColumn: '1',
+    // gridColumn は呼び出し側 (列1/列3) でそれぞれ指定 — 左右対称にするため既定値を持たせない
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    width: '100%', height: FOOTER_ROW_H, boxSizing: 'border-box',
+    minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
     textAlign: 'center', fontWeight: 700,
     fontSize: 'clamp(0.5rem, 0.8vw, 0.85rem)',
-    padding: 'clamp(3px, 0.5vh, 6px) 10px', borderRadius: 99, letterSpacing: '0.02em',
+    padding: '0 10px', borderRadius: 99, letterSpacing: '0.02em',
   },
   // ステップ数ゲージ (原本の TimeBar_A/B 相当): 画面中央に数値を置き、その左右を
   // 独立した2本のゲージバーで挟む。残ターン数が減ると各バーが中央側から先に埋まった
@@ -436,11 +417,11 @@ const s: Record<string, React.CSSProperties> = {
   turnGaugeGroup: {
     gridColumn: '2',
     display: 'flex', alignItems: 'center', gap: 8,
-    width: 'clamp(160px, 30vw, 420px)',
+    width: 'clamp(160px, 30vw, 420px)', height: FOOTER_ROW_H,
   },
   gaugeBarTrack: {
     position: 'relative', overflow: 'hidden',
-    flex: 1, minWidth: 0, height: 'clamp(14px, 2.4vh, 22px)',
+    flex: 1, minWidth: 0, height: '70%',
     background: TURN_LIGHT, borderRadius: 99,
   },
   gaugeBarFillLeft: {
@@ -459,30 +440,14 @@ const s: Record<string, React.CSSProperties> = {
   // 引き分け専用ピル (中央列、ターンゲージと排他表示)
   drawPill: {
     gridColumn: '2',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    height: FOOTER_ROW_H, boxSizing: 'border-box',
+    minWidth: 0, maxWidth: '100%', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
     textAlign: 'center', fontWeight: 700,
     fontSize: 'clamp(0.5rem, 0.8vw, 0.85rem)',
-    padding: 'clamp(3px, 0.5vh, 6px) 10px', borderRadius: 99, letterSpacing: '0.02em',
-    background: WIN_PALE, color: TEXT_PRIMARY, whiteSpace: 'nowrap',
+    padding: '0 10px', borderRadius: 99, letterSpacing: '0.02em',
+    background: WIN_PALE, color: TEXT_PRIMARY,
   },
-  // 列3: 右側チームの勝者ピル (出る場合) とボタンを縦に並べて両方収める
-  bottomBtnCol: {
-    gridColumn: '3',
-    display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6,
-  },
-  nextBtn: {
-    padding: 'clamp(4px, 0.7vh, 9px) 18px', border: 'none', borderRadius: 99,
-    background: WIN_BASE, color: '#fff',
-    fontSize: 'clamp(0.6rem, 1.1vw, 1.1rem)',
-    fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
-  },
-  resetBtn: {
-    padding: 'clamp(4px, 0.7vh, 9px) 18px', borderRadius: 99,
-    border: `1px solid ${BORDER_COLOR}`, background: 'transparent',
-    color: TEXT_SECONDARY,
-    fontSize: 'clamp(0.6rem, 1.1vw, 1.1rem)',
-    cursor: 'pointer', whiteSpace: 'nowrap',
-  },
-
   waiting: {
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     flex: 1, fontSize: 'clamp(0.9rem, 1.8vw, 1.4rem)', color: TEXT_MUTED,

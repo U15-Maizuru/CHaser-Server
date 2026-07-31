@@ -11,7 +11,9 @@ import { MapManager } from './MapManager.js';
 import { RoundController } from './RoundController.js';
 import { START_COUNTDOWN_SECONDS, Winner } from '@u15/ws-types';
 import type { ManualClient } from '../clients/ManualClient.js';
+import { pickRandomPair } from '../programCatalog.js';
 import type {
+  CatalogEntry,
   ClientType,
   InlineMapData,
   MapParams,
@@ -43,6 +45,7 @@ export class ServerManager extends EventEmitter {
   private darkMode = false;
   private demoTimer: ReturnType<typeof setTimeout> | null = null;
   private logDir = '.';
+  private roomId = 'local';
 
   constructor(
     ports: [number, number] = [12031, 12032],
@@ -92,7 +95,13 @@ export class ServerManager extends EventEmitter {
     if (!this.round.canStart()) return; // setup フェーズ以外は変更不可
     this.round.setDemoMode(enabled);
     if (!enabled) this.clearDemoTimer();
+    if (enabled) void this.randomizeFromCatalog(); // ライブラリから両スロットへランダムに割り当てる
     this.emitStatus();
+  }
+
+  /** RoomManager から room 作成直後に呼ばれる。ライブラリ選出時の libPath 組み立てに使う。 */
+  setRoomId(id: string): void {
+    this.roomId = id;
   }
 
   setDarkMode(enabled: boolean): void {
@@ -129,17 +138,24 @@ export class ServerManager extends EventEmitter {
   }
 
   loadMap(filePath: string): void {
+    if (!this.round.canEditMap()) return;
     if (this.mapManager.loadFromFile(filePath)) this.emitStatus();
   }
 
   setMapParams(params: MapParams): void {
+    if (!this.round.canEditMap()) return;
     this.mapManager.setParams(params);
     this.emitStatus();
   }
 
   loadMapData(data: InlineMapData): void {
+    if (!this.round.canEditMap()) return;
     this.mapManager.loadInlineData(data);
     this.emitStatus();
+  }
+
+  getCurrentMapData(): InlineMapData {
+    return this.mapManager.getCurrentMapData();
   }
 
   async requestStart(): Promise<void> {
@@ -189,11 +205,18 @@ export class ServerManager extends EventEmitter {
     await this.slots.startListeningBoth();
   }
 
-  /** リピートモード: 接続 (processConfig) は維持したまま COOL/HOT を入れ替えて新しい対戦を始める */
+  /**
+   * リピートモード: 接続 (processConfig) は維持したまま COOL/HOT を入れ替えて新しい対戦を始める。
+   * デモモード併用時は、入れ替えの代わりにライブラリからランダムに選び直す。
+   */
   async requestRepeat(): Promise<void> {
     if (!this.round.canRepeat()) return;
 
-    this.slots.swapSlotConfigs();
+    if (this.round.demoMode) {
+      await this.randomizeFromCatalog();
+    } else {
+      this.slots.swapSlotConfigs();
+    }
     this.slots.resetForNextRound();
     this.mapManager.regenerate();
     this.round.resetForNewGame();
@@ -228,6 +251,7 @@ export class ServerManager extends EventEmitter {
       currentRound: this.round.currentRound,
       roundResults: this.round.roundResults,
       darkMode:     this.darkMode,
+      mapIsCustom:  this.mapManager.isCustom,
     };
   }
 
@@ -266,6 +290,22 @@ export class ServerManager extends EventEmitter {
         void this.requestRepeat();
       }, this.demoDelaysMs.repeat);
     }
+  }
+
+  /** デモモード: プログラムライブラリからランダムに2つ選び、両スロットへ割り当てる。ライブラリが空なら何もしない。 */
+  private async randomizeFromCatalog(): Promise<void> {
+    const pair = pickRandomPair();
+    if (!pair) return;
+
+    const buildConfig = (entry: CatalogEntry, slot: 0 | 1): ProcessConfig => ({
+      programType:    entry.programType,
+      programPath:    entry.programPath,
+      runtimeCommand: entry.runtimeCommand,
+      libPath:        `server/rooms/${this.roomId}/libs/${slot === 0 ? 'cool' : 'hot'}`,
+    });
+
+    await this.slots.setClientType(0, 'process', buildConfig(pair[0], 0));
+    await this.slots.setClientType(1, 'process', buildConfig(pair[1], 1));
   }
 
   /** 試合ごとに一意なログファイルパスを組み立てる (日時+ラウンド番号)。保存先ディレクトリも用意する。 */

@@ -1,9 +1,32 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { type IncomingMessage, type ServerResponse } from 'node:http';
 import type { Readable } from 'node:stream';
 import busboy from 'busboy';
+import type { InlineMapData, MapParams } from '@u15/ws-types';
+import { MapObject } from '@u15/ws-types';
 import type { RoomManager } from '../RoomManager.js';
+import { ensureLibDir } from '../libTemplates.js';
+import { createRandomMap, exportMap } from '../game/GameSystem.js';
+import type { GameMap } from '../game/types.js';
+import {
+  addCatalogEntry,
+  catalogDir,
+  deleteCatalogEntry,
+  ensureCatalogDir,
+  listCatalogEntries,
+  setDemoEnabled,
+} from '../programCatalog.js';
+import {
+  addMapCatalogEntry,
+  addMapCatalogEntryFromInline,
+  deleteMapCatalogEntry,
+  ensureMapCatalogDir,
+  getMapCatalogEntry,
+  listMapCatalogEntries,
+  mapCatalogDir,
+} from '../mapCatalog.js';
 
 // 本番ビルド (Electron) では frontend/dist を静的配信する
 // dev では Vite が port 5173 で担当するので不要
@@ -23,7 +46,6 @@ const FRONTEND_DIST = isDev
         : fs.existsSync(fromRelative) ? fromRelative : null;
     })();
 
-const MAPS_DIR  = path.resolve('server/maps');
 const MUSIC_DIR = path.resolve('server/music'); // BGM再生用 (原本の ./Music フォルダに相当)
 const MUSIC_EXTENSIONS = ['.mp3', '.wav'];
 
@@ -31,14 +53,18 @@ function roomDirs(roomId: string) {
   return {
     'program-0': path.resolve(`server/rooms/${roomId}/programs/cool`),
     'program-1': path.resolve(`server/rooms/${roomId}/programs/hot`),
-    'library-0': path.resolve(`server/rooms/${roomId}/libs/cool`),
-    'library-1': path.resolve(`server/rooms/${roomId}/libs/hot`),
+    // Python 側で `from lib.pyCHaser import *` のようにパッケージとして import できるよう、
+    // PYTHONPATH (ProcessClient.buildEnv の libPath = このひとつ上の階層) の直下に
+    // 実体を "lib" という名前のディレクトリとして配置する。
+    'library-0': path.resolve(`server/rooms/${roomId}/libs/cool/lib`),
+    'library-1': path.resolve(`server/rooms/${roomId}/libs/hot/lib`),
   } as const;
 }
 
 export function ensureDirectories(): void {
-  fs.mkdirSync(MAPS_DIR, { recursive: true });
   fs.mkdirSync(MUSIC_DIR, { recursive: true });
+  ensureCatalogDir();
+  ensureMapCatalogDir();
 }
 
 export function handleHttpRequest(
@@ -82,21 +108,145 @@ export function handleHttpRequest(
     return;
   }
 
+  // POST /api/programs → プログラムライブラリへの新規アップロード (room/slot に非依存)
+  if (req.method === 'POST' && url.pathname === '/api/programs') {
+    ensureCatalogDir();
+    handleUpload(req, res, catalogDir(), ['.py', '.exe'], 512 * 1024, (outPath, originalFilename) => {
+      const entry = addCatalogEntry(originalFilename, outPath);
+      return { serverPath: entry.programPath, entry };
+    });
+    return;
+  }
+
+  // GET /api/programs → プログラムライブラリの一覧
+  if (req.method === 'GET' && url.pathname === '/api/programs') {
+    json(res, 200, { entries: listCatalogEntries() });
+    return;
+  }
+
+  // PATCH /api/programs/:id → デモ対象フラグの更新 body: { demoEnabled: boolean }
+  const programPatchMatch = url.pathname.match(/^\/api\/programs\/([^/]+)$/);
+  if (req.method === 'PATCH' && programPatchMatch) {
+    readJsonBody(req)
+      .then((body) => {
+        const entry = setDemoEnabled(programPatchMatch[1]!, Boolean((body as { demoEnabled?: boolean }).demoEnabled));
+        if (!entry) { json(res, 404, { error: 'プログラムが見つかりません' }); return; }
+        json(res, 200, { entry });
+      })
+      .catch(() => badRequest(res, '不正なリクエストボディです'));
+    return;
+  }
+
+  // DELETE /api/programs/:id → プログラムライブラリからの削除
+  if (req.method === 'DELETE' && programPatchMatch) {
+    deleteCatalogEntry(programPatchMatch[1]!);
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
   // POST /api/upload/library?slot=0|1&room=<id>
   if (req.method === 'POST' && url.pathname === '/api/upload/library') {
     if (slot !== '0' && slot !== '1') { badRequest(res, 'slot は 0 か 1 を指定してください'); return; }
     if (!room) { badRequest(res, 'room パラメータが必要です'); return; }
     const dirs = roomDirs(room);
     const dir  = dirs[`library-${slot}`];
-    fs.mkdirSync(dir, { recursive: true });
+    ensureLibDir(dir);
     handleUpload(req, res, dir, ['.py'], 512 * 1024);
     return;
   }
 
-  // POST /api/upload/map (マップはグローバル共有)
-  if (req.method === 'POST' && url.pathname === '/api/upload/map') {
-    fs.mkdirSync(MAPS_DIR, { recursive: true });
-    handleUpload(req, res, MAPS_DIR, ['.map'], 1024 * 1024);
+  // POST /api/maps → マップライブラリへの新規アップロード (room/slot に非依存、グローバル共有)
+  if (req.method === 'POST' && url.pathname === '/api/maps') {
+    ensureMapCatalogDir();
+    handleUpload(req, res, mapCatalogDir(), ['.map'], 1024 * 1024, (outPath, originalFilename) => {
+      const displayName = originalFilename.replace(/\.map$/i, '');
+      const entry = addMapCatalogEntry(displayName, outPath);
+      if (!entry) return { error: '.map ファイルとして解析できませんでした' };
+      return { serverPath: entry.mapPath, entry };
+    });
+    return;
+  }
+
+  // GET /api/maps → マップライブラリの一覧
+  if (req.method === 'GET' && url.pathname === '/api/maps') {
+    json(res, 200, { entries: listMapCatalogEntries() });
+    return;
+  }
+
+  // GET /api/maps/current?room=<id> → 指定ルームの現在のマップ (エディタ起点・現在マップ表示用)
+  if (req.method === 'GET' && url.pathname === '/api/maps/current') {
+    const r = room ? rm?.getRoom(room) : undefined;
+    if (!r) { json(res, 404, { error: 'ルームが見つかりません' }); return; }
+    json(res, 200, { data: r.manager.getCurrentMapData() });
+    return;
+  }
+
+  // POST /api/maps/random → ステートレスなランダムマップ生成 (どのルームにも影響しない)
+  if (req.method === 'POST' && url.pathname === '/api/maps/random') {
+    readJsonBody(req)
+      .then((body) => {
+        const p = body as Partial<MapParams>;
+        const map = createRandomMap(p.size, p.blockNum ?? 20, p.itemNum ?? 51, p.turnNum ?? 100, p.mirror ?? true);
+        const data: InlineMapData = { field: map.field, size: map.size, turn: map.turn, teamFirstPoint: map.teamFirstPoint };
+        json(res, 200, { data });
+      })
+      .catch(() => badRequest(res, '不正なリクエストボディです'));
+    return;
+  }
+
+  // POST /api/maps/save-inline → マップエディタで組んだマップをライブラリへ保存 body: { displayName, data: InlineMapData }
+  if (req.method === 'POST' && url.pathname === '/api/maps/save-inline') {
+    ensureMapCatalogDir();
+    readJsonBody(req)
+      .then((body) => {
+        const { displayName, data } = body as { displayName?: string; data?: InlineMapData };
+        if (!displayName || !data) { badRequest(res, 'displayName と data が必要です'); return; }
+        const entry = addMapCatalogEntryFromInline(displayName, data);
+        json(res, 200, { entry });
+      })
+      .catch(() => badRequest(res, '不正なリクエストボディです'));
+    return;
+  }
+
+  // POST /api/maps/export → マップエディタの内容をライブラリに残さずそのままダウンロード body: { displayName, data: InlineMapData }
+  if (req.method === 'POST' && url.pathname === '/api/maps/export') {
+    readJsonBody(req)
+      .then((body) => {
+        const { displayName, data } = body as { displayName?: string; data?: InlineMapData };
+        if (!displayName || !data) { badRequest(res, 'displayName と data が必要です'); return; }
+
+        const tmpDir  = fs.mkdtempSync(path.join(os.tmpdir(), 'u15-map-export-'));
+        const tmpPath = path.join(tmpDir, `${sanitizeFilename(displayName)}.map`);
+        const gameMap: GameMap = {
+          field: data.field as MapObject[][], turn: data.turn, name: displayName,
+          size: data.size, teamFirstPoint: data.teamFirstPoint, textureDirPath: 'Jewel',
+        };
+        exportMap(gameMap, tmpPath);
+
+        sendFileDownload(res, tmpPath, `${displayName}.map`, () => {
+          fs.rm(tmpDir, { recursive: true, force: true }, () => {});
+        });
+      })
+      .catch(() => badRequest(res, '不正なリクエストボディです'));
+    return;
+  }
+
+  // GET /api/maps/:id/download → ライブラリ内のマップをそのままダウンロード
+  const mapDownloadMatch = url.pathname.match(/^\/api\/maps\/([^/]+)\/download$/);
+  if (req.method === 'GET' && mapDownloadMatch) {
+    const entry = getMapCatalogEntry(mapDownloadMatch[1]!);
+    if (!entry || !fs.existsSync(entry.mapPath)) { json(res, 404, { error: 'マップが見つかりません' }); return; }
+    sendFileDownload(res, entry.mapPath, `${entry.displayName}.map`);
+    return;
+  }
+
+  // DELETE /api/maps/:id → マップライブラリからの削除
+  const mapIdMatch = url.pathname.match(/^\/api\/maps\/([^/]+)$/);
+  if (req.method === 'DELETE' && mapIdMatch) {
+    deleteMapCatalogEntry(mapIdMatch[1]!);
+    res.writeHead(204);
+    res.end();
     return;
   }
 
@@ -104,8 +254,9 @@ export function handleHttpRequest(
   if (req.method === 'GET' && url.pathname === '/api/libs') {
     if (slot !== '0' && slot !== '1') { badRequest(res, 'slot は 0 か 1 を指定してください'); return; }
     if (!room) { badRequest(res, 'room パラメータが必要です'); return; }
-    const dir   = roomDirs(room)[`library-${slot}`];
-    const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter(f => f.endsWith('.py')) : [];
+    const dir = roomDirs(room)[`library-${slot}`];
+    ensureLibDir(dir);
+    const files = fs.readdirSync(dir).filter(f => f.endsWith('.py'));
     json(res, 200, { files });
     return;
   }
@@ -210,6 +361,7 @@ function handleUpload(
   dir:      string,
   allowed:  string[],
   maxBytes: number,
+  onSaved?: (outPath: string, originalFilename: string) => Record<string, unknown> | void,
 ): void {
   let bb: ReturnType<typeof busboy>;
   try {
@@ -249,7 +401,10 @@ function handleUpload(
     out.on('close', () => {
       // ディスク書き込み完了を待ってから成功レスポンスを返す
       // (bb の close は out の close より先に発火しうるため、bb 側では返さない)
-      if (!res.headersSent) json(res, 200, { serverPath });
+      if (!res.headersSent) {
+        const extra = onSaved?.(outPath, info.filename);
+        json(res, 200, { serverPath, ...(extra ?? {}) });
+      }
     });
   });
 
@@ -269,8 +424,35 @@ function handleUpload(
   req.pipe(bb);
 }
 
+function readJsonBody(req: IncomingMessage): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString('utf-8') || '{}'));
+      } catch (e) {
+        reject(e as Error);
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
 function sanitizeFilename(name: string): string {
   return path.basename(name).replace(/\s+/g, '_').replace(/[^a-zA-Z0-9._\-　-鿿]/g, '_');
+}
+
+/** ファイルをダウンロード用に配信する (日本語ファイル名対応の Content-Disposition 付き)。onSent は送信完了後に呼ぶ (一時ファイル削除用)。 */
+function sendFileDownload(res: ServerResponse, filePath: string, downloadName: string, onSent?: () => void): void {
+  const encoded = encodeURIComponent(downloadName);
+  res.writeHead(200, {
+    'Content-Type': 'application/octet-stream',
+    'Content-Disposition': `attachment; filename="map.map"; filename*=UTF-8''${encoded}`,
+  });
+  const stream = fs.createReadStream(filePath);
+  stream.pipe(res);
+  if (onSent) stream.on('close', onSent);
 }
 
 function json(res: ServerResponse, status: number, body: unknown): void {

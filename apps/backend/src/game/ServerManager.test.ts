@@ -1,11 +1,19 @@
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
-import { afterAll, afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ServerManager } from './ServerManager.js';
+import { MapManager } from './MapManager.js';
+import { addCatalogEntry, catalogDir, ensureCatalogDir, setDemoEnabled } from '../programCatalog.js';
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function writeTempProgramFile(content = 'not a real program'): string {
+  const file = path.join(os.tmpdir(), `u15-catalog-test-${Date.now()}-${Math.random().toString(36).slice(2)}.py`);
+  fs.writeFileSync(file, content);
+  return file;
 }
 
 // ログを cwd 直下ではなく一時ディレクトリに書かせ、テスト実行のたびに game-*.log が
@@ -151,6 +159,55 @@ describe('ServerManager', () => {
     });
   });
 
+  describe('マップ設定変更のガード (2試合制で第1試合・第2試合のマップが変わらないようにする)', () => {
+    it('通常の初回セットアップ中 (setup, roundResults=[]) は setMapParams が反映される', () => {
+      sm = makeServerManager([39440, 39441], 0);
+      const regenerateSpy = vi.spyOn(MapManager.prototype, 'regenerate');
+      sm.setMapParams({ itemNum: 11, blockNum: 4, turnNum: 50, mirror: false });
+      expect(regenerateSpy).toHaveBeenCalledTimes(1);
+      regenerateSpy.mockRestore();
+    });
+
+    it('doubleMode で第1試合終了後・第2試合待機中の setup では setMapParams が無視される', async () => {
+      sm = makeServerManager([39442, 39443], 0);
+      sm.setTurnDelay(0);
+      sm.setDoubleMode(true);
+      await sm.setClientType(0, 'cpu');
+      await sm.setClientType(1, 'cpu');
+
+      await sm.requestStart(); // 1試合目
+      await sm.requestNextRound(); // phase は 'setup' に戻るが roundResults は残る
+      expect(sm.getStatus().phase).toBe('setup');
+      expect(sm.getStatus().roundResults).toHaveLength(1);
+
+      const regenerateSpy = vi.spyOn(MapManager.prototype, 'regenerate');
+      sm.setMapParams({ itemNum: 11, blockNum: 4, turnNum: 50, mirror: false });
+      sm.loadMap('/does/not/matter.map');
+      sm.loadMapData({
+        field: [[0]], size: { x: 1, y: 1 }, turn: 10,
+        teamFirstPoint: [{ x: 0, y: 0 }, { x: 0, y: 0 }],
+      });
+      expect(regenerateSpy).not.toHaveBeenCalled();
+      expect(sm.getStatus().mapIsCustom).toBe(false); // loadMapData も無視されている
+      regenerateSpy.mockRestore();
+    });
+
+    it('requestReset 後 (roundResults がリセットされる) は setMapParams が再び反映される', async () => {
+      sm = makeServerManager([39444, 39445], 0);
+      sm.setTurnDelay(0);
+      await sm.setClientType(0, 'cpu');
+      await sm.setClientType(1, 'cpu');
+      await sm.requestStart();
+      await sm.requestReset();
+      expect(sm.getStatus().roundResults).toEqual([]);
+
+      const regenerateSpy = vi.spyOn(MapManager.prototype, 'regenerate');
+      sm.setMapParams({ itemNum: 11, blockNum: 4, turnNum: 50, mirror: false });
+      expect(regenerateSpy).toHaveBeenCalledTimes(1);
+      regenerateSpy.mockRestore();
+    });
+  });
+
   describe('repeatMode', () => {
     it('requestRepeat は repeatMode 無効時は無視される', async () => {
       sm = makeServerManager([39418, 39419], 0);
@@ -251,6 +308,56 @@ describe('ServerManager', () => {
       sm.setDemoMode(false);
       await sleep(200);
       expect(sm.getStatus().phase).toBe('setup'); // 自動開始されない
+    });
+  });
+
+  describe('demoMode + プログラムライブラリ', () => {
+    beforeEach(() => {
+      ensureCatalogDir();
+    });
+
+    afterEach(() => {
+      fs.rmSync(catalogDir(), { recursive: true, force: true });
+    });
+
+    it('ライブラリが空なら setDemoMode(true) は何もしない (スロットは待機のまま)', async () => {
+      sm = makeServerManager([39432, 39433], 0);
+      sm.setDemoMode(true);
+      await sleep(200);
+
+      const status = sm.getStatus();
+      expect(status.clients[0].state).toBe('waiting');
+      expect(status.clients[1].state).toBe('waiting');
+      expect(status.clients[0].error).toBeUndefined();
+    });
+
+    it('デモ対象プログラムが1件あれば setDemoMode(true) で両スロットに割り当てられる', async () => {
+      addCatalogEntry('dummy.py', writeTempProgramFile());
+
+      sm = makeServerManager([39434, 39435], 0);
+      sm.setDemoMode(true);
+
+      // processConfig が割り当てられると spawn が試みられ、成功 (ready) か失敗 (error) のいずれかに
+      // 遷移する。カタログが空のときは silent に 'waiting' のままなので、この遷移自体が
+      // randomizeFromCatalog が実際に動作した証跡になる。
+      await waitFor(() => {
+        const c = sm!.getStatus().clients[0];
+        return c.state === 'ready' || c.error !== undefined;
+      });
+      expect(sm.getStatus().clients[0].type).toBe('process');
+      expect(sm.getStatus().clients[1].type).toBe('process');
+    });
+
+    it('デモ対象 (demoEnabled=false) のプログラムは選ばれない', async () => {
+      const entry = addCatalogEntry('dummy.py', writeTempProgramFile());
+      setDemoEnabled(entry.id, false);
+
+      sm = makeServerManager([39436, 39437], 0);
+      sm.setDemoMode(true);
+      await sleep(200);
+
+      expect(sm.getStatus().clients[0].state).toBe('waiting');
+      expect(sm.getStatus().clients[0].error).toBeUndefined();
     });
   });
 });

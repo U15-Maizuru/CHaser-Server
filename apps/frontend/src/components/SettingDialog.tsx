@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { CatalogEntry } from '@u15/ws-types';
 import type { AppSettings } from '../hooks/useSettings';
 import {
   BG_ROOT, BG_CARD, BORDER_COLOR, COOL_COLOR,
@@ -20,10 +21,11 @@ interface Props {
 const THEMES = ['Jewel', 'Light', 'Heavy', 'RPG'] as const;
 
 export function SettingDialog({ settings, darkMode, httpBase, onSave, onSetDarkMode, onUploadMusic, onClose }: Props) {
-  const [tab, setTab]             = useState<'game' | 'map' | 'bgm' | 'env'>('game');
+  const [tab, setTab]             = useState<'game' | 'bgm' | 'env'>('game');
   const [draft, setDraft]         = useState<AppSettings>({ ...settings });
   const [draftDarkMode, setDraftDarkMode] = useState(darkMode);
   const [musicFiles, setMusicFiles] = useState<string[]>([]);
+  const [catalogEntries, setCatalogEntries] = useState<CatalogEntry[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -33,6 +35,28 @@ export function SettingDialog({ settings, darkMode, httpBase, onSave, onSetDarkM
       .catch(() => {});
     return () => { cancelled = true; };
   }, [httpBase]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${httpBase}/api/programs`)
+      .then(res => res.json() as Promise<{ entries: CatalogEntry[] }>)
+      .then(({ entries }) => { if (!cancelled) setCatalogEntries(entries); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [httpBase]);
+
+  const handleToggleDemoEnabled = (id: string, enabled: boolean) => {
+    fetch(`${httpBase}/api/programs/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ demoEnabled: enabled }),
+    })
+      .then(res => res.json() as Promise<{ entry: CatalogEntry }>)
+      .then(({ entry }) => {
+        setCatalogEntries(prev => prev.map(e => (e.id === entry.id ? entry : e)));
+      })
+      .catch(() => {});
+  };
 
   const set = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) =>
     setDraft(d => ({ ...d, [key]: value }));
@@ -55,7 +79,6 @@ export function SettingDialog({ settings, darkMode, httpBase, onSave, onSetDarkM
         {/* タブ */}
         <div style={s.tabs}>
           <TabBtn active={tab === 'game'} onClick={() => setTab('game')}>ゲーム</TabBtn>
-          <TabBtn active={tab === 'map'}  onClick={() => setTab('map')}>ランダムマップ</TabBtn>
           <TabBtn active={tab === 'bgm'}  onClick={() => setTab('bgm')}>BGM</TabBtn>
           {window.electronAPI && (
             <TabBtn active={tab === 'env'} onClick={() => setTab('env')}>環境</TabBtn>
@@ -126,50 +149,30 @@ export function SettingDialog({ settings, darkMode, httpBase, onSave, onSetDarkM
                     style={s.check}
                   />
                 </Row>
+                <Row label="デモ対象プログラム">
+                  {catalogEntries.length === 0 ? (
+                    <span style={s.hint}>プログラムライブラリに対戦用プログラムをアップロードしてください</span>
+                  ) : (
+                    <div style={s.demoList}>
+                      {catalogEntries.map(entry => (
+                        <label key={entry.id} style={s.demoRow}>
+                          <input
+                            type="checkbox"
+                            checked={entry.demoEnabled}
+                            onChange={e => handleToggleDemoEnabled(entry.id, e.target.checked)}
+                            style={s.check}
+                          />
+                          <span style={s.demoName}>{entry.displayName}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </Row>
                 <Row label="ダークモード (視界のみ表示)">
                   <input
                     type="checkbox"
                     checked={draftDarkMode}
                     onChange={e => setDraftDarkMode(e.target.checked)}
-                    style={s.check}
-                  />
-                </Row>
-              </tbody>
-            </table>
-          )}
-
-          {tab === 'map' && (
-            <table style={s.table}>
-              <tbody>
-                <Row label="ターン数">
-                  <input
-                    type="number" min={10} max={500} step={10}
-                    value={draft.turnNum}
-                    onChange={e => set('turnNum', Number(e.target.value))}
-                    style={s.numInput}
-                  />
-                </Row>
-                <Row label="ブロック数 (偶数)">
-                  <input
-                    type="number" min={0} max={100} step={2}
-                    value={draft.blockNum}
-                    onChange={e => set('blockNum', Number(e.target.value))}
-                    style={s.numInput}
-                  />
-                </Row>
-                <Row label="アイテム数 (奇数)">
-                  <input
-                    type="number" min={1} max={200} step={2}
-                    value={draft.itemNum}
-                    onChange={e => set('itemNum', Number(e.target.value))}
-                    style={s.numInput}
-                  />
-                </Row>
-                <Row label="対称マップ">
-                  <input
-                    type="checkbox"
-                    checked={draft.mirror}
-                    onChange={e => set('mirror', e.target.checked)}
                     style={s.check}
                   />
                 </Row>
@@ -323,6 +326,13 @@ const s: Record<string, React.CSSProperties> = {
     border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM, color: TEXT_PRIMARY, fontSize: 13,
   },
   check: { width: 16, height: 16, cursor: 'pointer', accentColor: COOL_COLOR },
+  hint:  { fontSize: 11, color: TEXT_MUTED },
+  demoList: { display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 120, overflow: 'auto' },
+  demoRow:  { display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' },
+  demoName: {
+    fontSize: 12, color: TEXT_PRIMARY, fontFamily: FONT_NUM,
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  },
   pathRow: { display: 'flex', alignItems: 'center', gap: 6 },
   pathText: {
     flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',

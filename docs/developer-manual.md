@@ -92,6 +92,7 @@ U15-server-maizuru/
 │   │   └── src/
 │   │       ├── index.ts            エントリポイント (U15_MODE 分岐)
 │   │       ├── RoomManager.ts      部屋ライフサイクル管理
+│   │       ├── mapCatalog.ts       マップライブラリ (CRUD カタログ、全ルーム共通)
 │   │       ├── clients/
 │   │       │   ├── BaseClient.ts
 │   │       │   ├── ComClient.ts
@@ -123,6 +124,9 @@ U15-server-maizuru/
 │   │       │   ├── Lobby.tsx           ロビー画面 (Web モード)
 │   │       │   ├── DisplayMode.tsx     対戦表示 (wsUrl/roomId を props で受け取る)
 │   │       │   ├── StartupDialog.tsx
+│   │       │   ├── MapManagementDialog.tsx  マップ設定 (ライブラリ選択・アップロード・ランダム生成・エディタ起動) の統合モーダル
+│   │       │   ├── MapEditorDialog.tsx      Canvas ベースのマップ編集 (現在のマップを起点に編集し、適用/ライブラリ保存/ダウンロードを分離)
+│   │       │   ├── MapThumbnail.tsx         マップの縮小プレビュー (現在マップ要約カードで使用)
 │   │       │   ├── MainWindow.tsx      盤面・スコア・進行状況の表示 (対戦表示/コントロール共用)
 │   │       │   ├── ManualMode.tsx      手動操作ウィンドウのルート
 │   │       │   ├── ManualControls.tsx  手動操作の入力パネル (矢印キー/ボタン)
@@ -132,7 +136,7 @@ U15-server-maizuru/
 │   │       │   ├── useGameState.ts     WS 接続・roomId 引数・join_room 送信・ゲーム状態管理
 │   │       │   ├── useLobby.ts         ロビー用 WS フック
 │   │       │   ├── useGamePhaseSound.ts  ControlApp/DisplayMode 共用のフェーズ遷移 SE
-│   │       │   ├── useTextures.ts        GameBoardCanvas/MapEditorDialog 共用のテクスチャ読込
+│   │       │   ├── useTextures.ts        GameBoardCanvas/MapEditorDialog/MapThumbnail 共用のテクスチャ読込
 │   │       │   ├── useBgm.ts             フェーズに応じた BGM 再生
 │   │       │   ├── useStartCountdown.ts  試合開始カウントダウンの表示制御
 │   │       │   └── ...
@@ -150,7 +154,7 @@ U15-server-maizuru/
 │       └── src/index.ts    バックエンド・フロントエンド共有のプロトコル型・メッセージ型を定義
 │
 ├── server/
-│   ├── maps/                       マップファイル (全ルーム共通)
+│   ├── map-catalog/                マップライブラリ (CRUD カタログ、全ルーム共通)
 │   └── rooms/<roomId>/
 │       ├── programs/cool/          COOL チームのアップロードプログラム
 │       ├── programs/hot/
@@ -208,6 +212,11 @@ enum MapObject, Winner, Reason
 interface GameStateSnapshot, TurnStartPayload, ScoreData, GameEndPayload
 interface RoundResult, ServerStatusPayload, ClientStatusPayload
 type ServerPhase, ClientType, ClientState
+
+// マップライブラリ (カタログ) を表す型
+interface MapCatalogEntry { id, displayName, mapPath, uploadedAt, size, turn, blockCount, itemCount }
+interface MapParams { itemNum, blockNum, turnNum, mirror, size? }
+interface InlineMapData { field, size, turn, teamFirstPoint }
 
 // ルーム / ロビーを表す型
 interface RoomSummary { id, phase, ports, createdAt }
@@ -276,7 +285,7 @@ class RoomManager {
 | クラス | 責務 |
 |---|---|
 | `SlotManager` | スロットごとのクライアント接続 (Process/Tcp/Manual/Com) のライフサイクル管理。`setClientType` / `deleteProgram` / `startListening` など |
-| `MapManager` | マップ状態の保持・生成・読込 (`loadMap` / `setMapParams` / `loadMapData`) |
+| `MapManager` | マップ状態の保持・生成・読込 (`loadMap` / `setMapParams` / `loadMapData` / `getCurrentMapData`) |
 | `RoundController` | フェーズ (`setup`/`playing`/`finished`)・2試合制のラウンド進行・デモ/リピートモード・ターン表示待機時間 |
 
 ```typescript
@@ -415,11 +424,18 @@ ws.onopen = () => {
 | `/api/default-room` | GET | ローカルモード用: `{roomId: "local", ports: [12031, 12032]}` を返す |
 | `/api/upload/program?slot=0\|1&room=<id>` | POST | AI プログラム (.py/.exe) アップロード |
 | `/api/upload/library?slot=0\|1&room=<id>` | POST | カスタムライブラリ (.py) アップロード |
-| `/api/upload/map` | POST | マップファイル (.map) — 全ルーム共通 |
+| `/api/maps` | POST | マップライブラリへの新規アップロード (.map) — 全ルーム共通、`mapCatalog.ts` |
+| `/api/maps` | GET | マップライブラリの一覧 (`MapCatalogEntry[]`) |
+| `/api/maps/:id` | DELETE | マップライブラリからの削除 |
+| `/api/maps/:id/download` | GET | ライブラリ内マップのダウンロード (Content-Disposition 付き) |
+| `/api/maps/current?room=<id>` | GET | 指定ルームの現在のマップ (`InlineMapData`)。エディタ起点・現在マップ表示に使用 |
+| `/api/maps/random` | POST | ステートレスなランダムマップ生成 (`MapParams` → `InlineMapData`)。`GameSystem.createRandomMap` を直接呼ぶだけでどの部屋にも影響しない |
+| `/api/maps/save-inline` | POST | エディタで組んだマップ (`InlineMapData`) をライブラリへ保存 |
+| `/api/maps/export` | POST | エディタの内容をライブラリに残さずそのままダウンロード |
 | `/api/libs?slot=0\|1&room=<id>` | GET | アップロード済みライブラリ一覧 |
 | `/api/libs/:filename?slot=0\|1&room=<id>` | DELETE | ライブラリ削除 |
 
-アップロードされたファイルは `server/rooms/<roomId>/programs/cool/` 等にルーム別に保存されます。マップファイルのみ `server/maps/` に共通保存されます。
+アップロードされたファイルは `server/rooms/<roomId>/programs/cool/` 等にルーム別に保存されます。マップライブラリは `server/map-catalog/` にルームを跨いで共通保存されます。
 
 ---
 
@@ -530,7 +546,8 @@ App.tsx (ErrorBoundary でラップ)
 │
 ├── ControlApp              (?room=xxx&mode=control)
 │   ├── SettingDialog.tsx
-│   ├── MapEditorDialog.tsx
+│   ├── MapManagementDialog.tsx  (BottomBar の「マップ設定...」から開く。setup フェーズのみ)
+│   │   └── MapEditorDialog.tsx  (MapManagementDialog の「エディタで編集...」から開く)
 │   ├── StartupDialog.tsx
 │   └── MainWindow.tsx
 │
@@ -551,7 +568,7 @@ App.tsx (ErrorBoundary でラップ)
 | `useSettings()` | localStorage への設定永続化 |
 | `useSound()` | SE 再生 |
 | `useGamePhaseSound(snapshot, serverStatus, gameEnd, muted)` | フェーズ遷移 (go/finish/win) とスコア変化の SE 再生。ControlApp と DisplayMode で共用 |
-| `useTextures(theme)` | テーマ別テクスチャ読込。GameBoardCanvas と MapEditorDialog で共用 |
+| `useTextures(theme)` | テーマ別テクスチャ読込。GameBoardCanvas / MapEditorDialog / MapThumbnail で共用 |
 | `useBgm(phase, muted)` | フェーズに応じた BGM 再生・停止 |
 | `useStartCountdown(phase, turnInfo)` | 試合開始カウントダウンの表示制御 |
 | `useFileUpload()` | XHR multipart アップロード |
@@ -676,7 +693,7 @@ server/rooms/<roomId>/programs/cool/   ← COOL プログラム
 server/rooms/<roomId>/programs/hot/    ← HOT プログラム
 server/rooms/<roomId>/libs/cool/       ← COOL カスタムライブラリ
 server/rooms/<roomId>/libs/hot/        ← HOT カスタムライブラリ
-server/maps/                           ← マップ (全ルーム共通)
+server/map-catalog/                    ← マップライブラリ (全ルーム共通)
 ```
 
 ローカルモードでは `roomId='local'` なので `server/rooms/local/programs/cool/` になります。

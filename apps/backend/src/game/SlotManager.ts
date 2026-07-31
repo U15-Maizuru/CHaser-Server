@@ -234,6 +234,17 @@ export class SlotManager extends EventEmitter {
       this.emitChange();
     });
 
+    // 対戦開始後 (waitForClient() 成立後) に Python プロセスが異常終了した場合、
+    // spawnProgram() の catch では拾えないため、ここで受けて管理画面にエラーを表示する。
+    if (tcp instanceof ProcessClient) {
+      tcp.on('crashed', ({ message }: { message: string }) => {
+        if (info.tcp !== tcp) return;
+        console.error(`[slot ${slot}] process crashed:`, message);
+        info.error = message;
+        this.emitChange();
+      });
+    }
+
     if (info.type === 'process' && info.processConfig) {
       void this.spawnProgram(slot, tcp as ProcessClient, info.processConfig);
     } else {

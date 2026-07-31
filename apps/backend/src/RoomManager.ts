@@ -57,6 +57,7 @@ export class RoomManager {
 
     const roomId  = id ?? randomUUID();
     const manager = new ServerManager(ports);
+    manager.setRoomId(roomId);
     const room: Room = {
       id:         roomId,
       ports,

@@ -15,11 +15,6 @@ export interface AppSettings {
   pythonCommand: string; // Python 実行コマンドの上書き ('' = 既定 (同梱 Python / PATH) を使う)
   // テクスチャ
   theme:    string;   // 'Jewel' | 'Light' | 'Heavy' | 'RPG'
-  // ランダムマップ
-  itemNum:  number;
-  blockNum: number;
-  turnNum:  number;
-  mirror:   boolean;
 }
 
 const DEFAULTS: AppSettings = {
@@ -34,10 +29,6 @@ const DEFAULTS: AppSettings = {
   logDir:        '',
   pythonCommand: '',
   theme:      'Jewel',
-  itemNum:    51,
-  blockNum:   20,
-  turnNum:    100,
-  mirror:     true,
 };
 
 const STORAGE_KEY = 'u15_settings';

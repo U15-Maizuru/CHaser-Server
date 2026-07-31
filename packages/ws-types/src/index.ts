@@ -103,6 +103,8 @@ export interface ServerStatusPayload {
   currentRound: 0 | 1;
   roundResults: RoundResult[];
   darkMode:     boolean;
+  /** 現在のマップがパラメータからのランダム生成ではなく、ファイル読み込み/インライン(エディタ)由来かどうか */
+  mapIsCustom:  boolean;
 }
 
 // --- Commands (Frontend → Backend) ---
@@ -114,11 +116,26 @@ export interface ProcessConfig {
   libPath?:       string;
 }
 
+// --- Program library (対戦用プログラムの保存先。lib.pyCHaser 等の import 用ヘルパー
+// ("library" = /api/libs 系) とは無関係の別概念) ---
+
+export interface CatalogEntry {
+  id:             string;
+  displayName:    string;
+  programPath:    string;
+  programType:    'python' | 'bot';
+  runtimeCommand: string;
+  uploadedAt:     number;
+  demoEnabled:    boolean; // デモモードのランダム対戦候補に含めるか
+}
+
 export interface MapParams {
   itemNum:  number;
   blockNum: number;
   turnNum:  number;
   mirror:   boolean;
+  /** 省略時はバックエンド側で既定サイズ (15×17) を使用する */
+  size?:    Point;
 }
 
 export interface InlineMapData {
@@ -126,6 +143,20 @@ export interface InlineMapData {
   size:           Point;
   turn:           number;
   teamFirstPoint: [Point, Point];
+}
+
+// --- Map library (アップロード/エディタ保存されたマップの永続カタログ。
+// プログラムライブラリ (CatalogEntry) と同じグローバル共有の考え方) ---
+
+export interface MapCatalogEntry {
+  id:          string;
+  displayName: string;
+  mapPath:     string;
+  uploadedAt:  number;
+  size:        Point;
+  turn:        number;
+  blockCount:  number;
+  itemCount:   number;
 }
 
 export type FrontendMessage =

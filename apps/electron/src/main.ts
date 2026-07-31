@@ -113,6 +113,7 @@ function createDisplayWindow(roomId: string): void {
     title: 'U15 Server Maizuru — 対戦画面',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), ...WEB_PREFS },
   });
+  displayWindow.removeMenu(); // 観覧用ウィンドウはネイティブメニューバー (File/Edit/...) を表示しない
   loadUrl(displayWindow, `?room=${roomId}&mode=display`);
   displayWindow.on('closed', () => { displayWindow = null; });
 }

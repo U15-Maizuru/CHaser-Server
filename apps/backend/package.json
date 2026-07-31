@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc && node -e \"require('fs').mkdirSync('dist',{recursive:true})\" && esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js --external:node:* --banner:js=\"import{createRequire as __u15CreateRequire}from 'node:module';const require=__u15CreateRequire(import.meta.url);\" && node -e \"require('fs').copyFileSync('package.dist.json','dist/package.json')\"",
+    "build": "tsc && node -e \"require('fs').mkdirSync('dist',{recursive:true})\" && esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js --external:node:* --banner:js=\"import{createRequire as __u15CreateRequire}from 'node:module';const require=__u15CreateRequire(import.meta.url);\" && node -e \"require('fs').copyFileSync('package.dist.json','dist/package.json')\" && node scripts/copy-assets.mjs",
     "dev": "tsx src/index.ts",
     "test": "vitest run"
   },

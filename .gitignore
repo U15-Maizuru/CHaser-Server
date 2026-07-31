@@ -7,6 +7,10 @@ dist/
 apps/electron/release/
 apps/electron/vendor/
 
+# 実行時生成データ (部屋・マップ等の保存先)
+apps/backend/server/
+apps/electron/server/
+
 # E2E テストの実行時生成物
 test-screenshots/
 

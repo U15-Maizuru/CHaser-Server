@@ -1,6 +1,5 @@
 import type { ClientType, ProcessConfig, ServerStatusPayload } from '@u15/ws-types';
 import { TeamSetupPanel } from './TeamSetupPanel';
-import { SetupFooter } from './SetupFooter';
 import {
   BG_ROOT, BG_HEADER, BG_CARD,
   BORDER_COLOR, COOL_COLOR, COOL_PALE, COOL_DARK, HOT_COLOR, HOT_PALE, HOT_DARK,
@@ -16,10 +15,6 @@ interface Props {
   roomId:          string;
   onSetClient:     (slot: 0 | 1, type: ClientType, cfg?: ProcessConfig) => void;
   onDeleteProgram: (slot: 0 | 1) => void;
-  onStart:         () => void;
-  onLoadMap:       () => void;
-  onOpenEditor:    () => void;
-  onOpenSettings:  () => void;
 }
 
 const TEAM_LABEL  = ['COOL', 'HOT']        as const;
@@ -30,10 +25,7 @@ const TEAM_DARK   = [COOL_DARK, HOT_DARK]   as const;
 export function StartupDialog({
   status, httpBase, roomId,
   onSetClient, onDeleteProgram,
-  onStart, onLoadMap, onOpenEditor, onOpenSettings,
 }: Props) {
-  const allReady = status.clients.every(c => c.state === 'ready');
-
   return (
     <div style={s.root}>
       {/* Header */}
@@ -71,15 +63,6 @@ export function StartupDialog({
           />
         ))}
       </div>
-
-      {/* Footer */}
-      <SetupFooter
-        allReady={allReady}
-        onStart={onStart}
-        onLoadMap={onLoadMap}
-        onOpenEditor={onOpenEditor}
-        onOpenSettings={onOpenSettings}
-      />
     </div>
   );
 }
@@ -88,7 +71,7 @@ const s: Record<string, React.CSSProperties> = {
   root: {
     display: 'flex',
     flexDirection: 'column',
-    height: '100vh',
+    height: '100%',
     background: BG_ROOT,
     color: TEXT_PRIMARY,
     fontFamily: FONT_UI,

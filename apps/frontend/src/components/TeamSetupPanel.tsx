@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import type { ClientStatusPayload, ClientType, ProcessConfig } from '@u15/ws-types';
-import { FileDropZone } from './FileDropZone';
+import type { CatalogEntry, ClientStatusPayload, ClientType, ProcessConfig } from '@u15/ws-types';
 import { LibrarySection } from './LibrarySection';
+import { ProgramLibrarySection } from './ProgramLibrarySection';
 import {
   BG_CARD, BORDER_COLOR, TEXT_SECONDARY, TEXT_MUTED, TEXT_PRIMARY,
   STATE_READY, STATE_CONNECTED, STATE_WAITING,
@@ -36,13 +36,11 @@ const TYPE_LABELS: { type: ClientType; label: string }[] = [
 ];
 
 export function TeamSetupPanel({ slot, label, color, bgColor, darkColor, info, httpBase, roomId, onSetType, onDeleteProgram }: Props) {
-  const [tcpRuntime, setTcpRuntime] = useState('python');
+  const [showError, setShowError] = useState(false);
 
   const stateColor = info.state === 'ready'     ? STATE_READY
                    : info.state === 'connected' ? STATE_CONNECTED
                    : STATE_WAITING;
-
-  const progEndpoint = `${httpBase}/api/upload/program?slot=${slot}&room=${roomId}`;
 
   const handleTypeChange = (type: ClientType) => {
     if (type === 'cpu' || type === 'manual' || type === 'tcp') {
@@ -52,12 +50,12 @@ export function TeamSetupPanel({ slot, label, color, bgColor, darkColor, info, h
     }
   };
 
-  const handleProgramUploaded = (serverPath: string) => {
-    const libPath = `server/libs/${slot === 0 ? 'cool' : 'hot'}`;
+  const handleProgramSelected = (entry: CatalogEntry) => {
+    const libPath = `server/rooms/${roomId}/libs/${slot === 0 ? 'cool' : 'hot'}`;
     onSetType('process', {
-      programType:    'python',
-      programPath:    serverPath,
-      runtimeCommand: tcpRuntime,
+      programType:    entry.programType,
+      programPath:    entry.programPath,
+      runtimeCommand: entry.runtimeCommand,
       libPath,
     });
   };
@@ -87,15 +85,10 @@ export function TeamSetupPanel({ slot, label, color, bgColor, darkColor, info, h
           ))}
         </div>
 
-        {/* Program upload area */}
+        {/* Program library: select or upload */}
         {info.type === 'process' && (
           <div style={s.uploadSection}>
-            <FileDropZone
-              endpoint={progEndpoint}
-              accept={['.py', '.exe']}
-              label="プログラムファイルをドロップ"
-              onUploaded={handleProgramUploaded}
-            />
+            <ProgramLibrarySection httpBase={httpBase} onSelect={handleProgramSelected} />
             {info.state === 'ready' && (
               <button style={s.resetBtn} onClick={handleDeleteProgram}>
                 プログラムを削除
@@ -121,10 +114,15 @@ export function TeamSetupPanel({ slot, label, color, bgColor, darkColor, info, h
             <span style={s.playerName}>{info.name}</span>
           )}
           {info.error && (
-            <span style={s.errorText} title={info.error}>⚠ エラー</span>
+            <button style={s.errorBtn} onClick={() => setShowError(v => !v)}>
+              ⚠ エラー {showError ? '▲' : '▼'}
+            </button>
           )}
         </div>
         {info.ip && <div style={s.ipSmall}>{info.ip}</div>}
+        {info.error && showError && (
+          <pre style={s.errorDetail}>{info.error}</pre>
+        )}
 
         {/* Library management */}
         {info.type === 'process' && (
@@ -202,6 +200,30 @@ const s: Record<string, React.CSSProperties> = {
     letterSpacing: 1,
   },
   playerName: { fontSize: 13, fontWeight: 700, fontFamily: FONT_NUM, color: TEXT_PRIMARY },
-  errorText:  { fontSize: 11, color: '#c43a3a', cursor: 'help' },
+  errorBtn: {
+    padding: '2px 8px',
+    border: '1px solid #c43a3a',
+    borderRadius: 99,
+    background: 'none',
+    color: '#c43a3a',
+    fontSize: 11,
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+  errorDetail: {
+    margin: 0,
+    padding: '8px 10px',
+    maxHeight: 200,
+    overflow: 'auto',
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-all',
+    fontSize: 10,
+    lineHeight: 1.5,
+    fontFamily: FONT_NUM,
+    color: '#c43a3a',
+    background: 'rgba(196, 58, 58, 0.08)',
+    border: '1px solid rgba(196, 58, 58, 0.3)',
+    borderRadius: 6,
+  },
   ipSmall:    { fontSize: 10, color: TEXT_MUTED, fontFamily: FONT_NUM },
 };

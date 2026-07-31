@@ -33,6 +33,13 @@ export class RoundController {
     return this.phase === 'setup';
   }
 
+  /** マップ設定 (ターン数/アイテム数/ブロック数/対称/読み込み) を変更してよいか。
+   *  setup フェーズであっても、2試合制の第1試合後・第2試合待機中の setup
+   *  (roundResults に既に結果がある) では、セット内でマップが変わってしまうため許可しない。 */
+  canEditMap(): boolean {
+    return this.phase === 'setup' && this.roundResults.length === 0;
+  }
+
   canGoNextRound(): boolean {
     if (this.phase !== 'finished') return false;
     if (!this.doubleMode || this.currentRound !== 1) return false;

@@ -10,7 +10,7 @@ import {
   BG_CARD,
   COOL_COLOR, COOL_LIGHT, COOL_PALE, COOL_DARK,
   HOT_COLOR,  HOT_LIGHT,  HOT_PALE,  HOT_DARK,
-  WIN_BASE, WIN_LIGHT, WIN_PALE,
+  WIN_BASE, WIN_PALE,
   TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
   SHADOW_SM, BORDER_COLOR,
   RADIUS_SM, RADIUS_MD,
@@ -337,24 +337,50 @@ function RoundSection({ row, dim }: { row: RoundRowData; dim: PanelDim }) {
         </span>
       </div>
 
-      {row.status === 'pending' ? (
-        <div style={{
-          ...s.roundBadge, fontSize: dim.badgeFont, padding: `${dim.badgePadV}px ${dim.badgePadH}px`,
-          background: pale, color: base, alignSelf: 'center',
-        }}>未対戦</div>
-      ) : (
-        <div style={{ ...s.statsGrid, gap: dim.gridGap }}>
-          {/* 完了済み (finished) は4列表示になるため、カード幅内に収まるよう全セルを small サイズに揃える */}
-          <StatCell label="勝敗"     value={row.outcome ?? '-'} bg={pale} color={base} small={row.status === 'finished'} dim={dim} />
-          <StatCell label="アイテム" value={String(row.items)} bg={pale} color={base} small={row.status === 'finished'} dim={dim} />
-          {row.status === 'finished' && (
-            <>
-              <StatCell label="一撃"   value={`${row.strikeBonus}pt`} bg={pale} color={base} small dim={dim} />
-              <StatCell label="総取り" value={`${row.sweepBonus}pt`} bg={pale} color={base} small dim={dim} />
-            </>
-          )}
+      {/* 統計エリアは pending/live/finished のどの状態でも同じ2段構成を描画し、高さを
+          試合開始前から確保しておく。そうしないと 未対戦→試合中→終了 と状態が進むたびに
+          この行の高さが変わり、下に続く行やTOTAL欄の表示位置がズレてしまう。
+          pending時は中身を空にし、「未対戦」バッジを中央に重ねて表示する。 */}
+      <div style={{ position: 'relative' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: dim.gridGap }}>
+          <div style={{ ...s.statsGrid, gap: dim.gridGap }}>
+            <StatCell
+              label={row.status === 'pending' ? '' : '勝敗'}
+              value={row.status === 'pending' ? '' : (row.outcome ?? '-')}
+              bg={pale} color={base} dim={dim}
+            />
+            <StatCell
+              label={row.status === 'pending' ? '' : 'アイテム'}
+              value={row.status === 'pending' ? '' : String(row.items)}
+              bg={pale} color={base} dim={dim}
+            />
+          </div>
+          {/* 一撃/総取りは2段目。実値が出るのは finished のみで、pending/live は箱だけ確保して空にする */}
+          <div style={{ ...s.statsGrid, gap: dim.gridGap }}>
+            <StatCell
+              label={row.status === 'finished' ? '一撃' : ''}
+              value={row.status === 'finished' ? `${row.strikeBonus}pt` : ''}
+              bg={pale} color={base} dim={dim}
+            />
+            <StatCell
+              label={row.status === 'finished' ? '総取り' : ''}
+              value={row.status === 'finished' ? `${row.sweepBonus}pt` : ''}
+              bg={pale} color={base} dim={dim}
+            />
+          </div>
         </div>
-      )}
+        {row.status === 'pending' && (
+          <div style={{
+            position: 'absolute', inset: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <span style={{
+              ...s.roundBadge, fontSize: dim.badgeFont, padding: `${dim.badgePadV}px ${dim.badgePadH}px`,
+              background: pale, color: base,
+            }}>未対戦</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -417,7 +443,8 @@ function StatCell({ label, value, bg, color, small, dim }: {
 }) {
   return (
     <div style={{ ...cellS.wrap, flex: 1 }}>
-      <div style={{ ...cellS.label, fontSize: dim.statLabelFont }}>{label}</div>
+      {/* 空文字だと行送りが発生せず高さが潰れるため、非改行スペースで行の高さを確保する */}
+      <div style={{ ...cellS.label, fontSize: dim.statLabelFont }}>{label || ' '}</div>
       <div style={{
         ...cellS.value,
         background: bg,
@@ -425,7 +452,7 @@ function StatCell({ label, value, bg, color, small, dim }: {
         fontSize: small ? dim.statValueFontSmall : dim.statValueFont,
         padding: `${dim.statValuePadV}px ${dim.statValuePadH}px`,
       }}>
-        {value}
+        {value || ' '}
       </div>
     </div>
   );
@@ -483,7 +510,6 @@ const s: Record<string, React.CSSProperties> = {
   totalHeader: {
     fontWeight: 700, color: WIN_BASE,
     letterSpacing: '0.06em',
-    borderTop: `2px solid ${WIN_LIGHT}`,
   },
   totalGrid: { display: 'flex' },
 };
