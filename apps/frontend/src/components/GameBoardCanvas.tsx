@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { MapObject } from '@u15/ws-types';
 import type { GameStateSnapshot, Point } from '@u15/ws-types';
 import { useTextures, type TextureKey } from '../hooks/useTextures';
+import type { DecisiveEffect } from '../lib/decisiveEffect';
 
 const DEFAULT_CELL = 36;
 
@@ -12,6 +13,11 @@ const COLOR = {
   cool:    '#3a82c4',
   hot:     '#c43a3a',
   outline: '#ffffff22',
+  // 決着演出の2色。tokens.ts のパステル値は暗い盤面の上では沈むため、canvas 専用の値を持つ。
+  // gold (勝者) と warn (自滅) は色相が近いので、色だけでなく「面のグロー vs 線のリング」
+  // という形の違いと明暗 (勝者は明るく、敗者は暗転) でも区別が付くように描く。
+  gold:    '#ffd24a', // 勝者・引き分け (tokens.ts の GOLD_BASE を盤面向けに明るくした値)
+  warn:    '#ff7a1a', // 自滅 (衝突/自縛/通信エラー)。gold と紛れないよう橙寄りにする
 } as const;
 
 // 隣接1マス移動のウォーキングアニメーション用の設定。
@@ -22,6 +28,10 @@ const MIN_WALK_MS   = 60;
 const MAX_WALK_MS   = 260;
 
 const VEIL_WIPE_MS = 800; // ラウンド終了時にダーク幕が上から消えていくワイプ演出の所要時間
+
+// 決着演出 (敗者の上にブロック / 周囲4マスの強調) のインパクト部分の長さ。
+// これが終わったあとも、演出そのものは静止した状態で結果表示中ずっと残り続ける。
+const DECISIVE_MS = 500;
 
 function easeOutQuad(t: number): number {
   return 1 - (1 - t) * (1 - t);
@@ -34,6 +44,8 @@ interface Props {
   cellSize?: number;   // 外部からセルサイズを指定 (省略時は DEFAULT_CELL)
   darkMode?: boolean;  // true: 各チームの現在地周辺 (3x3) のみ明るく表示し、他は暗く覆う
   roundEnded?: boolean; // true: ラウンドが終了した瞬間にダーク幕を上からワイプで解除する
+  /** 決着演出 (全決着理由。勝者の 👑 と敗者の暗転を含む)。null なら何も描かない */
+  decisive?: DecisiveEffect | null;
 }
 
 interface WalkAnim {
@@ -68,7 +80,7 @@ interface DrawContext {
   H:        number;
 }
 
-export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellSize = DEFAULT_CELL, darkMode = false, roundEnded = false }: Props) {
+export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellSize = DEFAULT_CELL, darkMode = false, roundEnded = false, decisive = null }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const maskCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const textures  = useTextures(theme);
@@ -102,6 +114,13 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
   // アイテム取得アニメーション: 前回の field との差分で ITEM→非ITEM を検知する
   const itemFadesRef      = useRef<ItemFade[]>([]);
   const itemAnimStatesRef = useRef<Map<string, { scale: number; alpha: number }>>(new Map());
+
+  // 決着演出。decisiveAnimRef は最初のインパクト (リング拡散・ブロックのポップイン) の
+  // 進行状態だけを持ち、完了すると null に戻る。演出の内容そのものは decisiveRef が
+  // 保持し続けるため、インパクトが終わったあとも静止した状態で残る。
+  const decisiveRef     = useRef<DecisiveEffect | null>(decisive);
+  decisiveRef.current   = decisive;
+  const decisiveAnimRef = useRef<{ start: number; duration: number } | null>(null);
 
   // blockPopsRef を走査してスケール/アルファを再計算し、完了したものは取り除く。
   // まだアニメ中のマスが残っていれば true を返す (rAF ループ継続判定に使う)。
@@ -216,6 +235,138 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
       }
     }
 
+    // 3b. 決着演出。どの決着理由でも勝者に 👑 が付き敗者は暗転するので、盤面を見れば
+    // 必ず勝敗が分かる。敗者側のバッジと形 (下敷き/囲まれ) と色 (攻撃側チーム色=相手のせい /
+    // 警告色=自滅) は、その上で「なぜ負けたか」を静止画でも読み取れるようにするためのもの。
+    const decisiveNow = decisiveRef.current;
+    if (decisiveNow) {
+      const anim  = decisiveAnimRef.current;
+      const ratio = anim ? Math.min(1, (now - anim.start) / anim.duration) : 1;
+      const eased = easeOutQuad(ratio);
+      const lineW = Math.max(2, CELL * 0.09);
+
+      // アクセント色の枠を1マス分描く (セル内側に収まるよう線幅の半分だけ内寄せする)
+      const strokeCell = (col: number, row: number, color: string) => {
+        ctx.strokeStyle = color;
+        ctx.lineWidth   = lineW;
+        ctx.beginPath();
+        ctx.roundRect(
+          cx(col) + lineW / 2, cy(row) + lineW / 2,
+          CELL - lineW, CELL - lineW,
+          Math.max(3, CELL * 0.15),
+        );
+        ctx.stroke();
+      };
+
+      // 敗者を先に描いてから勝者を描く。順序を逆にすると敗者の暗転が勝者のグローに
+      // 掛かってしまい、勝者側が沈んで見えてしまう
+      const ordered = [...decisiveNow.marks].sort(
+        (a, b) => (a.role === 'winner' ? 1 : 0) - (b.role === 'winner' ? 1 : 0),
+      );
+
+      for (const mark of ordered) {
+        const pos     = positions[mark.team];
+        const centerX = cx(pos.x) + CELL / 2;
+        const centerY = cy(pos.y) + CELL / 2;
+        // 'opponent' = そのチームの相手の色 (= 敗者から見た攻撃側の色)
+        const accent =
+          mark.accent === 'opponent' ? (mark.team === 0 ? COLOR.hot : COLOR.cool) :
+          mark.accent === 'warn'     ? COLOR.warn :
+          mark.accent === 'gold'     ? COLOR.gold : null;
+
+        ctx.save();
+
+        if (mark.shape === 'crush') {
+          // 敗者の上にブロックを重ねて「下敷き」を表現する。小さめ (0.72倍) に描くことで
+          // キャラクターが四辺から覗き、「キャラの上にブロックが乗っている」関係が読み取れる
+          const scale = 0.72 * (0.55 + 0.45 * eased); // 落ちてきて収まるポップイン
+          ctx.save();
+          ctx.globalAlpha = eased;
+          ctx.translate(centerX, centerY);
+          ctx.scale(scale, scale);
+          ctx.translate(-centerX, -centerY);
+          if (!drawImg('Block', cx(pos.x), cy(pos.y))) drawBlock(ctx, cx(pos.x), cy(pos.y), CELL);
+          ctx.restore();
+        } else if (mark.shape === 'surround') {
+          // 包囲・自縛: 敗者の上下左右のブロックを強調する。歩行補間の途中でも
+          // 隣接マスはセル境界に合わせる必要があるため、整数マスに丸めて使う
+          const bx = Math.round(pos.x);
+          const by = Math.round(pos.y);
+          const neighbors = [[bx, by - 1], [bx, by + 1], [bx - 1, by], [bx + 1, by]];
+          ctx.globalAlpha = eased;
+          for (const [nx, ny] of neighbors) {
+            // 盤外 (壁で塞がれている辺) は描くセルが無いのでスキップする
+            if (nx < 0 || ny < 0 || nx >= size.x || ny >= size.y) continue;
+            // 枠が下に隠れないよう、ブロックを描き直してからその上に枠を重ねる
+            if (!drawImg('Block', cx(nx), cy(ny))) drawBlock(ctx, cx(nx), cy(ny), CELL);
+            if (accent) strokeCell(nx, ny, accent);
+          }
+          ctx.globalAlpha = 1;
+        }
+
+        // 敗北の暗転。キャラ自身のマスだけを覆う (包囲の周囲4マスは暗転させない)
+        if (mark.dim) {
+          ctx.globalAlpha = 0.45 * eased;
+          ctx.fillStyle   = '#000000';
+          ctx.fillRect(cx(pos.x), cy(pos.y), CELL, CELL);
+          ctx.globalAlpha = 1;
+        }
+
+        // 勝者のグロー: 敗者側の「線のリング」に対して「面の光」で描き分ける。
+        // gold と warn は色相が近いため、色だけに頼らず形と明暗でも区別できるようにしている
+        if (mark.role !== 'loser' && accent) {
+          const r = CELL * 0.9 * eased;
+          if (r > 0) {
+            const grad = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, r);
+            grad.addColorStop(0,    `${accent}cc`);
+            grad.addColorStop(0.45, `${accent}66`);
+            grad.addColorStop(1,    `${accent}00`);
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, r, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        // キャラのマスを囲むリング ('surround' は既に周囲4マスへ描いたので二重に描かない)
+        if (accent && mark.shape !== 'surround') {
+          ctx.globalAlpha = eased;
+          strokeCell(pos.x, pos.y, accent);
+          ctx.globalAlpha = 1;
+        }
+
+        // インパクトのリング: アクセント色の輪が外へ拡がりながら消える (演出中のみ)
+        if (ratio < 1 && accent) {
+          ctx.globalAlpha = 1 - eased;
+          ctx.strokeStyle = accent;
+          ctx.lineWidth   = lineW;
+          ctx.beginPath();
+          ctx.arc(centerX, centerY, CELL * (0.5 + 0.6 * eased), 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
+
+        // バッジ: マス中央に置く。勝敗と敗因を色とは独立にもう一度示すことで、
+        // 色が見づらい環境でも区別できるようにする。暗いブロックの上にも明るい床の上にも
+        // 乗るため、縁取りを付けて両方で読めるようにする
+        if (mark.badge) {
+          ctx.globalAlpha  = eased;
+          ctx.font         = `${Math.max(10, Math.floor(CELL * 0.5))}px sans-serif`;
+          ctx.textAlign    = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.lineWidth    = Math.max(2, CELL * 0.06);
+          ctx.strokeStyle  = 'rgba(0,0,0,0.65)';
+          ctx.lineJoin     = 'round';
+          ctx.strokeText(mark.badge, centerX, centerY);
+          // 絵文字が白黒グリフにフォールバックした場合でも見えるよう fillStyle を明示する
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(mark.badge, centerX, centerY);
+        }
+
+        ctx.restore();
+      }
+    }
+
     // 4. ダークモード: 幕は別レイヤー (オフスクリーン canvas) 上で塗りつぶし→切り抜きを完結させ、
     // その結果だけをメイン canvas に重ね描きする。切り抜き (destination-out) の対象をメイン
     // canvas から分離することで、既に描画済みのマップ (床・ブロック・プレイヤー) には触れずに
@@ -257,14 +408,15 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
     }
   };
 
-  // アニメ対象 (歩行・ブロック出現・アイテム消滅・ダーク幕ワイプ) が残っていれば rAF ループを開始する。
-  // 複数のトリガー (snapshot 受信、ラウンド終了) から呼ばれるため、既に回っている場合は何もしない。
+  // アニメ対象 (歩行・ブロック出現・アイテム消滅・ダーク幕ワイプ・決着演出) が残っていれば
+  // rAF ループを開始する。複数のトリガー (snapshot 受信、ラウンド終了、決着) から呼ばれるため、
+  // 既に回っている場合は何もしない。
   const startLoopIfNeeded = () => {
     if (rafRef.current !== null) return;
     const isActive =
       !!animRef.current[0] || !!animRef.current[1] ||
       blockPopsRef.current.length > 0 || itemFadesRef.current.length > 0 ||
-      wipeRef.current !== null;
+      wipeRef.current !== null || decisiveAnimRef.current !== null;
     if (!isActive) return;
 
     const tick = () => {
@@ -299,8 +451,22 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
         }
       }
 
+      // 決着演出のインパクト部分。完了したら anim は畳むが、decisiveRef は残るので
+      // この直後の drawFrame が静止した最終形を描き、そのまま盤面に残り続ける
+      let decisiveActive = false;
+      if (decisiveAnimRef.current) {
+        const ratio = (now2 - decisiveAnimRef.current.start) / decisiveAnimRef.current.duration;
+        if (ratio >= 1) {
+          decisiveAnimRef.current = null;
+        } else {
+          decisiveActive = true;
+        }
+      }
+
       drawFrame(renderPosRef.current, now2);
-      rafRef.current = (animating || blocksActive || itemsActive || wipeActive) ? requestAnimationFrame(tick) : null;
+      rafRef.current = (animating || blocksActive || itemsActive || wipeActive || decisiveActive)
+        ? requestAnimationFrame(tick)
+        : null;
     };
     rafRef.current = requestAnimationFrame(tick);
   };
@@ -392,6 +558,16 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roundEnded]);
+
+  // 決着した瞬間 (decisive: null→非null) にインパクト演出を開始する。演出が終わっても
+  // decisive が残っている限り盤面には表示され続け、次のラウンド開始/リセットで decisive が
+  // null に戻ると消える (= フッターの結果ピルとまったく同じライフサイクル)。
+  useEffect(() => {
+    decisiveAnimRef.current = decisive ? { start: performance.now(), duration: DECISIVE_MS } : null;
+    drawFrame(renderPosRef.current);
+    startLoopIfNeeded();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [decisive]);
 
   // ターン間隔の計測やアニメーション状態とは無関係な見た目の変化 (テーマ・盤面サイズ・反転・
   // ダークモード) は、現在の補間位置のまま即座に再描画する

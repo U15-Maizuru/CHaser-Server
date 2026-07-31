@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type {
   GameEndPayload, GameStateSnapshot, TurnStartPayload,
   ServerPhase, ServerStatusPayload,
@@ -7,6 +7,7 @@ import { Reason, Winner } from '@u15/ws-types';
 import { GameBoardCanvas } from './GameBoardCanvas';
 import { PlayerSidePanel } from './PlayerSidePanel';
 import { idxForSide } from '../lib/roundSide';
+import { decisiveEffectFrom } from '../lib/decisiveEffect';
 import {
   BG_ROOT, BG_CARD, BG_HEADER,
   COOL_COLOR, COOL_LIGHT, COOL_DARK,
@@ -85,6 +86,10 @@ export function MainWindow({
   }
   const maxTurn = maxTurnRef.current;
   const gaugePercent = maxTurn > 0 ? Math.max(0, Math.min(100, (turnCount / maxTurn) * 100)) : 0;
+
+  // 盤面上の決着演出 (敗者の上にブロック / 周囲4マスの強調)。GameBoardCanvas 側は参照の変化を
+  // 演出開始のトリガーにしているため、gameEnd が変わったときだけ新しい参照になるようにする
+  const decisive = useMemo(() => decisiveEffectFrom(gameEnd), [gameEnd]);
 
   const winnerTeamIdx = gameEnd?.winner === Winner.COOL ? 0 : gameEnd?.winner === Winner.HOT ? 1 : null;
   const isDraw         = gameEnd?.winner === Winner.DRAW;
@@ -237,7 +242,7 @@ export function MainWindow({
                 <div style={s.boardWrap}>
                   <GameBoardCanvas
                     snapshot={snapshot} theme={theme} cellSize={cellSize} darkMode={darkMode}
-                    flip={flip} roundEnded={phase === 'finished'}
+                    flip={flip} roundEnded={phase === 'finished'} decisive={decisive}
                   />
                   {countdown !== null && (
                     <div style={s.countdownOverlay}>
