@@ -30,14 +30,14 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
   if (!isConnected) {
     return (
       <div style={splash.root}>
-        <div style={splash.title}>U15 Server Maizuru</div>
+        <div style={splash.title}>{settings.displayTitle}</div>
         <div style={splash.sub}>バックエンドに接続中...</div>
       </div>
     );
   }
 
   if (phase === 'setup') {
-    return <SetupWaiting serverStatus={serverStatus} />;
+    return <SetupWaiting serverStatus={serverStatus} displayTitle={settings.displayTitle} />;
   }
 
   return (
@@ -74,7 +74,7 @@ function stateBadgeStyle(state: string): React.CSSProperties {
   }
 }
 
-function SetupWaiting({ serverStatus }: { serverStatus: ServerStatusPayload | null }) {
+function SetupWaiting({ serverStatus, displayTitle }: { serverStatus: ServerStatusPayload | null; displayTitle: string }) {
   const clients      = serverStatus?.clients;
   const doubleMode   = serverStatus?.doubleMode ?? false;
   const currentRound = serverStatus?.currentRound ?? 0;
@@ -83,7 +83,7 @@ function SetupWaiting({ serverStatus }: { serverStatus: ServerStatusPayload | nu
     <div style={sw.root}>
       {/* タイトル */}
       <div style={sw.titleWrap}>
-        <div style={sw.title}>U15 Server Maizuru</div>
+        <div style={sw.title}>{displayTitle}</div>
         <div style={sw.sub}>
           {doubleMode ? `第${currentRound + 1}試合 — ` : ''}対戦開始をお待ちください
         </div>

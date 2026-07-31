@@ -9,6 +9,7 @@ import { BottomBar }       from './components/BottomBar';
 import { SettingDialog }   from './components/SettingDialog';
 import { MapEditorDialog } from './components/MapEditorDialog';
 import { MapManagementDialog } from './components/MapManagementDialog';
+import { ProgramLibraryDialog } from './components/ProgramLibraryDialog';
 import { DisplayMode }     from './components/DisplayMode';
 import { ManualMode }      from './components/ManualMode';
 import { ErrorBoundary }   from './components/ErrorBoundary';
@@ -52,6 +53,7 @@ function ControlApp({ roomId }: { roomId: string }) {
   const [showSettings,      setShowSettings]      = useState(false);
   const [showMapManagement, setShowMapManagement] = useState(false);
   const [showMapEditor,     setShowMapEditor]     = useState(false);
+  const [showProgramLibrary, setShowProgramLibrary] = useState(false);
   const [currentMap,        setCurrentMap]        = useState<InlineMapData | null>(null);
   const [editorSeed,        setEditorSeed]        = useState<EditableMap | null>(null);
 
@@ -233,6 +235,13 @@ function ControlApp({ roomId }: { roomId: string }) {
         />
       )}
 
+      {showProgramLibrary && (
+        <ProgramLibraryDialog
+          httpBase={HTTP_BASE}
+          onClose={() => setShowProgramLibrary(false)}
+        />
+      )}
+
       <div style={controlLayout}>
         <div style={controlContent}>
           {phase === 'setup' ? (
@@ -240,8 +249,10 @@ function ControlApp({ roomId }: { roomId: string }) {
               status={serverStatus ?? defaultStatus}
               httpBase={HTTP_BASE}
               roomId={roomId}
+              displayTitle={settings.displayTitle}
               onSetClient={state.setClient}
               onDeleteProgram={state.deleteProgram}
+              onOpenLibraryManager={() => setShowProgramLibrary(true)}
             />
           ) : (
             <MainWindow
@@ -267,6 +278,7 @@ function ControlApp({ roomId }: { roomId: string }) {
           onRepeat={state.requestRepeat}
           onReset={state.requestReset}
           onOpenMapManagement={() => void openMapManagement()}
+          onOpenProgramLibrary={() => setShowProgramLibrary(true)}
           onOpenSettings={() => setShowSettings(true)}
         />
       </div>

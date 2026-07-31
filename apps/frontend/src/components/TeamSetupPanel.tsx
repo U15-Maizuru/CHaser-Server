@@ -16,10 +16,11 @@ interface Props {
   bgColor:         string;
   darkColor:       string;
   info:            ClientStatusPayload;
-  httpBase:        string;
-  roomId:          string;
-  onSetType:       (type: ClientType, cfg?: ProcessConfig) => void;
-  onDeleteProgram: () => void;
+  httpBase:             string;
+  roomId:               string;
+  onSetType:            (type: ClientType, cfg?: ProcessConfig) => void;
+  onDeleteProgram:      () => void;
+  onOpenLibraryManager: () => void;
 }
 
 const STATE_LABEL: Record<string, string> = {
@@ -35,8 +36,9 @@ const TYPE_LABELS: { type: ClientType; label: string }[] = [
   { type: 'manual',  label: '手動操作'  },
 ];
 
-export function TeamSetupPanel({ slot, label, color, bgColor, darkColor, info, httpBase, roomId, onSetType, onDeleteProgram }: Props) {
+export function TeamSetupPanel({ slot, label, color, bgColor, darkColor, info, httpBase, roomId, onSetType, onDeleteProgram, onOpenLibraryManager }: Props) {
   const [showError, setShowError] = useState(false);
+  const [selectedEntry, setSelectedEntry] = useState<CatalogEntry | null>(null);
 
   const stateColor = info.state === 'ready'     ? STATE_READY
                    : info.state === 'connected' ? STATE_CONNECTED
@@ -58,10 +60,12 @@ export function TeamSetupPanel({ slot, label, color, bgColor, darkColor, info, h
       runtimeCommand: entry.runtimeCommand,
       libPath,
     });
+    setSelectedEntry(entry);
   };
 
   const handleDeleteProgram = () => {
     onDeleteProgram();
+    setSelectedEntry(null);
   };
 
   const activeTypeBtn = { background: color, borderColor: color, color: '#fff' };
@@ -88,10 +92,15 @@ export function TeamSetupPanel({ slot, label, color, bgColor, darkColor, info, h
         {/* Program library: select or upload */}
         {info.type === 'process' && (
           <div style={s.uploadSection}>
-            <ProgramLibrarySection httpBase={httpBase} onSelect={handleProgramSelected} />
+            <ProgramLibrarySection
+              httpBase={httpBase}
+              selectedEntry={selectedEntry}
+              onSelect={handleProgramSelected}
+              onOpenLibraryManager={onOpenLibraryManager}
+            />
             {info.state === 'ready' && (
               <button style={s.resetBtn} onClick={handleDeleteProgram}>
-                プログラムを削除
+                選択を解除
               </button>
             )}
           </div>

@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import type { CatalogEntry } from '@u15/ws-types';
 import type { AppSettings } from '../hooks/useSettings';
 import {
   BG_ROOT, BG_CARD, BORDER_COLOR, COOL_COLOR,
@@ -25,7 +24,6 @@ export function SettingDialog({ settings, darkMode, httpBase, onSave, onSetDarkM
   const [draft, setDraft]         = useState<AppSettings>({ ...settings });
   const [draftDarkMode, setDraftDarkMode] = useState(darkMode);
   const [musicFiles, setMusicFiles] = useState<string[]>([]);
-  const [catalogEntries, setCatalogEntries] = useState<CatalogEntry[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -35,28 +33,6 @@ export function SettingDialog({ settings, darkMode, httpBase, onSave, onSetDarkM
       .catch(() => {});
     return () => { cancelled = true; };
   }, [httpBase]);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch(`${httpBase}/api/programs`)
-      .then(res => res.json() as Promise<{ entries: CatalogEntry[] }>)
-      .then(({ entries }) => { if (!cancelled) setCatalogEntries(entries); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [httpBase]);
-
-  const handleToggleDemoEnabled = (id: string, enabled: boolean) => {
-    fetch(`${httpBase}/api/programs/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ demoEnabled: enabled }),
-    })
-      .then(res => res.json() as Promise<{ entry: CatalogEntry }>)
-      .then(({ entry }) => {
-        setCatalogEntries(prev => prev.map(e => (e.id === entry.id ? entry : e)));
-      })
-      .catch(() => {});
-  };
 
   const set = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) =>
     setDraft(d => ({ ...d, [key]: value }));
@@ -90,6 +66,15 @@ export function SettingDialog({ settings, darkMode, httpBase, onSave, onSetDarkM
           {tab === 'game' && (
             <table style={s.table}>
               <tbody>
+                <Row label="観戦画面のタイトル">
+                  <input
+                    type="text"
+                    value={draft.displayTitle}
+                    onChange={e => set('displayTitle', e.target.value)}
+                    style={s.textInput}
+                    placeholder="U15 Server Maizuru"
+                  />
+                </Row>
                 <Row label="TCP タイムアウト (秒)">
                   <input
                     type="number" min={1} max={60} step={1}
@@ -148,25 +133,6 @@ export function SettingDialog({ settings, darkMode, httpBase, onSave, onSetDarkM
                     onChange={e => set('demoMode', e.target.checked)}
                     style={s.check}
                   />
-                </Row>
-                <Row label="デモ対象プログラム">
-                  {catalogEntries.length === 0 ? (
-                    <span style={s.hint}>プログラムライブラリに対戦用プログラムをアップロードしてください</span>
-                  ) : (
-                    <div style={s.demoList}>
-                      {catalogEntries.map(entry => (
-                        <label key={entry.id} style={s.demoRow}>
-                          <input
-                            type="checkbox"
-                            checked={entry.demoEnabled}
-                            onChange={e => handleToggleDemoEnabled(entry.id, e.target.checked)}
-                            style={s.check}
-                          />
-                          <span style={s.demoName}>{entry.displayName}</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
                 </Row>
                 <Row label="ダークモード (視界のみ表示)">
                   <input
@@ -325,14 +291,12 @@ const s: Record<string, React.CSSProperties> = {
     padding: '5px 8px', background: BG_ROOT,
     border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM, color: TEXT_PRIMARY, fontSize: 13,
   },
-  check: { width: 16, height: 16, cursor: 'pointer', accentColor: COOL_COLOR },
-  hint:  { fontSize: 11, color: TEXT_MUTED },
-  demoList: { display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 120, overflow: 'auto' },
-  demoRow:  { display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' },
-  demoName: {
-    fontSize: 12, color: TEXT_PRIMARY, fontFamily: FONT_NUM,
-    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  textInput: {
+    width: '100%', boxSizing: 'border-box', padding: '5px 8px', background: BG_ROOT,
+    border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM, color: TEXT_PRIMARY,
+    fontSize: 13, fontFamily: FONT_UI,
   },
+  check: { width: 16, height: 16, cursor: 'pointer', accentColor: COOL_COLOR },
   pathRow: { display: 'flex', alignItems: 'center', gap: 6 },
   pathText: {
     flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',

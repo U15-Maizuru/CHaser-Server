@@ -13,8 +13,10 @@ interface Props {
   status:          ServerStatusPayload;
   httpBase:        string;
   roomId:          string;
+  displayTitle:    string;
   onSetClient:     (slot: 0 | 1, type: ClientType, cfg?: ProcessConfig) => void;
   onDeleteProgram: (slot: 0 | 1) => void;
+  onOpenLibraryManager: () => void;
 }
 
 const TEAM_LABEL  = ['COOL', 'HOT']        as const;
@@ -23,14 +25,14 @@ const TEAM_BGCOL  = [COOL_PALE, HOT_PALE]   as const;
 const TEAM_DARK   = [COOL_DARK, HOT_DARK]   as const;
 
 export function StartupDialog({
-  status, httpBase, roomId,
-  onSetClient, onDeleteProgram,
+  status, httpBase, roomId, displayTitle,
+  onSetClient, onDeleteProgram, onOpenLibraryManager,
 }: Props) {
   return (
     <div style={s.root}>
       {/* Header */}
       <div style={s.header}>
-        <span style={s.title}>U15 Server Maizuru</span>
+        <span style={s.title}>{displayTitle}</span>
         <span style={s.subtitle}>セットアップ</span>
         <div style={s.ipBox}>
           <span style={s.ipLabel}>IP</span>
@@ -60,6 +62,7 @@ export function StartupDialog({
             roomId={roomId}
             onSetType={(type, cfg) => onSetClient(slot, type, cfg)}
             onDeleteProgram={() => onDeleteProgram(slot)}
+            onOpenLibraryManager={onOpenLibraryManager}
           />
         ))}
       </div>

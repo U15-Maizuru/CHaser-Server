@@ -10,6 +10,7 @@ export interface AppSettings {
   demoMode:   boolean;  // デモモード (無人自動進行)
   bgmMuted:   boolean;  // BGM ミュート (SE 用の muted とは別)
   bgmTrack:   string;   // 選択中の BGM ファイル名 ('none' = 再生しない)
+  displayTitle: string; // 観戦/表示画面の待機時タイトル文字列
   // 環境 (Electron ローカル限定)
   logDir:        string; // ログ保存先ディレクトリ ('' = 既定値のまま変更しない)
   pythonCommand: string; // Python 実行コマンドの上書き ('' = 既定 (同梱 Python / PATH) を使う)
@@ -26,6 +27,7 @@ const DEFAULTS: AppSettings = {
   demoMode:   false,
   bgmMuted:   false,
   bgmTrack:   'none',
+  displayTitle: 'U15 Server Maizuru',
   logDir:        '',
   pythonCommand: '',
   theme:      'Jewel',

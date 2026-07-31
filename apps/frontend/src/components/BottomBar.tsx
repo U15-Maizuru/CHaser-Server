@@ -9,6 +9,7 @@ interface Props {
   onRepeat:       () => void;
   onReset:        () => void;
   onOpenMapManagement: () => void;
+  onOpenProgramLibrary: () => void;
   onOpenSettings: () => void;
 }
 
@@ -17,7 +18,7 @@ interface Props {
 export function BottomBar({
   isConnected, status,
   onStart, onNextRound, onRepeat, onReset,
-  onOpenMapManagement, onOpenSettings,
+  onOpenMapManagement, onOpenProgramLibrary, onOpenSettings,
 }: Props) {
   const allReady = status.clients.every(c => c.state === 'ready');
   const { phase, doubleMode, repeatMode, roundResults } = status;
@@ -35,6 +36,7 @@ export function BottomBar({
         {phase === 'setup' && (
           <button style={s.btnSecondary} onClick={onOpenMapManagement}>マップ設定...</button>
         )}
+        <button style={s.btnSecondary} onClick={onOpenProgramLibrary}>プログラム管理...</button>
         <button style={s.btnSecondary} onClick={onOpenSettings}>設定</button>
       </div>
 

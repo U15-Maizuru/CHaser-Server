@@ -92,6 +92,7 @@ U15-server-maizuru/
 │   │   └── src/
 │   │       ├── index.ts            エントリポイント (U15_MODE 分岐)
 │   │       ├── RoomManager.ts      部屋ライフサイクル管理
+│   │       ├── programCatalog.ts   対戦用プログラムライブラリ (CRUD カタログ、全ルーム共通)
 │   │       ├── mapCatalog.ts       マップライブラリ (CRUD カタログ、全ルーム共通)
 │   │       ├── clients/
 │   │       │   ├── BaseClient.ts
@@ -154,6 +155,7 @@ U15-server-maizuru/
 │       └── src/index.ts    バックエンド・フロントエンド共有のプロトコル型・メッセージ型を定義
 │
 ├── server/
+│   ├── program-catalog/            プログラムライブラリ (CRUD カタログ、全ルーム共通)
 │   ├── map-catalog/                マップライブラリ (CRUD カタログ、全ルーム共通)
 │   └── rooms/<roomId>/
 │       ├── programs/cool/          COOL チームのアップロードプログラム
@@ -213,7 +215,8 @@ interface GameStateSnapshot, TurnStartPayload, ScoreData, GameEndPayload
 interface RoundResult, ServerStatusPayload, ClientStatusPayload
 type ServerPhase, ClientType, ClientState
 
-// マップライブラリ (カタログ) を表す型
+// プログラム/マップの各ライブラリ (カタログ) を表す型
+interface CatalogEntry { id, displayName, programPath, programType, runtimeCommand, uploadedAt, demoEnabled }
 interface MapCatalogEntry { id, displayName, mapPath, uploadedAt, size, turn, blockCount, itemCount }
 interface MapParams { itemNum, blockNum, turnNum, mirror, size? }
 interface InlineMapData { field, size, turn, teamFirstPoint }
@@ -435,7 +438,7 @@ ws.onopen = () => {
 | `/api/libs?slot=0\|1&room=<id>` | GET | アップロード済みライブラリ一覧 |
 | `/api/libs/:filename?slot=0\|1&room=<id>` | DELETE | ライブラリ削除 |
 
-アップロードされたファイルは `server/rooms/<roomId>/programs/cool/` 等にルーム別に保存されます。マップライブラリは `server/map-catalog/` にルームを跨いで共通保存されます。
+アップロードされたファイルは `server/rooms/<roomId>/programs/cool/` 等にルーム別に保存されます。プログラム・マップの各ライブラリは `server/program-catalog/` / `server/map-catalog/` にルームを跨いで共通保存されます。
 
 ---
 
@@ -546,6 +549,7 @@ App.tsx (ErrorBoundary でラップ)
 │
 ├── ControlApp              (?room=xxx&mode=control)
 │   ├── SettingDialog.tsx
+│   ├── ProgramLibraryDialog.tsx プログラムライブラリの管理 (アップロード/削除/デモ対象)
 │   ├── MapManagementDialog.tsx  (BottomBar の「マップ設定...」から開く。setup フェーズのみ)
 │   │   └── MapEditorDialog.tsx  (MapManagementDialog の「エディタで編集...」から開く)
 │   ├── StartupDialog.tsx
@@ -693,6 +697,7 @@ server/rooms/<roomId>/programs/cool/   ← COOL プログラム
 server/rooms/<roomId>/programs/hot/    ← HOT プログラム
 server/rooms/<roomId>/libs/cool/       ← COOL カスタムライブラリ
 server/rooms/<roomId>/libs/hot/        ← HOT カスタムライブラリ
+server/program-catalog/                ← プログラムライブラリ (全ルーム共通)
 server/map-catalog/                    ← マップライブラリ (全ルーム共通)
 ```
 
