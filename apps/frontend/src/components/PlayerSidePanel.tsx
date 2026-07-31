@@ -6,12 +6,13 @@ import type {
 } from '@u15/ws-types';
 import { Winner } from '@u15/ws-types';
 import { idxForSide } from '../lib/roundSide';
+import { computeSetResult, roundPointsFor } from '../lib/setResult';
 import {
   BG_CARD,
-  COOL_COLOR, COOL_LIGHT, COOL_PALE, COOL_DARK,
-  HOT_COLOR,  HOT_LIGHT,  HOT_PALE,  HOT_DARK,
+  COOL_COLOR, COOL_PALE, COOL_DARK,
+  HOT_COLOR,  HOT_PALE,  HOT_DARK,
   WIN_BASE, WIN_PALE,
-  TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
+  TEXT_MUTED,
   SHADOW_SM, BORDER_COLOR,
   RADIUS_SM, RADIUS_MD,
   FONT_UI, FONT_NUM,
@@ -32,8 +33,10 @@ interface PanelDim {
   badgeFont: number; badgePadV: number; badgePadH: number;
   totalPadV: number; totalPadH: number;
   totalHeaderFont: number; totalHeaderMarginB: number; totalHeaderPadT: number;
-  statLabelFont: number; statValueFont: number; statValueFontSmall: number;
+  statLabelFont: number; statValueFont: number;
   statValuePadV: number; statValuePadH: number;
+  // 1試合制の合計ポイント: パネル唯一の主役なので、他の数値より広いレンジで大きくする
+  soloTotalLabelFont: number; soloTotalValueFont: number;
 }
 
 // width: パネルに割り当てられた実際の幅 (px)。150 は基準幅で、これを 1.0 とした相対スケールを
@@ -64,9 +67,10 @@ function buildDim(width: number, correction: number): PanelDim {
     totalHeaderPadT: clampNum(5 * scale, 4, 22),
     statLabelFont: clampNum(10 * scale, 7, 28),
     statValueFont: clampNum(15 * scale, 10, 49),
-    statValueFontSmall: clampNum(12 * scale, 8, 38),
     statValuePadV: clampNum(4 * scale, 2, 19),
     statValuePadH: clampNum(4 * scale, 3, 15),
+    soloTotalLabelFont: clampNum(13 * scale, 9, 44),
+    soloTotalValueFont: clampNum(30 * scale, 18, 140),
   };
 }
 
@@ -85,6 +89,12 @@ export function PlayerSidePanel({ side, snapshot, serverStatus, width, maxHeight
   const cardRef = useRef<HTMLDivElement>(null);
   const [correction, setCorrection] = useState(1);
 
+  // 探索の上限。2試合制は行数が多く、幅基準の等倍 (correction=1) でカードがほぼ埋まるため 1 で足りる。
+  // 1試合制は行が「一撃/総取り」と「合計ポイント」だけになり縦に大きく余るので、上限を 1 より上に
+  // 開いて、余った高さを文字サイズに使い切れるようにする (各寸法は buildDim の clampNum の max で
+  // 頭打ちになるため、上限を上げても青天井にはならない)。
+  const maxCorrection = doubleMode ? 1 : 2.2;
+
   // 実際の内容の高さ (scrollHeight) を実測し、カードの実高さ (maxHeight) に収まる中で
   // 最大のフォントサイズ (correction) を二分探索で求める。フォントサイズ→必要な高さの関係は
   // buildDim 内の各プロパティごとの min/max クランプにより区間ごとに折れ線 (非線形) になって
@@ -92,7 +102,7 @@ export function PlayerSidePanel({ side, snapshot, serverStatus, width, maxHeight
   // 確実に収束する二分探索を用いる。
   const key = `${Math.round(width / 5)}|${Math.round(maxHeight / 5)}|${doubleMode}|${roundResults.length}`;
   const keyRef = useRef(key);
-  const boundsRef = useRef({ lo: 0.35, hi: 1 }); // lo: 収まることが確認済みの最大値 / hi: 収まらないことが確認済みの最小値
+  const boundsRef = useRef({ lo: 0.35, hi: maxCorrection }); // lo: 収まることが確認済みの最大値 / hi: 収まらないことが確認済みの最小値
 
   useLayoutEffect(() => {
     const el = cardRef.current;
@@ -101,7 +111,7 @@ export function PlayerSidePanel({ side, snapshot, serverStatus, width, maxHeight
     if (keyRef.current !== key) {
       // 幅・高さ・内容の行数が変わったら探索範囲を最初からやり直す
       keyRef.current = key;
-      boundsRef.current = { lo: 0.35, hi: 1 };
+      boundsRef.current = { lo: 0.35, hi: maxCorrection };
       if (correction !== 1) setCorrection(1);
       return; // correction=1 での再描画を待ってから測定する
     }
@@ -115,7 +125,7 @@ export function PlayerSidePanel({ side, snapshot, serverStatus, width, maxHeight
     // 強制的に開き直す。
     if (fits) {
       lo = correction;
-      if (hi <= lo) hi = 1;
+      if (hi <= lo) hi = maxCorrection;
     } else {
       hi = correction;
       if (lo >= hi) lo = Math.max(0.35, hi - 0.1);
@@ -145,7 +155,7 @@ export function PlayerSidePanel({ side, snapshot, serverStatus, width, maxHeight
   );
 }
 
-// ── SingleModeContent (2試合制OFF: チーム別に表示) ────────────────────────
+// ── SingleModeContent (2試合制OFF: 自分側のチームだけを表示) ────────────────────
 
 // 競技ルール4 (リーグ方式): 勝利3点・敗北0点・引き分け1点
 function leaguePoints(winner: Winner, team: 0 | 1): number {
@@ -153,70 +163,65 @@ function leaguePoints(winner: Winner, team: 0 | 1): number {
   return winner === (team === 0 ? Winner.COOL : Winner.HOT) ? 3 : 0;
 }
 
-function computeData(snapshot: GameStateSnapshot | null, roundResults: RoundResult[]) {
-  const curItems: [number, number] = snapshot?.teamScore ?? [0, 0];
-  const points: [number, number] = [
-    roundResults.reduce((s, r) => s + leaguePoints(r.winner, 0), 0),
-    roundResults.reduce((s, r) => s + leaguePoints(r.winner, 1), 0),
-  ];
-  // 完了したラウンドの合計 (アイテム×10+一撃+総取り) + 現在の試合の生スコア×10
-  // (競技ルール3.①: 獲得アイテム数×10点を勝者・敗者ともに得る)
-  const finishedTotal: [number, number] = [
-    roundResults.reduce((s, r) => s + r.scores[0] * 10 + r.strikeBonus[0] + r.sweepBonus[0], 0),
-    roundResults.reduce((s, r) => s + r.scores[1] * 10 + r.strikeBonus[1] + r.sweepBonus[1], 0),
-  ];
-  const totalPoints: [number, number] = [
-    finishedTotal[0] + curItems[0] * 10,
-    finishedTotal[1] + curItems[1] * 10,
-  ];
-  return { curItems, points, totalPoints, roundResults };
-}
-
+// 1試合制では idxForSide(side, 0) === side なので、画面側 (side) がそのまま team-index になる。
+// 2試合制の DoubleModeContent と同じく「1パネル = 自分側のプログラム」に揃え、左右で同じ表を
+// 二重に出さない。勝敗はフッターの結果ピル、獲得アイテム数は上部スコアバーが既に大きく出して
+// いるため、このパネルは得点計算の内訳 (アイテム×10 → 一撃 → 総取り → 合計ポイント) に絞る。
 function SingleModeContent({ side, snapshot, roundResults, dim }: {
   side: 0 | 1; snapshot: GameStateSnapshot | null; roundResults: RoundResult[]; dim: PanelDim;
 }) {
-  const { curItems, points, totalPoints } = computeData(snapshot, roundResults);
+  // 1試合制で roundResults が2件以上になることはない (リピート/リセットのたびに
+  // RoundController.resetForNewGame() で消え、2試合制への切り替えは setup 中のみ)
+  const rr       = roundResults.find(r => r.round === 0);
+  const finished = rr !== undefined;
 
-  // 表示順: side=0 → COOL(0)→HOT(1), side=1 → HOT(1)→COOL(0)
-  const order: [0 | 1, 0 | 1] = side === 0 ? [0, 1] : [1, 0];
+  // 試合中は確定していない一撃/総取りを除いた アイテム×10 をライブ表示し、
+  // 決着後にボーナス込みの確定値へ切り替える
+  const totalPoints = rr ? roundPointsFor(rr, side) : (snapshot?.teamScore[side] ?? 0) * 10;
 
-  const grandPoints = points[0] + points[1];
-  const grandScore  = totalPoints[0] + totalPoints[1];
+  const base  = side === 0 ? COOL_COLOR : HOT_COLOR;
+  const dark  = side === 0 ? COOL_DARK  : HOT_DARK;
+  const pale  = side === 0 ? COOL_PALE  : HOT_PALE;
+  const label = side === 0 ? 'COOL' : 'HOT';
 
   return (
     <>
-      {/* ── チーム1 ── */}
-      <TeamSection
-        team={order[0]}
-        points={points[order[0]]}
-        totalPoints={totalPoints[order[0]]}
-        items={curItems[order[0]]}
-        roundResults={roundResults}
-        doubleMode={false}
-        dim={dim}
-      />
+      <div style={{ ...s.teamBox, gap: dim.teamBoxGap, paddingBottom: dim.teamBoxPadB }}>
+        {/* グラデヘッダー: 自分側のチーム */}
+        <div style={{
+          ...s.teamHeader,
+          padding: `${dim.headerPadV}px ${dim.headerPadH}px`, marginBottom: dim.headerMarginB,
+          background: `linear-gradient(135deg, ${base}, ${dark})`,
+        }}>
+          <span style={{ ...s.dots, fontSize: dim.dotsFont }}>●●●</span>
+          <span style={{ ...s.teamLabel, fontSize: dim.labelFont }}>{label}</span>
+        </div>
 
-      {/* ── チーム2 ── */}
-      <TeamSection
-        team={order[1]}
-        points={points[order[1]]}
-        totalPoints={totalPoints[order[1]]}
-        items={curItems[order[1]]}
-        roundResults={roundResults}
-        doubleMode={false}
-        dim={dim}
-      />
+        {/* 一撃/総取りが確定するのは決着後のみ。試合中も同じ2セルを描いて高さを確保し、
+            終了の瞬間に行が増えて下の合計ポイントがずれないようにする
+            (2試合制の RoundSection と同じ方針)。1試合制はこの行が大きく出るため、
+            2試合制のように中身を空にせず「—」を置いて未確定であることを示す。 */}
+        <div style={{ ...s.statsGrid, gap: dim.gridGap }}>
+          <StatCell
+            label="一撃"
+            value={finished ? `${rr.strikeBonus[side]}pt` : '—'}
+            bg={pale} color={base} dim={dim}
+          />
+          <StatCell
+            label="総取り"
+            value={finished ? `${rr.sweepBonus[side]}pt` : '—'}
+            bg={pale} color={base} dim={dim}
+          />
+        </div>
+      </div>
 
-      {/* ── TOTAL ── */}
+      {/* ── 合計ポイント (このパネルの主役) ── */}
       <div style={{ ...s.totalSection, padding: `${dim.totalPadV}px ${dim.totalPadH}px` }}>
         <div style={{
           ...s.totalHeader,
-          fontSize: dim.totalHeaderFont, marginBottom: dim.totalHeaderMarginB, paddingTop: dim.totalHeaderPadT,
-        }}>⭐ TOTAL</div>
-        <div style={{ ...s.totalGrid, gap: dim.gridGap }}>
-          <StatCell label="勝ち点"     value={`${grandPoints}pt`} bg={WIN_PALE} color={WIN_BASE} dim={dim} />
-          <StatCell label="合計ポイント" value={`${grandScore}pt`}  bg={WIN_PALE} color={WIN_BASE} dim={dim} />
-        </div>
+          fontSize: dim.soloTotalLabelFont, marginBottom: dim.totalHeaderMarginB, paddingTop: dim.totalHeaderPadT,
+        }}>⭐ 合計ポイント</div>
+        <div style={{ ...s.soloTotalValue, fontSize: dim.soloTotalValueFont }}>{totalPoints}pt</div>
       </div>
     </>
   );
@@ -291,7 +296,15 @@ function DoubleModeContent({ side, snapshot, serverStatus, roundResults, dim }: 
     computeRoundRow(side, 1, roundResults, serverStatus, snapshot),
   ];
   const sidePoints      = rows[0].points + rows[1].points;
+  // 進行中ラウンドの分 (アイテム×10) も含めてライブ更新したいので、確定分だけを扱う
+  // computeSetResult ではなく行データから合算する。2試合とも確定した時点では
+  // computeSetResult の totals と一致するため、下の勝者判定と食い違うことはない。
   const sideTotalPoints = rows[0].totalPoints + rows[1].totalPoints;
+
+  // 2試合とも終わった時点で、合計ポイントの上回った側にセット勝者のマークを出す。
+  // 同じ判定をフッター (MainWindow) も computeSetResult で行うため、両者は必ず一致する。
+  const setComplete = serverStatus?.phase === 'finished' && roundResults.length >= 2;
+  const isSetWinner = setComplete && computeSetResult(roundResults).winnerSide === side;
 
   return (
     <>
@@ -299,11 +312,17 @@ function DoubleModeContent({ side, snapshot, serverStatus, roundResults, dim }: 
       <RoundSection row={rows[1]} dim={dim} />
 
       {/* ── TOTAL (この画面側=このプログラム自身の2試合合計) ── */}
-      <div style={{ ...s.totalSection, padding: `${dim.totalPadV}px ${dim.totalPadH}px` }}>
+      <div style={{
+        ...s.totalSection,
+        padding: `${dim.totalPadV}px ${dim.totalPadH}px`,
+        // 枠は内側に描く (inset shadow)。外形の高さが変わらないので、パネルの
+        // フォントサイズを決める二分探索の測定結果に影響しない。
+        ...(isSetWinner ? { boxShadow: `inset 0 0 0 3px ${WIN_BASE}` } : null),
+      }}>
         <div style={{
           ...s.totalHeader,
           fontSize: dim.totalHeaderFont, marginBottom: dim.totalHeaderMarginB, paddingTop: dim.totalHeaderPadT,
-        }}>⭐ TOTAL</div>
+        }}>{isSetWinner ? '🏆 TOTAL' : '⭐ TOTAL'}</div>
         <div style={{ ...s.totalGrid, gap: dim.gridGap }}>
           <StatCell label="勝ち点"      value={`${sidePoints}pt`}      bg={WIN_PALE} color={WIN_BASE} dim={dim} />
           <StatCell label="合計ポイント" value={`${sideTotalPoints}pt`} bg={WIN_PALE} color={WIN_BASE} dim={dim} />
@@ -349,9 +368,12 @@ function RoundSection({ row, dim }: { row: RoundRowData; dim: PanelDim }) {
               value={row.status === 'pending' ? '' : (row.outcome ?? '-')}
               bg={pale} color={base} dim={dim}
             />
+            {/* アイテムは個数ではなくポイント (獲得数×10) で出す。下段の一撃/総取りと単位が
+                そろい、アイテム + 一撃 + 総取り = TOTAL の合計ポイント と足し算で読める。
+                獲得数そのものは上部スコアバーが大きく表示している。 */}
             <StatCell
               label={row.status === 'pending' ? '' : 'アイテム'}
-              value={row.status === 'pending' ? '' : String(row.items)}
+              value={row.status === 'pending' ? '' : `${row.items * 10}pt`}
               bg={pale} color={base} dim={dim}
             />
           </div>
@@ -385,61 +407,10 @@ function RoundSection({ row, dim }: { row: RoundRowData; dim: PanelDim }) {
   );
 }
 
-// ── TeamSection ───────────────────────────────────────────────────────────────
-
-function TeamSection({ team, points, totalPoints, items, roundResults, doubleMode, dim }: {
-  team: 0 | 1; points: number; totalPoints: number; items: number;
-  roundResults: RoundResult[]; doubleMode: boolean; dim: PanelDim;
-}) {
-  const base  = team === 0 ? COOL_COLOR : HOT_COLOR;
-  const dark  = team === 0 ? COOL_DARK  : HOT_DARK;
-  const pale  = team === 0 ? COOL_PALE  : HOT_PALE;
-  const light = team === 0 ? COOL_LIGHT : HOT_LIGHT;
-  const label = team === 0 ? 'COOL' : 'HOT';
-
-  return (
-    <div style={{ ...s.teamBox, gap: dim.teamBoxGap, paddingBottom: dim.teamBoxPadB }}>
-      {/* グラデヘッダー */}
-      <div style={{
-        ...s.teamHeader,
-        padding: `${dim.headerPadV}px ${dim.headerPadH}px`, marginBottom: dim.headerMarginB,
-        background: `linear-gradient(135deg, ${base}, ${dark})`,
-      }}>
-        <span style={{ ...s.dots, fontSize: dim.dotsFont }}>●●●</span>
-        <span style={{ ...s.teamLabel, fontSize: dim.labelFont }}>{label}</span>
-      </div>
-
-      {/* ラウンド別データ (doubleMode時): 原本 (U15-server) のアイテム/一撃/総取りに対応 */}
-      {doubleMode && roundResults.map((rr, i) => (
-        <div key={i} style={s.roundRow}>
-          <span style={{
-            ...s.roundBadge, fontSize: dim.badgeFont, padding: `${dim.badgePadV}px ${dim.badgePadH}px`,
-            background: light, color: dark,
-          }}>
-            第{i + 1}試合
-          </span>
-          <div style={{ ...s.roundStats, gap: dim.gridGap }}>
-            <StatCell label="アイテム" value={String(rr.scores[team])} bg={pale} color={base} small dim={dim} />
-            <StatCell label="一撃"    value={`${rr.strikeBonus[team]}pt`} bg={pale} color={base} small dim={dim} />
-            <StatCell label="総取り"  value={`${rr.sweepBonus[team]}pt`} bg={pale} color={base} small dim={dim} />
-          </div>
-        </div>
-      ))}
-
-      {/* 現在のゲーム統計 */}
-      <div style={{ ...s.statsGrid, gap: dim.gridGap }}>
-        <StatCell label="勝ち点"      value={`${points}pt`}      bg={pale} color={base} dim={dim} />
-        <StatCell label="合計ポイント" value={`${totalPoints}pt`} bg={pale} color={base} dim={dim} />
-        <StatCell label="アイテム"    value={String(items)}      bg={pale} color={base} dim={dim} />
-      </div>
-    </div>
-  );
-}
-
 // ── StatCell ─────────────────────────────────────────────────────────────────
 
-function StatCell({ label, value, bg, color, small, dim }: {
-  label: string; value: string; bg: string; color: string; small?: boolean; dim: PanelDim;
+function StatCell({ label, value, bg, color, dim }: {
+  label: string; value: string; bg: string; color: string; dim: PanelDim;
 }) {
   return (
     <div style={{ ...cellS.wrap, flex: 1 }}>
@@ -449,7 +420,7 @@ function StatCell({ label, value, bg, color, small, dim }: {
         ...cellS.value,
         background: bg,
         color,
-        fontSize: small ? dim.statValueFontSmall : dim.statValueFont,
+        fontSize: dim.statValueFont,
         padding: `${dim.statValuePadV}px ${dim.statValuePadH}px`,
       }}>
         {value || ' '}
@@ -498,12 +469,10 @@ const s: Record<string, React.CSSProperties> = {
   dots: { opacity: 0.7, letterSpacing: 2, whiteSpace: 'nowrap' },
   teamLabel: { fontWeight: 700, letterSpacing: '0.08em', whiteSpace: 'nowrap' },
   statsGrid: { display: 'flex' },
-  roundRow: { display: 'flex', flexDirection: 'column', gap: 3 },
   roundBadge: {
     fontWeight: 600, whiteSpace: 'nowrap',
     borderRadius: 99, alignSelf: 'flex-start',
   },
-  roundStats: { display: 'flex' },
   totalSection: {
     background: WIN_PALE,
   },
@@ -512,4 +481,10 @@ const s: Record<string, React.CSSProperties> = {
     letterSpacing: '0.06em',
   },
   totalGrid: { display: 'flex' },
+  // 1試合制の合計ポイント (StatCell を介さない単独の大きい数値)
+  soloTotalValue: {
+    fontFamily: FONT_NUM, fontWeight: 700, color: WIN_BASE,
+    textAlign: 'center', lineHeight: 1.05,
+    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+  },
 };

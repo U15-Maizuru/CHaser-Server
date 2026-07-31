@@ -5,14 +5,16 @@ import { useGamePhaseSound } from '../hooks/useGamePhaseSound';
 import { useStartCountdown } from '../hooks/useStartCountdown';
 import { useBgm } from '../hooks/useBgm';
 import { MainWindow } from './MainWindow';
+import { idxForSide } from '../lib/roundSide';
+import { roundPointsFor } from '../lib/setResult';
 import {
-  BG_ROOT,
-  COOL_COLOR, COOL_LIGHT, COOL_DARK, COOL_PALE,
-  HOT_COLOR,  HOT_LIGHT,  HOT_DARK,  HOT_PALE,
+  BG_ROOT, BG_CARD,
+  COOL_COLOR, COOL_DARK, COOL_PALE,
+  HOT_COLOR,  HOT_DARK,  HOT_PALE,
   TURN_BASE, TURN_LIGHT,
   WIN_BASE, WIN_LIGHT,
   TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
-  SHADOW_MD,
+  SHADOW_MD, SHADOW_SM,
   RADIUS_MD,
   FONT_UI, FONT_NUM,
 } from '../styles/tokens';
@@ -74,10 +76,27 @@ function stateBadgeStyle(state: string): React.CSSProperties {
   }
 }
 
+// team-index (0=COOL / 1=HOT) ごとの配色一式
+const TEAM_COLORS = [
+  { label: 'COOL', color: COOL_COLOR, dark: COOL_DARK, pale: COOL_PALE },
+  { label: 'HOT',  color: HOT_COLOR,  dark: HOT_DARK,  pale: HOT_PALE  },
+] as const;
+
 function SetupWaiting({ serverStatus, displayTitle }: { serverStatus: ServerStatusPayload | null; displayTitle: string }) {
   const clients      = serverStatus?.clients;
   const doubleMode   = serverStatus?.doubleMode ?? false;
   const currentRound = serverStatus?.currentRound ?? 0;
+  const roundResults = serverStatus?.roundResults ?? [];
+
+  // 2試合制の第1試合と第2試合の間 (プログラム再接続待ち)。この間 snapshot は破棄されるが
+  // roundResults は ServerStatusPayload に残るので、ここから第1試合の結果を再構成できる。
+  const intermission = doubleMode && roundResults.length === 1 ? roundResults[0] : null;
+
+  // カードの左右は MainWindow と同じく idxForSide で決める。そうしないと swapSlotConfigs 後の
+  // 待機画面だけプログラムの左右が入れ替わって見え、第2試合が始まるとまた元に戻ってしまう。
+  // 第1試合前 (currentRound=0) は恒等写像なので、従来どおり COOL が左・HOT が右になる。
+  const leftIdx  = idxForSide(0, currentRound);
+  const rightIdx = idxForSide(1, currentRound);
 
   return (
     <div style={sw.root}>
@@ -89,37 +108,42 @@ function SetupWaiting({ serverStatus, displayTitle }: { serverStatus: ServerStat
         </div>
       </div>
 
+      {/* 第1試合の結果 (2試合制のインターミッション中のみ) */}
+      {intermission && (
+        <div style={sw.recap}>
+          <div style={sw.recapTitle}>第1試合の結果</div>
+          <div style={sw.recapRow}>
+            <span style={sw.recapName}>{intermission.playerNames[idxForSide(0, intermission.round)]}</span>
+            <span style={sw.recapScore}>{roundPointsFor(intermission, 0)}</span>
+            <span style={sw.recapDash}>—</span>
+            <span style={sw.recapScore}>{roundPointsFor(intermission, 1)}</span>
+            <span style={sw.recapName}>{intermission.playerNames[idxForSide(1, intermission.round)]}</span>
+          </div>
+          <div style={sw.recapNote}>↳ 先攻・後攻を入れ替えて第2試合を行います</div>
+        </div>
+      )}
+
       {/* チームカード */}
       {clients && (
         <div style={sw.teams}>
-          <TeamCard
-            label="COOL" color={COOL_COLOR} darkColor={COOL_DARK}
-            paleColor={COOL_PALE} lightColor={COOL_LIGHT}
-            name={clients[0].name || '---'} state={clients[0].state}
-          />
+          <TeamCard idx={leftIdx}  name={clients[leftIdx].name  || '---'} state={clients[leftIdx].state} />
           <div style={sw.vs}>VS</div>
-          <TeamCard
-            label="HOT"  color={HOT_COLOR}  darkColor={HOT_DARK}
-            paleColor={HOT_PALE}  lightColor={HOT_LIGHT}
-            name={clients[1].name || '---'} state={clients[1].state}
-          />
+          <TeamCard idx={rightIdx} name={clients[rightIdx].name || '---'} state={clients[rightIdx].state} />
         </div>
       )}
     </div>
   );
 }
 
-function TeamCard({ label, color, darkColor, paleColor, lightColor, name, state }: {
-  label: string; color: string; darkColor: string; paleColor: string; lightColor: string;
-  name: string; state: string;
-}) {
+function TeamCard({ idx, name, state }: { idx: 0 | 1; name: string; state: string }) {
+  const { label, color, dark, pale } = TEAM_COLORS[idx];
   const badge = stateBadgeStyle(state);
   return (
-    <div style={{ ...tc.card, background: paleColor }}>
-      <div style={{ ...tc.header, background: `linear-gradient(135deg, ${color}, ${darkColor})` }}>
+    <div style={{ ...tc.card, background: pale }}>
+      <div style={{ ...tc.header, background: `linear-gradient(135deg, ${color}, ${dark})` }}>
         {label}
       </div>
-      <div style={{ ...tc.name, color: darkColor }}>{name}</div>
+      <div style={{ ...tc.name, color: dark }}>{name}</div>
       <div style={{ ...tc.badge, ...badge }}>{STATE_LABEL[state] ?? state}</div>
     </div>
   );
@@ -151,6 +175,21 @@ const sw: Record<string, React.CSSProperties> = {
     fontSize: 28, fontWeight: 800, color: TEXT_MUTED,
     fontFamily: FONT_NUM, letterSpacing: '0.1em',
   },
+
+  // 第1試合の結果 (2試合制のインターミッション)。左右の並びは下のチームカードと揃える
+  recap: {
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
+    padding: '18px 32px',
+    background: BG_CARD, borderRadius: RADIUS_MD, boxShadow: SHADOW_SM,
+  },
+  recapTitle: {
+    fontSize: 13, fontWeight: 700, color: WIN_BASE, letterSpacing: '0.1em',
+  },
+  recapRow:   { display: 'flex', alignItems: 'baseline', gap: 16 },
+  recapName:  { fontSize: 18, fontWeight: 700, color: TEXT_PRIMARY, minWidth: 120, textAlign: 'center' },
+  recapScore: { fontSize: 34, fontWeight: 800, color: TEXT_PRIMARY, fontFamily: FONT_NUM },
+  recapDash:  { fontSize: 22, color: TEXT_MUTED },
+  recapNote:  { fontSize: 13, color: TEXT_SECONDARY },
 };
 
 const tc: Record<string, React.CSSProperties> = {

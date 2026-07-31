@@ -103,9 +103,10 @@ async function waitForGameEnd(page, timeoutMs = 40000) {
   return waitFor(page, 'セットアップに戻る', timeoutMs);
 }
 
-/** ゲーム中 (ボード表示) を確認 — 新UIでは TOTAL が左右パネルに表示される */
+/** ゲーム中 (ボード表示) を確認 — 左右のサイドパネルは1試合制/2試合制のどちらでも
+ *  「合計ポイント」を表示する (1試合制は単独の大きい数値、2試合制は TOTAL 欄の1セル) */
 async function waitForGameStart(page, timeoutMs = 15000) {
-  const found = await waitFor(page, 'TOTAL', timeoutMs);
+  const found = await waitFor(page, '合計ポイント', timeoutMs);
   return found;
 }
 
@@ -265,10 +266,11 @@ async function testCpuVsCpu(page) {
     ? pass('勝敗結果 (WIN / DRAW) が表示される')
     : fail('勝敗結果 (WIN / DRAW) が表示される');
 
-  // スコアパネルが表示されているか (新UIでは TOTAL 合計 が常時表示)
-  resultText.includes('TOTAL') && resultText.includes('スコア')
-    ? pass('スコア (アイテム数) が表示される')
-    : fail('スコア (アイテム数) が表示される');
+  // 1試合制のサイドパネルは自チームだけを表示し、内訳 (一撃/総取り) と合計ポイントに絞る。
+  // 勝ち点・アイテム数はここには出ない (勝敗はフッター、アイテム数は上部スコアバーが担当)
+  resultText.includes('合計ポイント') && resultText.includes('一撃') && resultText.includes('総取り')
+    ? pass('1試合制のスコアパネル (一撃/総取り/合計ポイント) が表示される')
+    : fail('1試合制のスコアパネル (一撃/総取り/合計ポイント) が表示される');
 
   await ss(page, '05_game_result');
 
@@ -365,6 +367,12 @@ async function testDoubleMatch(page) {
   finalText.includes('TOTAL') && finalText.includes('pt')
     ? pass('最終結果 (合計ポイント) が表示される')
     : fail('最終結果 (合計ポイント) が表示される', `text: ${finalText.slice(0,200)}`);
+
+  // セット全体の勝者 (2試合の合計ポイントで決まる) は、勝者側パネルの TOTAL 欄の 🏆 で示す。
+  // フッターは第2試合終了時もそのラウンドの勝敗を表示する。
+  finalText.includes('🏆 TOTAL')
+    ? pass('セット全体の勝者側パネルの TOTAL に 🏆 が付く')
+    : fail('セット全体の勝者側パネルの TOTAL に 🏆 が付く', `text: ${finalText.slice(0,200)}`);
 
   // 「次戦スタート」ではなく「セットアップに戻る」が表示される
   finalText.includes('セットアップに戻る') && !finalText.includes('次戦スタート')

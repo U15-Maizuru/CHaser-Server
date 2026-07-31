@@ -114,6 +114,8 @@ export function MainWindow({
 
   // ボトムバーの勝者側ピルをどちらの列 (画面左/右) に出すか — 画面左右は固定、
   // 中身の team-index は displayRound に応じて入れ替わる leftIdx/rightIdx で判定する
+  // フッターは常に「直前のラウンドの」勝敗を表示する (2試合制の第2試合終了時も同様)。
+  // 2試合の合計ポイントで決まるセット全体の勝者は、サイドパネルの TOTAL 欄に付く 🏆 で示す。
   const leftIsWinner  = winnerTeamIdx !== null && winnerTeamIdx === leftIdx;
   const rightIsWinner = winnerTeamIdx !== null && winnerTeamIdx === rightIdx;
 
