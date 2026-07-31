@@ -88,6 +88,21 @@ async function bodyText(page) {
   return page.evaluate(() => document.body.innerText ?? '');
 }
 
+/**
+ * セットアップ画面「対戦設定」の対戦ルールチップ (2試合制 / リピート / デモ) を
+ * 目的の状態に切り替える。ON のチップは先頭に "✓ " が付く。
+ */
+async function setMatchRuleChip(page, label, on) {
+  return page.evaluate(({ label, on }) => {
+    const btn = [...document.querySelectorAll('button')]
+      .find(b => (b.textContent ?? '').replace('✓', '').trim() === label);
+    if (!btn) return 'NOT_FOUND';
+    const active = (btn.textContent ?? '').includes('✓');
+    if (active !== on) btn.click();
+    return 'OK';
+  }, { label, on });
+}
+
 /** テキストが現れるまで待つ */
 async function waitFor(page, text, timeoutMs = 20000) {
   const deadline = Date.now() + timeoutMs;
@@ -175,10 +190,15 @@ async function testSetupUI(page) {
     : fail('モードボタン CPU / TCP接続 / 手動操作 が全て存在する',
            `[${buttons.filter(Boolean).join(', ')}]`);
 
-  // ドロップゾーン
-  text.includes('ドロップ')
-    ? pass('FileDropZone が表示される')
-    : fail('FileDropZone が表示される');
+  // プログラム選択 UI (アップロードはプログラム管理ダイアログに一本化されている)
+  text.includes('プログラム未選択')
+    ? pass('プログラム選択 UI が表示される')
+    : fail('プログラム選択 UI が表示される');
+
+  // 対戦設定ストリップ (マップ要約 + 対戦ルール)
+  text.includes('対戦ルール') && text.includes('2試合制')
+    ? pass('対戦設定ストリップがセットアップ画面に表示される')
+    : fail('対戦設定ストリップがセットアップ画面に表示される');
 
   // スタートボタンが初期は無効
   const startDisabled = await page.evaluate(() => {
@@ -202,25 +222,26 @@ async function testSetupUI(page) {
 async function testSettingsDialog(page) {
   section('設定ダイアログ');
 
-  await clickText(page, '⚙');
+  await clickText(page, '設定');
   await wait(600);
 
   const text = await bodyText(page);
-  text.includes('設定')
+  text.includes('観戦画面のタイトル')
     ? pass('設定ダイアログが開く')
     : fail('設定ダイアログが開く');
 
-  text.includes('ゲーム') && text.includes('ランダムマップ')
-    ? pass('タブ (ゲーム / ランダムマップ) が存在する')
-    : fail('タブ (ゲーム / ランダムマップ) が存在する');
+  text.includes('表示') && text.includes('BGM')
+    ? pass('タブ (表示 / BGM) が存在する')
+    : fail('タブ (表示 / BGM) が存在する');
 
-  text.includes('2試合制')
-    ? pass('"2試合制" トグルが設定ダイアログに存在する')
-    : fail('"2試合制" トグルが設定ダイアログに存在する');
+  text.includes('テクスチャテーマ') && text.includes('ダークモード')
+    ? pass('表示設定項目 (テーマ・ダークモード) が表示される')
+    : fail('表示設定項目 (テーマ・ダークモード) が表示される');
 
-  text.includes('TCP タイムアウト') && text.includes('テクスチャテーマ')
-    ? pass('ゲーム設定項目 (タイムアウト・テーマ) が表示される')
-    : fail('ゲーム設定項目 (タイムアウト・テーマ) が表示される');
+  // 対戦ルール・進行パラメータはセットアップ画面へ移したので、ここには無いのが正
+  !text.includes('リピートモード') && !text.includes('TCP タイムアウト')
+    ? pass('対戦ルール/進行の設定は設定ダイアログに含まれない')
+    : fail('対戦ルール/進行の設定は設定ダイアログに含まれない');
 
   await ss(page, '02_settings_dialog');
   await clickText(page, 'キャンセル');
@@ -288,26 +309,12 @@ async function testCpuVsCpu(page) {
 async function testDoubleMatch(page) {
   section('2試合制モード');
 
-  // 設定で 2試合制 を ON
-  await clickText(page, '⚙');
-  await wait(600);
+  // セットアップ画面の「対戦設定」で 2試合制 を ON (即時反映・保存ボタン不要)
+  const toggled = await setMatchRuleChip(page, '2試合制', true);
+  toggled === 'OK'
+    ? pass('"2試合制" チップを ON にできる')
+    : fail('"2試合制" チップを ON にできる', toggled);
 
-  // "2試合制" ラベルの隣のチェックボックスを ON にする
-  const toggled = await page.evaluate(() => {
-    const rows = [...document.querySelectorAll('tr')];
-    const row  = rows.find(r => r.textContent?.includes('2試合制'));
-    if (!row) return false;
-    const cb = row.querySelector('input[type="checkbox"]');
-    if (!cb) return false;
-    if (!cb.checked) cb.click();
-    return true;
-  });
-  toggled
-    ? pass('"2試合制" チェックボックスを ON にできる')
-    : fail('"2試合制" チェックボックスを ON にできる', '要素が見つからない');
-
-  await wait(300);
-  await clickText(page, '保存');
   await wait(600);
 
   // ラウンドバッジ確認
@@ -352,6 +359,20 @@ async function testDoubleMatch(page) {
     ? pass('"第2試合" バッジが表示される')
     : fail('"第2試合" バッジが表示される');
 
+  // セット中はマップ・ルールを変更させない (押せるのに無反応、を防ぐ)。
+  // 説明文にも「対戦ルール」の語が含まれるため、本文ではなく操作ボタンの有無で判定する。
+  const midSetControls = await page.evaluate(() => {
+    const labels = [...document.querySelectorAll('button')]
+      .map(b => (b.textContent ?? '').replace('✓', '').trim());
+    return {
+      hasRuleChip: ['2試合制', 'リピート', 'デモ'].some(l => labels.includes(l)),
+      hasMapBtn:   labels.includes('マップ設定...'),
+    };
+  });
+  !midSetControls.hasRuleChip && !midSetControls.hasMapBtn
+    ? pass('第2試合待機中はマップ/対戦ルールの変更 UI が出ない')
+    : fail('第2試合待機中はマップ/対戦ルールの変更 UI が出ない', JSON.stringify(midSetControls));
+
   await ss(page, '08_double_setup_round2');
 
   // 第2試合スタート (CPU スロットは既に準備完了)
@@ -385,21 +406,14 @@ async function testDoubleMatch(page) {
   await clickText(page, 'セットアップに戻る');
   await wait(800);
 
-  await clickText(page, '⚙');
-  await wait(600);
-  await page.evaluate(() => {
-    const rows = [...document.querySelectorAll('tr')];
-    const row  = rows.find(r => r.textContent?.includes('2試合制'));
-    const cb   = row?.querySelector('input[type="checkbox"]');
-    if (cb?.checked) cb.click();
-  });
-  await wait(300);
-  await clickText(page, '保存');
+  await setMatchRuleChip(page, '2試合制', false);
   await wait(500);
 }
 
-/** テスト 5: 手動操作モード */
-async function testManualMode(page) {
+/** テスト 5: 手動操作モード
+ *  操作パネル (ManualControls) はコントロールウィンドウではなく、
+ *  スロットを「手動操作」にすると自動で開く専用ウィンドウ (?mode=manual) にある。 */
+async function testManualMode(app, page) {
   section('手動操作モード (ManualClient)');
 
   // COOL スロットを手動操作に
@@ -421,6 +435,18 @@ async function testManualMode(page) {
 
   await ss(page, '10_manual_ready');
 
+  // 手動操作ウィンドウは manual:openWindow IPC 経由で自動的に開く
+  let manualPage = null;
+  const winDeadline = Date.now() + 10000;
+  while (Date.now() < winDeadline) {
+    manualPage = app.windows().find(w => w.url().includes('mode=manual'));
+    if (manualPage) break;
+    await wait(300);
+  }
+  manualPage
+    ? pass('手動操作ウィンドウが自動的に開く')
+    : fail('手動操作ウィンドウが自動的に開く', 'ウィンドウが見つからない');
+
   // ゲーム開始
   await clickText(page, 'ゲームスタート');
   const gameStarted = await waitForGameStart(page);
@@ -428,23 +454,24 @@ async function testManualMode(page) {
     ? pass('手動対戦ゲームが開始される')
     : fail('手動対戦ゲームが開始される', 'タイムアウト');
 
-  // ManualControls パネルが表示されるか
-  const hasControls = await waitFor(page, '手動操作', 8000);
-  hasControls
-    ? pass('ゲーム中に ManualControls パネルが表示される')
-    : fail('ゲーム中に ManualControls パネルが表示される', 'タイムアウト');
+  if (manualPage) {
+    await manualPage.waitForSelector('button', { timeout: 10000 }).catch(() => {});
+    const ctrlText = await bodyText(manualPage);
 
-  const ctrlText = await bodyText(page);
-  ctrlText.includes('↑') || ctrlText.includes('↓')
-    ? pass('方向キーパッド (↑↓←→) が表示される')
-    : fail('方向キーパッド (↑↓←→) が表示される');
+    ctrlText.includes('手動操作')
+      ? pass('手動操作ウィンドウに ManualControls パネルが表示される')
+      : fail('手動操作ウィンドウに ManualControls パネルが表示される');
 
-  // アクションドロップダウン
-  ctrlText.includes('WALK') || ctrlText.includes('アクション')
-    ? pass('アクション選択 (WALK/LOOK 等) が表示される')
-    : fail('アクション選択 (WALK/LOOK 等) が表示される');
+    ctrlText.includes('↑') || ctrlText.includes('↓')
+      ? pass('方向キーパッド (↑↓←→) が表示される')
+      : fail('方向キーパッド (↑↓←→) が表示される');
 
-  await ss(page, '11_manual_controls');
+    ctrlText.includes('WALK') || ctrlText.includes('アクション')
+      ? pass('アクション選択 (WALK/LOOK 等) が表示される')
+      : fail('アクション選択 (WALK/LOOK 等) が表示される');
+
+    await ss(manualPage, '11_manual_controls');
+  }
 
   // ゲーム終了まで ↑/↓ ボタンを送り続ける (タイムアウト 40 秒)
   // アクションループとゲーム終了チェックを一体化させることで
@@ -454,18 +481,21 @@ async function testManualMode(page) {
   const deadline  = Date.now() + 40000;
 
   while (Date.now() < deadline) {
+    // 終了判定はコントロールウィンドウ、入力は手動操作ウィンドウに対して行う
     const txt = await bodyText(page);
-    if (txt.includes('セットアップに戻る') || txt.includes('WIN!') || txt.includes('DRAW')) {
+    if (txt.includes('セットアップに戻る') || txt.includes('の勝ち') || txt.includes('引き分け')) {
       gameEnded = true;
       break;
     }
-    const clicked = await page.evaluate(() => {
-      const btn = [...document.querySelectorAll('button')]
-        .find(b => !b.disabled && (b.textContent === '↑' || b.textContent === '↓'));
-      if (btn) { btn.click(); return true; }
-      return false;
-    });
-    if (clicked) actionsSent++;
+    if (manualPage) {
+      const clicked = await manualPage.evaluate(() => {
+        const btn = [...document.querySelectorAll('button')]
+          .find(b => !b.disabled && (b.textContent === '↑' || b.textContent === '↓'));
+        if (btn) { btn.click(); return true; }
+        return false;
+      });
+      if (clicked) actionsSent++;
+    }
     await wait(150);
   }
 
@@ -488,19 +518,32 @@ async function testManualMode(page) {
     : fail('手動対戦後にセットアップ画面に戻れる');
 }
 
-/** テスト 6: ファイルドロップゾーンの基本 UI */
+/** テスト 6: プログラムライブラリ管理とカスタムライブラリの UI */
 async function testFileDropZone(page) {
   section('プログラムアップロード UI (FileDropZone)');
 
-  const text = await bodyText(page);
-  text.includes('プログラムファイルをドロップ')
-    ? pass('FileDropZone にドロップ誘導テキストが表示される')
-    : fail('FileDropZone にドロップ誘導テキストが表示される');
+  // アップロードはプログラム管理ダイアログに一本化されている
+  await clickText(page, 'プログラム管理...');
+  await wait(600);
 
-  text.includes('.py') && text.includes('.exe')
+  const dialogText = await bodyText(page);
+  dialogText.includes('プログラムライブラリ管理')
+    ? pass('プログラム管理ダイアログが開く')
+    : fail('プログラム管理ダイアログが開く');
+
+  dialogText.includes('新規プログラムをライブラリに追加') && dialogText.includes('クリックして選択')
+    ? pass('FileDropZone にアップロード誘導テキストが表示される')
+    : fail('FileDropZone にアップロード誘導テキストが表示される');
+
+  dialogText.includes('.py') && dialogText.includes('.exe')
     ? pass('対応拡張子 (.py, .exe) が表示される')
     : fail('対応拡張子 (.py, .exe) が表示される');
 
+  await ss(page, '13a_program_library');
+  await clickText(page, '閉じる');
+  await wait(500);
+
+  const text = await bodyText(page);
   text.includes('カスタムライブラリ')
     ? pass('カスタムライブラリ折り畳みセクションが存在する')
     : fail('カスタムライブラリ折り畳みセクションが存在する');
@@ -509,9 +552,9 @@ async function testFileDropZone(page) {
   await clickText(page, 'カスタムライブラリ ▼');
   await wait(400);
   const libText = await bodyText(page);
-  libText.includes('pychaser')
-    ? pass('展開後に "pychaser" プリインストール表示がある')
-    : fail('展開後に "pychaser" プリインストール表示がある');
+  libText.includes('pyCHaser')
+    ? pass('展開後に "pyCHaser" プリインストール表示がある')
+    : fail('展開後に "pyCHaser" プリインストール表示がある');
 
   await ss(page, '13_file_dropzone');
 }
@@ -547,6 +590,12 @@ async function main() {
       timeout:        30000,
     });
 
+    // Electron の stdout/stderr を読み捨てる。バックエンドを子プロセスとして起動する
+    // 構成上そこそこの量を出力するため、パイプを誰も読まないとバッファが埋まって
+    // メインプロセスが停止し、ウィンドウが生成されないままタイムアウトする。
+    app.process().stdout?.on('data', () => {});
+    app.process().stderr?.on('data', () => {});
+
     // 2ウィンドウ構成: 表示ウィンドウが先に作成されるため、固定時間待機だと
     // まだ登録されていないウィンドウ一覧を早取りしてそちらを拾ってしまうことがある。
     // コントロールウィンドウ (mode=control) が現れるまでポーリングして待つ。
@@ -573,12 +622,14 @@ async function main() {
     console.log('─'.repeat(52));
 
     // テスト用前処理: ターン表示時間を 0ms に設定 (テストを高速化)
+    // 保存先は useMatchConfig の 'u15_match_config' キー。App が接続後に一度だけ
+    // この値をサーバーへ送るため、書き込んだ後にリロードする必要がある。
     await page.evaluate(() => {
       try {
-        const raw = localStorage.getItem('u15_settings');
+        const raw = localStorage.getItem('u15_match_config');
         const s = raw ? JSON.parse(raw) : {};
         s.turnDelay = 0;
-        localStorage.setItem('u15_settings', JSON.stringify(s));
+        localStorage.setItem('u15_match_config', JSON.stringify(s));
       } catch { /* ignore */ }
     });
     await page.reload();
@@ -592,7 +643,7 @@ async function main() {
     await testFileDropZone(page);
     await testCpuVsCpu(page);
     await testDoubleMatch(page);
-    await testManualMode(page);
+    await testManualMode(app, page);
 
   } catch (err) {
     console.error('\n  FATAL:', err.message);

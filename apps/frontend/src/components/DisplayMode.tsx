@@ -1,6 +1,6 @@
 import type { ServerStatusPayload } from '@u15/ws-types';
+import { DEFAULT_DISPLAY_PREFS } from '@u15/ws-types';
 import { useGameState } from '../hooks/useGameState';
-import { useSettings } from '../hooks/useSettings';
 import { useGamePhaseSound } from '../hooks/useGamePhaseSound';
 import { useStartCountdown } from '../hooks/useStartCountdown';
 import { useBgm } from '../hooks/useBgm';
@@ -21,25 +21,25 @@ import {
 
 export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId: string; httpBase: string }) {
   const state   = useGameState(wsUrl, roomId);
-  const { settings } = useSettings();
   const { serverStatus, snapshot, turnInfo, gameEnd, isConnected } = state;
+  const prefs = serverStatus?.displayPrefs ?? DEFAULT_DISPLAY_PREFS;
   const phase = serverStatus?.phase ?? 'setup';
 
-  useGamePhaseSound(snapshot, serverStatus, gameEnd, turnInfo, settings.muted, true);
+  useGamePhaseSound(snapshot, serverStatus, gameEnd, turnInfo, prefs.muted, true);
   const countdown = useStartCountdown(serverStatus?.phase, turnInfo);
-  useBgm(httpBase, serverStatus?.phase, settings.bgmTrack, settings.bgmMuted, true);
+  useBgm(httpBase, serverStatus?.phase, prefs.bgmTrack, prefs.bgmMuted, true);
 
   if (!isConnected) {
     return (
       <div style={splash.root}>
-        <div style={splash.title}>{settings.displayTitle}</div>
+        <div style={splash.title}>{prefs.displayTitle}</div>
         <div style={splash.sub}>バックエンドに接続中...</div>
       </div>
     );
   }
 
   if (phase === 'setup') {
-    return <SetupWaiting serverStatus={serverStatus} displayTitle={settings.displayTitle} />;
+    return <SetupWaiting serverStatus={serverStatus} displayTitle={prefs.displayTitle} />;
   }
 
   return (
@@ -51,10 +51,10 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
         serverStatus={serverStatus}
         isConnected={isConnected}
         phase={phase}
-        theme={settings.theme}
+        theme={prefs.theme}
         variant="display"
         countdown={countdown}
-        onOpenSettings={() => {}}
+        displayTitle={prefs.displayTitle}
       />
     </div>
   );

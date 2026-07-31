@@ -7,6 +7,7 @@ import { useTextures } from '../hooks/useTextures';
 import {
   BG_ROOT, BG_CARD, BORDER_COLOR,
   TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
+  TURN_PALE,
   WIN_BASE, SHADOW_MD, RADIUS_MD, RADIUS_SM,
   FONT_UI, FONT_NUM,
 } from '../styles/tokens';
@@ -16,6 +17,9 @@ interface Props {
   roomId:        string;
   theme:         string;
   currentMap:    InlineMapData | null;
+  /** 現在のマップを差し替えてよいか (バックエンドの RoundController.canEditMap 相当)。
+   *  false のとき、適用系の操作はサーバー側で黙って無視されるため UI 側で塞ぐ。 */
+  canApply:      boolean;
   onApplyEntry:  (entry: MapCatalogEntry) => void;
   onApplyInline: (data: InlineMapData) => void;
   onOpenEditor:  () => void;
@@ -53,7 +57,7 @@ function countObj(field: number[][], obj: MapObject): number {
 }
 
 export function MapManagementDialog({
-  httpBase, theme, currentMap,
+  httpBase, theme, currentMap, canApply,
   onApplyEntry, onApplyInline, onOpenEditor, onClose,
 }: Props) {
   const [entries, setEntries] = useState<MapCatalogEntry[]>([]);
@@ -86,6 +90,7 @@ export function MapManagementDialog({
   const handleUploaded = () => fetchEntries();
 
   const handleGenerate = async () => {
+    if (!canApply) return;
     setGenerating(true);
     try {
       const size: Point = { x: SIZES[gen.sizeIdx].x, y: SIZES[gen.sizeIdx].y };
@@ -118,6 +123,13 @@ export function MapManagementDialog({
         </div>
 
         <div style={s.content}>
+          {!canApply && (
+            <div style={s.lockNotice}>
+              2試合制のセット中はマップを変更できません（両試合で同じマップを使うため）。
+              ライブラリの整理・ダウンロードのみ行えます。
+            </div>
+          )}
+
           {/* 現在のマップ */}
           <section style={s.section}>
             <Label>現在のマップ</Label>
@@ -142,7 +154,9 @@ export function MapManagementDialog({
                 <span style={s.hint}>読み込み中...</span>
               )}
             </div>
-            <button style={s.btnSm} onClick={onOpenEditor}>エディタで編集...</button>
+            {canApply && (
+              <button style={s.btnSm} onClick={onOpenEditor}>エディタで編集...</button>
+            )}
           </section>
 
           <Divider />
@@ -171,7 +185,13 @@ export function MapManagementDialog({
                         {entry.size.x}×{entry.size.y} ・ ターン{entry.turn} ・ {new Date(entry.uploadedAt).toLocaleString()}
                       </span>
                     </div>
-                    <button style={s.useBtn} onClick={() => onApplyEntry(entry)}>使用</button>
+                    <button
+                      style={{ ...s.useBtn, ...(canApply ? {} : s.btnDisabled) }}
+                      disabled={!canApply}
+                      onClick={() => onApplyEntry(entry)}
+                    >
+                      使用
+                    </button>
                     <a style={s.dlBtn} href={`${httpBase}/api/maps/${entry.id}/download`}>DL</a>
                     <button style={s.deleteBtn} onClick={() => handleDelete(entry.id)}>削除</button>
                   </div>
@@ -217,7 +237,11 @@ export function MapManagementDialog({
               <input type="checkbox" checked={gen.mirror} onChange={e => setGen(g => ({ ...g, mirror: e.target.checked }))} />
               <span style={s.checkLabel}>対称配置</span>
             </div>
-            <button style={s.btnPrimary} onClick={handleGenerate} disabled={generating}>
+            <button
+              style={{ ...s.btnPrimary, ...(canApply ? {} : s.btnDisabled) }}
+              onClick={handleGenerate}
+              disabled={generating || !canApply}
+            >
               {generating ? '生成中...' : '生成して使用'}
             </button>
           </section>
@@ -303,5 +327,11 @@ const s: Record<string, React.CSSProperties> = {
   btnPrimary: {
     padding: '8px 0', border: 'none', borderRadius: RADIUS_SM,
     background: WIN_BASE, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+  },
+  btnDisabled: { opacity: 0.4, cursor: 'not-allowed' },
+  lockNotice: {
+    padding: '8px 10px', borderRadius: RADIUS_SM,
+    background: TURN_PALE, border: `1px solid ${BORDER_COLOR}`,
+    fontSize: 10, lineHeight: 1.6, color: TEXT_SECONDARY,
   },
 };

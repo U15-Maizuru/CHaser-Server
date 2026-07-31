@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { AppSettings } from '../hooks/useSettings';
+import type { DisplayPrefs } from '@u15/ws-types';
+import type { EnvConfig } from '../hooks/useEnvConfig';
 import {
   BG_ROOT, BG_CARD, BORDER_COLOR, COOL_COLOR,
   TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
@@ -8,21 +9,32 @@ import {
 } from '../styles/tokens';
 
 interface Props {
-  settings:      AppSettings;
-  darkMode:      boolean;
-  httpBase:      string;
-  onSave:        (patch: Partial<AppSettings>) => void;
-  onSetDarkMode: (enabled: boolean) => void;
-  onUploadMusic: (file: File) => Promise<void>;
-  onClose:       () => void;
+  prefs:             DisplayPrefs;
+  envConfig:         EnvConfig;
+  darkMode:          boolean;
+  httpBase:          string;
+  onSetDisplayPrefs: (patch: Partial<DisplayPrefs>) => void;
+  onSaveEnv:         (patch: Partial<EnvConfig>) => void;
+  onSetDarkMode:     (enabled: boolean) => void;
+  onUploadMusic:     (file: File) => Promise<void>;
+  onClose:           () => void;
 }
 
 const THEMES = ['Jewel', 'Light', 'Heavy', 'RPG'] as const;
 
-export function SettingDialog({ settings, darkMode, httpBase, onSave, onSetDarkMode, onUploadMusic, onClose }: Props) {
-  const [tab, setTab]             = useState<'game' | 'bgm' | 'env'>('game');
-  const [draft, setDraft]         = useState<AppSettings>({ ...settings });
-  const [draftDarkMode, setDraftDarkMode] = useState(darkMode);
+// 表示まわりの設定のみを扱う。対戦のルール・進行に関する設定 (2試合制/リピート/デモ/
+// ターン表示時間/TCPタイムアウト) は setup フェーズでしか意味を持たないため、
+// セットアップ画面 (StartupDialog) 側に置いている。
+//
+// 「環境」タブだけが下書き + [保存] 方式。表示・BGM はサーバーが真実を持つ状態
+// (ServerStatusPayload) なので、クライアントに下書きを溜めるとコントロール窓を
+// 複数開いたときに互いの古い値で上書きし合う。ダークモードと同じく即時反映にする。
+export function SettingDialog({
+  prefs, envConfig, darkMode, httpBase,
+  onSetDisplayPrefs, onSaveEnv, onSetDarkMode, onUploadMusic, onClose,
+}: Props) {
+  const [tab, setTab]             = useState<'display' | 'bgm' | 'env'>('display');
+  const [draftEnv, setDraftEnv]   = useState<EnvConfig>({ ...envConfig });
   const [musicFiles, setMusicFiles] = useState<string[]>([]);
 
   useEffect(() => {
@@ -34,12 +46,11 @@ export function SettingDialog({ settings, darkMode, httpBase, onSave, onSetDarkM
     return () => { cancelled = true; };
   }, [httpBase]);
 
-  const set = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) =>
-    setDraft(d => ({ ...d, [key]: value }));
+  const setEnv = <K extends keyof EnvConfig>(key: K, value: EnvConfig[K]) =>
+    setDraftEnv(d => ({ ...d, [key]: value }));
 
   const handleSave = () => {
-    onSave(draft);
-    onSetDarkMode(draftDarkMode);
+    onSaveEnv(draftEnv);
     onClose();
   };
 
@@ -54,8 +65,8 @@ export function SettingDialog({ settings, darkMode, httpBase, onSave, onSetDarkM
 
         {/* タブ */}
         <div style={s.tabs}>
-          <TabBtn active={tab === 'game'} onClick={() => setTab('game')}>ゲーム</TabBtn>
-          <TabBtn active={tab === 'bgm'}  onClick={() => setTab('bgm')}>BGM</TabBtn>
+          <TabBtn active={tab === 'display'} onClick={() => setTab('display')}>表示</TabBtn>
+          <TabBtn active={tab === 'bgm'}     onClick={() => setTab('bgm')}>BGM</TabBtn>
           {window.electronAPI && (
             <TabBtn active={tab === 'env'} onClick={() => setTab('env')}>環境</TabBtn>
           )}
@@ -63,38 +74,22 @@ export function SettingDialog({ settings, darkMode, httpBase, onSave, onSetDarkM
 
         {/* コンテンツ */}
         <div style={s.body}>
-          {tab === 'game' && (
+          {tab === 'display' && (
             <table style={s.table}>
               <tbody>
                 <Row label="観戦画面のタイトル">
                   <input
                     type="text"
-                    value={draft.displayTitle}
-                    onChange={e => set('displayTitle', e.target.value)}
+                    value={prefs.displayTitle}
+                    onChange={e => onSetDisplayPrefs({ displayTitle: e.target.value })}
                     style={s.textInput}
                     placeholder="U15 Server Maizuru"
                   />
                 </Row>
-                <Row label="TCP タイムアウト (秒)">
-                  <input
-                    type="number" min={1} max={60} step={1}
-                    value={draft.timeout}
-                    onChange={e => set('timeout', Number(e.target.value))}
-                    style={s.numInput}
-                  />
-                </Row>
-                <Row label="1ターンの表示時間 (秒)">
-                  <input
-                    type="number" min={0} max={10} step={0.1}
-                    value={(draft.turnDelay / 1000).toFixed(1)}
-                    onChange={e => set('turnDelay', Math.round(Number(e.target.value) * 1000))}
-                    style={s.numInput}
-                  />
-                </Row>
                 <Row label="テクスチャテーマ">
                   <select
-                    value={draft.theme}
-                    onChange={e => set('theme', e.target.value)}
+                    value={prefs.theme}
+                    onChange={e => onSetDisplayPrefs({ theme: e.target.value })}
                     style={s.select}
                   >
                     {THEMES.map(t => (
@@ -105,43 +100,26 @@ export function SettingDialog({ settings, darkMode, httpBase, onSave, onSetDarkM
                 <Row label="SE ミュート">
                   <input
                     type="checkbox"
-                    checked={draft.muted}
-                    onChange={e => set('muted', e.target.checked)}
+                    checked={prefs.muted}
+                    onChange={e => onSetDisplayPrefs({ muted: e.target.checked })}
                     style={s.check}
                   />
                 </Row>
-                <Row label="2試合制 (先後入れ替え)">
-                  <input
-                    type="checkbox"
-                    checked={draft.doubleMode}
-                    onChange={e => set('doubleMode', e.target.checked)}
-                    style={s.check}
-                  />
-                </Row>
-                <Row label="リピートモード (終了後、接続を保ったまま再戦)">
-                  <input
-                    type="checkbox"
-                    checked={draft.repeatMode}
-                    onChange={e => set('repeatMode', e.target.checked)}
-                    style={s.check}
-                  />
-                </Row>
-                <Row label="デモモード (無人自動進行)">
-                  <input
-                    type="checkbox"
-                    checked={draft.demoMode}
-                    onChange={e => set('demoMode', e.target.checked)}
-                    style={s.check}
-                  />
-                </Row>
+                {/* ダークモードはサーバー側にフェーズゲートが無く、対戦中でも切り替えたい
+                    ライブな表示切替なので、保存ボタンを待たずに即座に反映する */}
                 <Row label="ダークモード (視界のみ表示)">
                   <input
                     type="checkbox"
-                    checked={draftDarkMode}
-                    onChange={e => setDraftDarkMode(e.target.checked)}
+                    checked={darkMode}
+                    onChange={e => onSetDarkMode(e.target.checked)}
                     style={s.check}
                   />
                 </Row>
+                <tr>
+                  <td colSpan={2} style={s.noteCell}>
+                    2試合制・リピート・デモモードやターン表示時間は、セットアップ画面の「対戦設定」で変更します。
+                  </td>
+                </tr>
               </tbody>
             </table>
           )}
@@ -151,8 +129,8 @@ export function SettingDialog({ settings, darkMode, httpBase, onSave, onSetDarkM
               <tbody>
                 <Row label="再生する BGM">
                   <select
-                    value={draft.bgmTrack}
-                    onChange={e => set('bgmTrack', e.target.value)}
+                    value={prefs.bgmTrack}
+                    onChange={e => onSetDisplayPrefs({ bgmTrack: e.target.value })}
                     style={s.select}
                   >
                     <option value="none">なし</option>
@@ -164,8 +142,8 @@ export function SettingDialog({ settings, darkMode, httpBase, onSave, onSetDarkM
                 <Row label="BGM ミュート">
                   <input
                     type="checkbox"
-                    checked={draft.bgmMuted}
-                    onChange={e => set('bgmMuted', e.target.checked)}
+                    checked={prefs.bgmMuted}
+                    onChange={e => onSetDisplayPrefs({ bgmMuted: e.target.checked })}
                     style={s.check}
                   />
                 </Row>
@@ -194,12 +172,12 @@ export function SettingDialog({ settings, darkMode, httpBase, onSave, onSetDarkM
               <tbody>
                 <Row label="ログ保存先">
                   <div style={s.pathRow}>
-                    <span style={s.pathText} title={draft.logDir}>{draft.logDir || '(既定のまま)'}</span>
+                    <span style={s.pathText} title={draftEnv.logDir}>{draftEnv.logDir || '(既定のまま)'}</span>
                     <button
                       style={s.pathBtn}
                       onClick={async () => {
                         const dir = await window.electronAPI?.openDirectory();
-                        if (dir) set('logDir', dir);
+                        if (dir) setEnv('logDir', dir);
                       }}
                     >
                       選択
@@ -208,12 +186,12 @@ export function SettingDialog({ settings, darkMode, httpBase, onSave, onSetDarkM
                 </Row>
                 <Row label="Python コマンド">
                   <div style={s.pathRow}>
-                    <span style={s.pathText} title={draft.pythonCommand}>{draft.pythonCommand || '(既定のまま)'}</span>
+                    <span style={s.pathText} title={draftEnv.pythonCommand}>{draftEnv.pythonCommand || '(既定のまま)'}</span>
                     <button
                       style={s.pathBtn}
                       onClick={async () => {
                         const exe = await window.electronAPI?.openPythonExe();
-                        if (exe) set('pythonCommand', exe);
+                        if (exe) setEnv('pythonCommand', exe);
                       }}
                     >
                       選択
@@ -282,11 +260,7 @@ const s: Record<string, React.CSSProperties> = {
   table:  { width: '100%', borderCollapse: 'collapse' },
   tdLabel: { padding: '8px 0', fontSize: 12, color: TEXT_SECONDARY, width: '55%' },
   tdValue: { padding: '8px 0' },
-  numInput: {
-    width: 80, padding: '5px 8px', background: BG_ROOT,
-    border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM, color: TEXT_PRIMARY,
-    fontSize: 13, fontFamily: FONT_NUM,
-  },
+  noteCell: { paddingTop: 14, fontSize: 10, color: TEXT_MUTED, lineHeight: 1.6 },
   select: {
     padding: '5px 8px', background: BG_ROOT,
     border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM, color: TEXT_PRIMARY, fontSize: 13,

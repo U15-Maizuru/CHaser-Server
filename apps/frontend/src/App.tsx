@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useGameState }      from './hooks/useGameState';
-import { useSettings }       from './hooks/useSettings';
+import { useMatchConfig }    from './hooks/useMatchConfig';
+import { useEnvConfig }      from './hooks/useEnvConfig';
 import { useGamePhaseSound } from './hooks/useGamePhaseSound';
 import { useStartCountdown } from './hooks/useStartCountdown';
 import { StartupDialog }   from './components/StartupDialog';
@@ -15,7 +16,7 @@ import { ManualMode }      from './components/ManualMode';
 import { ErrorBoundary }   from './components/ErrorBoundary';
 import { Lobby }           from './components/Lobby';
 import type { ClientStatusPayload, InlineMapData, MapCatalogEntry } from '@u15/ws-types';
-import { MapObject } from '@u15/ws-types';
+import { DEFAULT_DISPLAY_PREFS, MapObject } from '@u15/ws-types';
 import type { EditableMap } from './components/MapEditorDialog';
 
 // WS URL: 環境変数 > window.location.hostname (自動検出) の優先順位
@@ -43,40 +44,33 @@ export default function App() {
 
 function ControlApp({ roomId }: { roomId: string }) {
   const state = useGameState(WS_URL, roomId);
-  const { settings, update: updateSettings } = useSettings();
+  const { config: matchConfig, update: updateMatchConfig } = useMatchConfig();
+  const { envConfig, update: updateEnvConfig } = useEnvConfig();
   const { serverStatus, isConnected, gameEnd, snapshot } = state;
+  // 表示・BGM 設定はサーバーが真実を持つ (ダークモードと同じ)。複数のコントロール窓を
+  // 開いても互いの古い値で上書きし合わないよう、クライアントにキャッシュを持たない
+  const prefs = serverStatus?.displayPrefs ?? DEFAULT_DISPLAY_PREFS;
 
   // コントロール窓では SE を鳴らさない (観戦窓との二重再生を防ぐため)
-  useGamePhaseSound(snapshot, serverStatus, gameEnd, state.turnInfo, settings.muted, false);
+  useGamePhaseSound(snapshot, serverStatus, gameEnd, state.turnInfo, prefs.muted, false);
   const countdown = useStartCountdown(serverStatus?.phase, state.turnInfo);
 
-  const [showSettings,      setShowSettings]      = useState(false);
-  const [showMapManagement, setShowMapManagement] = useState(false);
-  const [showMapEditor,     setShowMapEditor]     = useState(false);
+  const [showSettings,       setShowSettings]       = useState(false);
+  const [showMapManagement,  setShowMapManagement]  = useState(false);
+  const [showMapEditor,      setShowMapEditor]      = useState(false);
   const [showProgramLibrary, setShowProgramLibrary] = useState(false);
-  const [currentMap,        setCurrentMap]        = useState<InlineMapData | null>(null);
-  const [editorSeed,        setEditorSeed]        = useState<EditableMap | null>(null);
+  const [currentMap,         setCurrentMap]         = useState<InlineMapData | null>(null);
+  const [editorSeed,         setEditorSeed]         = useState<EditableMap | null>(null);
 
-  useEffect(() => {
-    if (serverStatus?.phase === 'setup') {
-      state.setDoubleMode(settings.doubleMode);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.doubleMode, serverStatus?.phase]);
+  const phase        = serverStatus?.phase ?? 'setup';
+  const roundResults = serverStatus?.roundResults ?? [];
+  // マップを差し替えてよいか (バックエンドの RoundController.canEditMap と同じ条件)
+  const canEditMap   = phase === 'setup' && roundResults.length === 0;
 
-  useEffect(() => {
-    if (serverStatus?.phase === 'setup') {
-      state.setRepeatMode(settings.repeatMode);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.repeatMode, serverStatus?.phase]);
-
-  useEffect(() => {
-    if (serverStatus?.phase === 'setup') {
-      state.setDemoMode(settings.demoMode);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.demoMode, serverStatus?.phase]);
+  // 2試合制/リピート/デモは ServerStatusPayload で返ってくるサーバー側の状態なので、
+  // クライアントにキャッシュを持たず、そのまま表示してそのまま送る。
+  // (以前はローカル設定を setup フェーズのたびに再送していたため、コントロール窓を
+  //  複数開くと互いの古い値で上書きし合う競合があった)
 
   // 手動操作コントローラー: スロットが「手動」に設定されたら独立ウィンドウを自動で開く
   useEffect(() => {
@@ -85,29 +79,35 @@ function ControlApp({ roomId }: { roomId: string }) {
     });
   }, [serverStatus?.clients]);
 
-  // turnDelay: 接続時 + 設定変更時に同期
+  // ターン表示時間 / TCP タイムアウトは ServerStatusPayload に含まれない (サーバーが
+  // 返してこない) ため、接続後に一度だけ保存値を送って同期させる。以降はセットアップ
+  // 画面での明示的な編集時 (blur) にのみ送る。
+  const didCommitMatchConfig = useRef(false);
   useEffect(() => {
-    if (isConnected) state.setTurnDelay(settings.turnDelay);
+    if (!isConnected) { didCommitMatchConfig.current = false; return; }
+    if (didCommitMatchConfig.current) return;
+    didCommitMatchConfig.current = true;
+    state.setTurnDelay(matchConfig.turnDelay);
+    state.setTcpTimeout(matchConfig.timeout * 1000);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.turnDelay, isConnected]);
+  }, [isConnected]);
 
-  // TCP タイムアウト (秒→ミリ秒): 接続時 + 設定変更時に同期
-  useEffect(() => {
-    if (isConnected) state.setTcpTimeout(settings.timeout * 1000);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.timeout, isConnected]);
+  const commitMatchConfig = () => {
+    state.setTurnDelay(matchConfig.turnDelay);
+    state.setTcpTimeout(matchConfig.timeout * 1000);
+  };
 
   // 環境設定 (ログ保存先・Pythonコマンド): Electron ローカル起動時のみ意味を持つ
   // (バックエンド側も U15_MODE!=='local' なら無視するが、そもそも空文字なら送らない)
   useEffect(() => {
-    if (isConnected && settings.logDir) state.setLogDir(settings.logDir);
+    if (isConnected && envConfig.logDir) state.setLogDir(envConfig.logDir);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.logDir, isConnected]);
+  }, [envConfig.logDir, isConnected]);
 
   useEffect(() => {
-    if (isConnected && window.electronAPI) state.setPythonCommand(settings.pythonCommand);
+    if (isConnected && window.electronAPI) state.setPythonCommand(envConfig.pythonCommand);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.pythonCommand, isConnected]);
+  }, [envConfig.pythonCommand, isConnected]);
 
   const handleUploadMusic = async (file: File) => {
     const fd = new FormData();
@@ -126,10 +126,19 @@ function ControlApp({ roomId }: { roomId: string }) {
     }
   };
 
-  const openMapManagement = async () => {
-    setCurrentMap(await fetchCurrentMap());
-    setShowMapManagement(true);
-  };
+  // マップ変更を知らせる WS イベントは無く、さらに requestReset / requestRepeat は
+  // サーバー側でマップを再生成する。そのため setup 中は server_status のたびに取り直し、
+  // 内容が変わっていないときは state を更新せず再描画を避ける。
+  const refreshCurrentMap = useCallback(async () => {
+    const data = await fetchCurrentMap();
+    setCurrentMap(prev => (JSON.stringify(prev) === JSON.stringify(data) ? prev : data));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId]);
+
+  useEffect(() => {
+    if (!isConnected || phase !== 'setup') return;
+    void refreshCurrentMap();
+  }, [isConnected, phase, serverStatus, refreshCurrentMap]);
 
   const openMapEditor = async () => {
     const data = await fetchCurrentMap();
@@ -143,6 +152,7 @@ function ControlApp({ roomId }: { roomId: string }) {
   const handleApplyMapEntry = (entry: MapCatalogEntry) => {
     state.loadMap(entry.mapPath);
     setShowMapManagement(false);
+    void refreshCurrentMap();
   };
 
   const handleApplyGeneratedMap = (data: InlineMapData) => {
@@ -152,6 +162,7 @@ function ControlApp({ roomId }: { roomId: string }) {
 
   const handleMapEditorApply = (map: EditableMap) => {
     state.loadMapData({ field: map.field, size: map.size, turn: map.turn, teamFirstPoint: map.teamFirstPoint });
+    void refreshCurrentMap();
   };
 
   const handleMapEditorSaveToLibrary = (map: EditableMap, displayName: string) => {
@@ -184,26 +195,16 @@ function ControlApp({ roomId }: { roomId: string }) {
     return <div style={connecting}>バックエンドに接続中...</div>;
   }
 
-  const phase = serverStatus?.phase ?? 'setup';
-
   return (
     <>
-      {window.electronAPI && (
-        <button
-          style={fullscreenBtn}
-          title="観戦画面を全画面化"
-          onClick={() => void window.electronAPI?.toggleDisplayFullscreen()}
-        >
-          ⛶ 観戦画面を全画面化
-        </button>
-      )}
-
       {showSettings && (
         <SettingDialog
-          settings={settings}
+          prefs={prefs}
+          envConfig={envConfig}
           darkMode={serverStatus?.darkMode ?? false}
           httpBase={HTTP_BASE}
-          onSave={updateSettings}
+          onSetDisplayPrefs={state.setDisplayPrefs}
+          onSaveEnv={updateEnvConfig}
           onSetDarkMode={state.setDarkMode}
           onUploadMusic={handleUploadMusic}
           onClose={() => setShowSettings(false)}
@@ -214,8 +215,9 @@ function ControlApp({ roomId }: { roomId: string }) {
         <MapManagementDialog
           httpBase={HTTP_BASE}
           roomId={roomId}
-          theme={settings.theme}
+          theme={prefs.theme}
           currentMap={currentMap}
+          canApply={canEditMap}
           onApplyEntry={handleApplyMapEntry}
           onApplyInline={handleApplyGeneratedMap}
           onOpenEditor={() => void openMapEditor()}
@@ -226,7 +228,7 @@ function ControlApp({ roomId }: { roomId: string }) {
       {showMapEditor && editorSeed && (
         <MapEditorDialog
           initialMap={editorSeed}
-          theme={settings.theme}
+          theme={prefs.theme}
           httpBase={HTTP_BASE}
           onApply={handleMapEditorApply}
           onSaveToLibrary={handleMapEditorSaveToLibrary}
@@ -249,10 +251,19 @@ function ControlApp({ roomId }: { roomId: string }) {
               status={serverStatus ?? defaultStatus}
               httpBase={HTTP_BASE}
               roomId={roomId}
-              displayTitle={settings.displayTitle}
+              displayTitle={prefs.displayTitle}
+              theme={prefs.theme}
+              currentMap={currentMap}
+              matchConfig={matchConfig}
               onSetClient={state.setClient}
               onDeleteProgram={state.deleteProgram}
               onOpenLibraryManager={() => setShowProgramLibrary(true)}
+              onOpenMapManagement={() => setShowMapManagement(true)}
+              onSetDoubleMode={state.setDoubleMode}
+              onSetRepeatMode={state.setRepeatMode}
+              onSetDemoMode={state.setDemoMode}
+              onChangeMatchConfig={updateMatchConfig}
+              onCommitMatchConfig={commitMatchConfig}
             />
           ) : (
             <MainWindow
@@ -262,10 +273,10 @@ function ControlApp({ roomId }: { roomId: string }) {
               serverStatus={serverStatus}
               isConnected={isConnected}
               phase={phase}
-              theme={settings.theme}
+              theme={prefs.theme}
               variant="control"
               countdown={countdown}
-              onOpenSettings={() => setShowSettings(true)}
+              displayTitle={prefs.displayTitle}
             />
           )}
         </div>
@@ -277,9 +288,12 @@ function ControlApp({ roomId }: { roomId: string }) {
           onNextRound={state.requestNextRound}
           onRepeat={state.requestRepeat}
           onReset={state.requestReset}
-          onOpenMapManagement={() => void openMapManagement()}
+          onOpenMapManagement={() => setShowMapManagement(true)}
           onOpenProgramLibrary={() => setShowProgramLibrary(true)}
           onOpenSettings={() => setShowSettings(true)}
+          onToggleFullscreen={window.electronAPI
+            ? () => void window.electronAPI?.toggleDisplayFullscreen()
+            : undefined}
         />
       </div>
     </>
@@ -300,12 +314,6 @@ const connecting: React.CSSProperties = {
   background: '#0d1117', color: '#666', fontFamily: 'monospace', fontSize: 16,
 };
 
-const fullscreenBtn: React.CSSProperties = {
-  position: 'fixed', top: 8, right: 8, zIndex: 200,
-  padding: '5px 12px', border: '1px solid #ccc', borderRadius: 99,
-  background: '#ffffffdd', color: '#333', fontSize: 11, cursor: 'pointer',
-};
-
 const defaultStatus = {
   phase:        'setup' as const,
   localIP:      '...',
@@ -320,6 +328,7 @@ const defaultStatus = {
   roundResults: [],
   darkMode:     false,
   mapIsCustom:  false,
+  displayPrefs: DEFAULT_DISPLAY_PREFS,
 };
 
 const defaultEditableMap: EditableMap = {

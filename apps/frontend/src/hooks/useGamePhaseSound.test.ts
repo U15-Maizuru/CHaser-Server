@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
-import { Winner, Reason } from '@u15/ws-types';
+import { DEFAULT_DISPLAY_PREFS, Winner, Reason } from '@u15/ws-types';
 import type { ServerStatusPayload, GameEndPayload, TurnStartPayload } from '@u15/ws-types';
 import { useGamePhaseSound } from './useGamePhaseSound';
 
@@ -26,6 +26,7 @@ function status(phase: ServerStatusPayload['phase']): ServerStatusPayload {
     roundResults: [],
     darkMode: false,
     mapIsCustom: false,
+    displayPrefs: DEFAULT_DISPLAY_PREFS,
   };
 }
 

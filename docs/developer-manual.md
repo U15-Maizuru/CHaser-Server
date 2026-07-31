@@ -142,7 +142,10 @@ U15-server-maizuru/
 │   │       │   ├── useStartCountdown.ts  試合開始カウントダウンの表示制御
 │   │       │   └── ...
 │   │       ├── lib/
-│   │       │   └── roundSide.ts        2試合制のラウンド番号から画面左右の team-index を算出
+│   │       │   ├── roundSide.ts        2試合制のラウンド番号から画面左右の team-index を算出
+│   │       │   ├── setResult.ts        画面側 (side) ごとの合計ポイントとセット全体の勝者を算出
+│   │       │   │                        (フッターの勝者宣言とサイドパネルの TOTAL 欄で共有)
+│   │       │   └── ...
 │   │       └── ...
 │   │
 │   └── electron/
@@ -427,6 +430,8 @@ ws.onopen = () => {
 | `/api/default-room` | GET | ローカルモード用: `{roomId: "local", ports: [12031, 12032]}` を返す |
 | `/api/upload/program?slot=0\|1&room=<id>` | POST | AI プログラム (.py/.exe) アップロード |
 | `/api/upload/library?slot=0\|1&room=<id>` | POST | カスタムライブラリ (.py) アップロード |
+| `/api/libs?slot=0\|1&room=<id>` | GET | アップロード済みライブラリ一覧 |
+| `/api/libs/:filename?slot=0\|1&room=<id>` | DELETE | ライブラリ削除 |
 | `/api/maps` | POST | マップライブラリへの新規アップロード (.map) — 全ルーム共通、`mapCatalog.ts` |
 | `/api/maps` | GET | マップライブラリの一覧 (`MapCatalogEntry[]`) |
 | `/api/maps/:id` | DELETE | マップライブラリからの削除 |
@@ -435,8 +440,6 @@ ws.onopen = () => {
 | `/api/maps/random` | POST | ステートレスなランダムマップ生成 (`MapParams` → `InlineMapData`)。`GameSystem.createRandomMap` を直接呼ぶだけでどの部屋にも影響しない |
 | `/api/maps/save-inline` | POST | エディタで組んだマップ (`InlineMapData`) をライブラリへ保存 |
 | `/api/maps/export` | POST | エディタの内容をライブラリに残さずそのままダウンロード |
-| `/api/libs?slot=0\|1&room=<id>` | GET | アップロード済みライブラリ一覧 |
-| `/api/libs/:filename?slot=0\|1&room=<id>` | DELETE | ライブラリ削除 |
 
 アップロードされたファイルは `server/rooms/<roomId>/programs/cool/` 等にルーム別に保存されます。プログラム・マップの各ライブラリは `server/program-catalog/` / `server/map-catalog/` にルームを跨いで共通保存されます。
 
@@ -501,7 +504,7 @@ if (turnDelayMs > 0) await sleep(ms);
 // 次フェーズへ
 ```
 
-### 2試合制のラウンド別ボーナス (`calculateBonusBreakdown`)
+### ラウンド別ボーナス (`calculateBonusBreakdown`)
 
 決着理由が `SCORE` (ターン切れによるアイテム数判定) の場合はボーナスなし。それ以外の決着では:
 
@@ -512,8 +515,18 @@ strikeBonus[loserIdx] = isBlunder(status) ? -3 * scores[loserIdx] : 0;
 sweepBonus[winnerIdx] = 7 * leaveItems;
 ```
 
-各ラウンドの `RoundResult` (`scores` + `strikeBonus` + `sweepBonus`) を合算して2試合制の最終
-順位を決める。
+ボーナスは1試合制でも発生する（決着理由が `SCORE` 以外なら常に計算される）。合計ポイントは
+`scores × 10 + strikeBonus + sweepBonus` で、1試合制ではその1試合分、2試合制では両ラウンドの
+合算が最終順位を決める。
+
+この合算はフロントの `lib/setResult.ts` (`roundPointsFor` / `computeSetResult`) に集約している。
+集計の単位が team-index ではなく画面側 (`side`) である点に注意 — 2試合制ではラウンドごとに
+先攻/後攻が入れ替わるため、`idxForSide(side, round)` で team-index を引き直さないと同じ
+プログラムを追いかけられない。
+
+表示の役割分担: `MainWindow` のフッター結果ピルは `gameEnd` (直前ラウンドの結果) をそのまま
+表示し、2試合制の第2試合終了時も切り替えない。2試合の合計ポイントで決まるセット全体の勝者は
+`PlayerSidePanel` の TOTAL 欄に付く 🏆 (`computeSetResult().winnerSide`) だけが示す。
 
 ### 判定優先順位 (`judgeGame`)
 
@@ -548,11 +561,11 @@ App.tsx (ErrorBoundary でラップ)
 │   └── MainWindow.tsx      (playing/finished フェーズ)
 │
 ├── ControlApp              (?room=xxx&mode=control)
-│   ├── SettingDialog.tsx
-│   ├── ProgramLibraryDialog.tsx プログラムライブラリの管理 (アップロード/削除/デモ対象)
-│   ├── MapManagementDialog.tsx  (BottomBar の「マップ設定...」から開く。setup フェーズのみ)
+│   ├── SettingDialog.tsx        表示/BGM/環境のみ (全フェーズ)。対戦ルールは持たない
+│   ├── ProgramLibraryDialog.tsx プログラムライブラリ CRUD (setup フェーズのみ)
+│   ├── MapManagementDialog.tsx  マップ設定 (setup かつ roundResults が空のときのみ)
 │   │   └── MapEditorDialog.tsx  (MapManagementDialog の「エディタで編集...」から開く)
-│   ├── StartupDialog.tsx
+│   ├── StartupDialog.tsx        セットアップ画面 = チーム設定 + 「対戦設定」ストリップ
 │   └── MainWindow.tsx
 │
 └── ManualMode.tsx           (?room=xxx&mode=manual&slot=0|1 — 手動操作ウィンドウ)
@@ -569,13 +582,40 @@ App.tsx (ErrorBoundary でラップ)
 |---|---|
 | `useGameState(wsUrl, roomId)` | WS 接続・join_room 送信・ゲーム状態管理 |
 | `useLobby(wsUrl)` | ロビー用 WS 接続・create_room / join_room |
-| `useSettings()` | localStorage への設定永続化 |
+| `usePersistedState(key, defaults)` | localStorage 永続化 + storage イベントでのウィンドウ間同期の共通実装 |
+| `useClientPrefs()` | 表示・音の好み (muted/bgmMuted/bgmTrack/theme/displayTitle)。`u15_client_prefs` |
+| `useMatchConfig()` | timeout / turnDelay。`ServerStatusPayload` に無いためクライアント側でキャッシュ。`u15_match_config` |
+| `useEnvConfig()` | logDir / pythonCommand (Electron ローカル限定)。`u15_env_config` |
 | `useSound()` | SE 再生 |
 | `useGamePhaseSound(snapshot, serverStatus, gameEnd, muted)` | フェーズ遷移 (go/finish/win) とスコア変化の SE 再生。ControlApp と DisplayMode で共用 |
 | `useTextures(theme)` | テーマ別テクスチャ読込。GameBoardCanvas / MapEditorDialog / MapThumbnail で共用 |
 | `useBgm(phase, muted)` | フェーズに応じた BGM 再生・停止 |
 | `useStartCountdown(phase, turnInfo)` | 試合開始カウントダウンの表示制御 |
 | `useFileUpload()` | XHR multipart アップロード |
+
+### 設定の分類と置き場所 (重要)
+
+設定は「**いつ効くか**」と「**誰が真実を持つか**」で置き場所を決めている。新しい設定を足すときはこの表のどれに当たるかを先に決めること。
+
+| 分類 | 例 | 真実の所在 | UI 上の置き場所 |
+|---|---|---|---|
+| A. クライアント表示設定 | `muted` `bgmTrack` `theme` `displayTitle` | localStorage (`useClientPrefs`)。storage イベントで観戦ウィンドウと同期する | `SettingDialog` (全フェーズ) |
+| B. 対戦設定・サーバー既読返し | `doubleMode` `repeatMode` `demoMode` `darkMode` | **`ServerStatusPayload`**。クライアントにキャッシュを持たない | `StartupDialog` の「対戦設定」ストリップ (`darkMode` のみ全フェーズ操作可のため `SettingDialog`) |
+| C. 対戦設定・サーバー未返却 | `timeout` `turnDelay` | クライアントのキャッシュのみ (`useMatchConfig`) | `StartupDialog` の「対戦設定」ストリップ |
+| D. 環境設定 (ローカル限定) | `logDir` `pythonCommand` | クライアントのキャッシュ (`useEnvConfig`) | `SettingDialog`「環境」タブ |
+
+**分類 B をローカルにキャッシュして再送しないこと。** 以前は `useSettings` の値を setup フェーズに入るたび
+re-push していたため、コントロールウィンドウを複数開くと互いの古い値で上書きし合っていた。これらは
+`serverStatus` から直接読み、`state.set*` で直接書く。
+
+**バックエンドのゲート条件と UI の表示条件を一致させること。** サーバーが黙って無視するコマンドを
+UI が受け付けると「押せるのに何も起きない」状態になる。対応は以下:
+
+| ゲート (`RoundController`) | 対象コマンド | UI 側の扱い |
+|---|---|---|
+| `canStart()` = `phase==='setup'` | `set_client` / `set_*_mode` / `request_start` | セットアップ画面自体が setup のときだけ描画される |
+| `canEditMap()` = `setup && roundResults.length===0` | `load_map` / `set_map_params` / `load_map_data` | 「マップ設定...」ボタンと「対戦設定」ストリップを非表示にし、`MapManagementDialog` にも `canApply` を渡して二重に塞ぐ |
+| ゲートなし | `request_reset` / `set_dark_mode` / `set_turn_delay` / `set_tcp_timeout` | `request_reset` は BottomBar に常設 (デモ/リピート/対戦中からの唯一の出口)。`darkMode` は即時反映 |
 
 ### WS URL の自動検出
 
@@ -735,9 +775,15 @@ pnpm test:e2e
 node apps/electron/test-e2e.mjs
 ```
 
-前提: `apps/electron/node_modules/electron/dist/electron.exe` が存在すること（セットアップ節のトラブルシューティング参照）。ポート 5173 を他プロセスが使用していると Vite dev サーバーの起動検知がタイムアウトするため、事前に空けておくこと。
+前提: `apps/electron/node_modules/electron/dist/electron.exe` が存在すること（セットアップ節のトラブルシューティング参照）。ポート 5173 を他プロセスが使用していると Vite dev サーバーの起動検知がタイムアウトするため、事前に空けておくこと。テスト終了後に Vite の子プロセスが残ることがあるので、連続実行する場合は 5173 が解放されているか確認する。
 
-テスト開始時に `localStorage.turnDelay = 0` を設定してゲームを高速化します。テストは `?room=local&mode=control` で操作します。
+テスト開始時に `localStorage['u15_match_config'].turnDelay = 0` を設定してからページをリロードし、ゲームを高速化します（`ControlApp` は接続後に一度だけこの値をサーバーへ送るため、リロードが必要）。テストは `?room=local&mode=control` で操作します。
+
+手動操作モードのテストは、コントロールウィンドウではなく `?mode=manual` の専用ウィンドウ
+(`app.windows()` から取得) に対して入力を送ります。操作パネル `ManualControls` はそちらにしか無いためです。
+
+Electron を Playwright から起動する際は、`app.process()` の stdout/stderr を必ず読み捨てること。
+パイプが詰まるとメイン側が停止し、ウィンドウが生成されないままタイムアウトします。
 
 ---
 

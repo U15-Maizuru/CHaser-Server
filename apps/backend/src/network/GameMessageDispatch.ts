@@ -59,6 +59,9 @@ export class GameMessageDispatch {
       case 'set_dark_mode':
         manager.setDarkMode(msg.payload.enabled);
         break;
+      case 'set_display_prefs':
+        manager.setDisplayPrefs(msg.payload);
+        break;
       case 'set_turn_delay':
         manager.setTurnDelay(msg.payload.ms);
         break;

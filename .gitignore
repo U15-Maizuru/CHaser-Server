@@ -10,6 +10,8 @@ apps/electron/vendor/
 # 実行時生成データ (部屋・マップ等の保存先)
 apps/backend/server/
 apps/electron/server/
+# リポジトリ直下から起動した場合 (E2E テスト等) の生成先
+/server/
 
 # E2E テストの実行時生成物
 test-screenshots/

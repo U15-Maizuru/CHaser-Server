@@ -15,6 +15,7 @@ import { pickRandomPair } from '../programCatalog.js';
 import type {
   CatalogEntry,
   ClientType,
+  DisplayPrefs,
   InlineMapData,
   MapParams,
   ProcessConfig,
@@ -22,6 +23,7 @@ import type {
   ServerStatusPayload,
   Reason,
 } from '@u15/ws-types';
+import { DEFAULT_DISPLAY_PREFS } from '@u15/ws-types';
 
 // デモモード (無人自動進行) で、各フェーズ完了から次の操作を自動実行するまでの待機時間
 export interface DemoDelaysMs {
@@ -43,6 +45,7 @@ export class ServerManager extends EventEmitter {
   private readonly startDelayMs: number;
   private readonly demoDelaysMs: DemoDelaysMs;
   private darkMode = false;
+  private displayPrefs: DisplayPrefs = { ...DEFAULT_DISPLAY_PREFS };
   private demoTimer: ReturnType<typeof setTimeout> | null = null;
   private logDir = '.';
   private roomId = 'local';
@@ -106,6 +109,12 @@ export class ServerManager extends EventEmitter {
 
   setDarkMode(enabled: boolean): void {
     this.darkMode = enabled;
+    this.emitStatus();
+  }
+
+  /** 観戦画面の表示・音声設定。コントロールパネルが決め、全観戦画面に配信される */
+  setDisplayPrefs(patch: Partial<DisplayPrefs>): void {
+    this.displayPrefs = { ...this.displayPrefs, ...patch };
     this.emitStatus();
   }
 
@@ -252,6 +261,7 @@ export class ServerManager extends EventEmitter {
       roundResults: this.round.roundResults,
       darkMode:     this.darkMode,
       mapIsCustom:  this.mapManager.isCustom,
+      displayPrefs: this.displayPrefs,
     };
   }
 

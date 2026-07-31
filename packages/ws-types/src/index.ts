@@ -105,7 +105,31 @@ export interface ServerStatusPayload {
   darkMode:     boolean;
   /** 現在のマップがパラメータからのランダム生成ではなく、ファイル読み込み/インライン(エディタ)由来かどうか */
   mapIsCustom:  boolean;
+  /** 観戦画面の表示・音声設定。コントロールパネルが決め、全観戦画面 (Electron / ブラウザ) に配信される */
+  displayPrefs: DisplayPrefs;
 }
+
+/**
+ * 観戦画面 (display window / ブラウザ観戦) の表示・音まわりの設定。
+ * コントロールパネルが送り、サーバーが真実を持つ (`ServerStatusPayload.displayPrefs`)。
+ * ダークモードと同じ理由でクライアントにキャッシュを持たない — ローカルの `localStorage` に
+ * 置くと、観戦画面を複数ウィンドウ/複数端末で開いたときに互いに反映されない。
+ */
+export interface DisplayPrefs {
+  muted:        boolean; // SE ミュート
+  bgmMuted:     boolean; // BGM ミュート (SE 用の muted とは別)
+  bgmTrack:     string;  // 選択中の BGM ファイル名 ('none' = 再生しない)
+  theme:        string;  // 'Jewel' | 'Light' | 'Heavy' | 'RPG'
+  displayTitle: string;  // 観戦/表示画面のタイトル文字列
+}
+
+export const DEFAULT_DISPLAY_PREFS: Readonly<DisplayPrefs> = {
+  muted:        false,
+  bgmMuted:     false,
+  bgmTrack:     'none',
+  theme:        'Jewel',
+  displayTitle: 'U15 Server Maizuru',
+};
 
 // --- Commands (Frontend → Backend) ---
 
@@ -177,6 +201,7 @@ export type FrontendMessage =
   | { type: 'request_next_round' }
   | { type: 'request_repeat' }
   | { type: 'set_dark_mode';     payload: { enabled: boolean } }
+  | { type: 'set_display_prefs'; payload: Partial<DisplayPrefs> }
   | { type: 'manual_action';     payload: { slot: 0 | 1; action: number; rote: number } }
   | { type: 'create_room' }
   | { type: 'join_room';         payload: { roomId: string } }

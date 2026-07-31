@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   ClientType,
+  DisplayPrefs,
   FrontendMessage,
   GameEndPayload,
   GameStateSnapshot,
@@ -31,6 +32,7 @@ export interface GameStateHook {
   requestRepeat:    () => void;
   setDemoMode:      (enabled: boolean) => void;
   setDarkMode:      (enabled: boolean) => void;
+  setDisplayPrefs:  (patch: Partial<DisplayPrefs>) => void;
   setTurnDelay:     (ms: number) => void;
   setTcpTimeout:    (ms: number) => void;
   setLogDir:        (dir: string) => void;
@@ -141,6 +143,7 @@ export function useGameState(wsUrl: string, roomId: string): GameStateHook {
     requestRepeat:    ()                           => send({ type: 'request_repeat' }),
     setDemoMode:      (enabled)                    => send({ type: 'set_demo_mode',     payload: { enabled } }),
     setDarkMode:      (enabled)                    => send({ type: 'set_dark_mode',     payload: { enabled } }),
+    setDisplayPrefs:  (patch)                      => send({ type: 'set_display_prefs', payload: patch }),
     setTurnDelay:     (ms)                         => send({ type: 'set_turn_delay',    payload: { ms } }),
     setTcpTimeout:    (ms)                         => send({ type: 'set_tcp_timeout',   payload: { ms } }),
     setLogDir:        (dir)                        => send({ type: 'set_log_dir',       payload: { dir } }),

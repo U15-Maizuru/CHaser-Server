@@ -29,7 +29,7 @@ interface Props {
   theme?:          string;
   variant:         'control' | 'display';
   countdown:       number | null;
-  onOpenSettings:  () => void;
+  displayTitle:    string;
 }
 
 // 勝因 (原本の ResultLabel 相当): 決着理由を必ず表示する
@@ -69,8 +69,7 @@ function drawText(gameEnd: GameEndPayload): string {
 
 export function MainWindow({
   snapshot, turnInfo, gameEnd, serverStatus, isConnected, phase,
-  theme = 'Jewel', variant, countdown,
-  onOpenSettings,
+  theme = 'Jewel', variant, countdown, displayTitle,
 }: Props) {
   const darkMode = (serverStatus?.darkMode ?? false) && countdown === null;
 
@@ -182,11 +181,11 @@ export function MainWindow({
 
   return (
     <div style={s.root}>
-      {/* ── ヘッダーバー (観覧用画面では非表示) ──────────────────── */}
+      {/* ── ヘッダーバー (観覧用画面では非表示) ────────────────────
+          設定への入口は BottomBar に一本化しているため、ここには置かない */}
       {variant === 'control' && (
         <div style={s.headerBar}>
-          <button style={s.settingsBtn} onClick={onOpenSettings} title="設定">⚙</button>
-          <span style={s.title}>U15 Server Maizuru</span>
+          <span style={s.title}>{displayTitle}</span>
         </div>
       )}
 
@@ -330,11 +329,6 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: 'clamp(0.65rem, 1.1vw, 1rem)',
     fontWeight: 700, letterSpacing: '0.06em', color: TEXT_SECONDARY,
   },
-  settingsBtn: {
-    background: 'none', border: 'none', color: TEXT_MUTED,
-    fontSize: 'clamp(14px, 1.4vw, 22px)', cursor: 'pointer', padding: '0 4px',
-  },
-
   // スコアバー
   scorePad: {
     padding: '0.5vh 14px 0', flexShrink: 0,
