@@ -9,6 +9,7 @@ import { LobbyRouter } from './LobbyRouter.js';
 import { GameMessageDispatch } from './GameMessageDispatch.js';
 import type {
   GameStateSnapshot,
+  ScanInfo,
   WsMessage,
   LobbyMessage,
   FrontendMessage,
@@ -163,10 +164,10 @@ export class WsServer {
   }
 
   attachRoom(roomId: string, session: GameSession, playerNames: [string, string]): void {
-    session.on('stateUpdate', (state: GameState) => {
+    session.on('stateUpdate', (state: GameState, scan?: ScanInfo | null) => {
       this.broadcastToRoom(roomId, {
         type: 'game_state',
-        payload: toSnapshot(state, playerNames),
+        payload: toSnapshot(state, playerNames, scan ?? null),
       });
     });
 
@@ -201,7 +202,11 @@ export class WsServer {
   }
 }
 
-function toSnapshot(state: GameState, playerNames: [string, string]): GameStateSnapshot {
+function toSnapshot(
+  state:       GameState,
+  playerNames: [string, string],
+  lastScan:    ScanInfo | null = null,
+): GameStateSnapshot {
   return {
     field:       state.map.field.map((row: MapObject[]) => [...row]),
     size:        { ...state.map.size },
@@ -210,5 +215,6 @@ function toSnapshot(state: GameState, playerNames: [string, string]): GameStateS
     turnCount:   state.turnCount,
     leaveItems:  state.leaveItems,
     playerNames,
+    lastScan,
   };
 }

@@ -475,6 +475,37 @@ Server → "[更新後のAroundData]\r\n"
 Client → "#\r\n"
 ```
 
+#### AroundData がどの範囲を指すか
+
+**フェーズ 2 の AroundData は常に自機中心の 3x3**。この時点ではまだクライアントの行動を
+受け取っていないため、原理的に行動依存にできない (`Game.ts` の `aroundBefore`)。
+
+**フェーズ 3 の AroundData だけが行動依存** (`Game.ts` の `aroundAfter` / `getAroundData(state, team, method)`)。
+範囲は `GameLogic.getScanCells()` が決める:
+
+| 行動 | 9マスの範囲 |
+|---|---|
+| WALK / PUT | 自機中心の 3x3 (row-major) |
+| LOOK | 指定方向に2マス離れた地点を中心とする 3x3 (= 距離1〜3の帯、row-major) |
+| SEARCH | 指定方向の直線9マス (距離1〜9)。index 0 が最も近い |
+
+Python ライブラリ側では `get_ready()` の戻り値がフェーズ2、`walk()`/`look()`/`search()`/`put()` の
+戻り値がフェーズ3にあたる。つまり **LOOK/SEARCH の結果は行動関数の戻り値でしか受け取れない**。
+同梱サンプルボットは行動関数の戻り値を捨てているため、この点は `pyCHaser.py` の docstring で明示している。
+
+ワイヤ形式は「1桁の ConnectStatus + 9桁の値」で固定。LOOK/SEARCH も9マスなので形式の変更は不要。
+
+なお、方向が `Rote.UNKNOWN` のとき `getRoteVector` は `{0,0}` を返すため範囲は自機中心に縮退する
+(不正な方向自体は `Game.ts` で切断扱いになる)。盤面演出用の `ScanInfo` はこの場合 `null` を返し、
+縮退した範囲を描画側に渡さない。
+
+#### 盤面演出への連携
+
+LOOK/SEARCH が行われたターンは `stateUpdate` の第2引数に `ScanInfo` (`packages/ws-types`) が乗り、
+`WsServer.toSnapshot` 経由で `game_state` の `lastScan` としてフロントに届く。マスの座標はサーバー側で
+確定させて送るため、フロントは探索範囲の幾何を持たない。描画は `GameBoardCanvas` のレイヤー5
+(ダーク幕より後) で行う。
+
 ### ポート番号
 
 | モード | COOL ポート | HOT ポート |

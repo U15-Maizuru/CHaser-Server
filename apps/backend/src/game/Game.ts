@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { applyMethod, countItems, getAroundData, judgeGame, type GameState } from './GameLogic.js';
+import { applyMethod, countItems, getAroundData, judgeGame, scanInfoFrom, type GameState } from './GameLogic.js';
 import { aroundDataFinish } from './GameSystem.js';
 import {
   Action,
@@ -20,7 +20,7 @@ export interface GameResult {
 
 // Events emitted by GameSession:
 //   'turnStart'   (player: number, state: GameState)
-//   'stateUpdate' (state: GameState)
+//   'stateUpdate' (state: GameState, scan?: ScanInfo | null)
 //   'gameEnd'     (result: GameResult)
 export class GameSession extends EventEmitter {
   async run(
@@ -80,8 +80,9 @@ export class GameSession extends EventEmitter {
         state = applyMethod(state, method);
         state = syncDisconnected(state, clients);
 
-        // Emit state after move; emit score_update if score changed
-        this.emit('stateUpdate', state);
+        // Emit state after move; emit score_update if score changed.
+        // LOOK/SEARCH は位置を変えないので、ここで組み立てた範囲は下の aroundAfter と同じ座標になる。
+        this.emit('stateUpdate', state, scanInfoFrom(state, player as 0 | 1, method));
         if (turnDelayMs > 0) await sleep(turnDelayMs);
         if (state.teamScore[player] !== prevScore) {
           this.emit('scoreUpdate', state);
@@ -94,7 +95,10 @@ export class GameSession extends EventEmitter {
         }
 
         // ====== EndSharp phase: send updated around, wait # ======
-        const aroundAfter = getAroundData(state, player as Team);
+        // クライアントの行動関数 (walk()/look()/search()/put()) が受け取るのはこのデータ。
+        // method を渡すことで LOOK/SEARCH のときだけ探索範囲が返る。
+        // 一方 GetReady フェーズの aroundBefore は method 確定前に送るため常に自機中心の 3x3。
+        const aroundAfter = getAroundData(state, player as Team, method);
         const endSharpOk = await client.waitEndSharp(aroundAfter);
         if (!endSharpOk) {
           state = setDisconnected(state, player);

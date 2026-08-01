@@ -32,7 +32,37 @@ export enum Reason {
   NONE      = 6,
 }
 
+export enum Action {
+  WALK    = 0,
+  LOOK    = 1,
+  SEARCH  = 2,
+  PUT     = 3,
+  GETREADY = 4,
+  UNKNOWN = 5,
+}
+
+export enum Rote {
+  UP      = 0,
+  DOWN    = 1,
+  RIGHT   = 2,
+  LEFT    = 3,
+  UNKNOWN = 4,
+}
+
 // --- Game state ---
+
+/**
+ * 直近に実行された LOOK / SEARCH が調べた範囲。盤面演出専用のデータで、
+ * ゲームロジックには影響しない。マスの座標はサーバー側で確定させて送るため、
+ * フロントは探索範囲の幾何を知らなくてよい。
+ */
+export interface ScanInfo {
+  team:   0 | 1;
+  action: Action.LOOK | Action.SEARCH;
+  rote:   Rote;
+  /** 9要素。index 0 が自機に最も近い。盤外の座標も含むので描画側で境界チェックすること */
+  cells:  Point[];
+}
 
 export interface GameStateSnapshot {
   field: MapObject[][];
@@ -42,6 +72,8 @@ export interface GameStateSnapshot {
   turnCount: number;
   leaveItems: number;
   playerNames: [string, string];
+  /** このターンに LOOK/SEARCH が行われた場合のみ非 null */
+  lastScan?: ScanInfo | null;
 }
 
 export interface TurnStartPayload {

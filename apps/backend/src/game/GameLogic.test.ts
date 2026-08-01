@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createRandomMap } from './GameSystem.js';
-import { applyMethod, calculateBonusBreakdown, countItems, GameState, getAroundData, judgeGame } from './GameLogic.js';
+import { applyMethod, calculateBonusBreakdown, countItems, GameState, getAroundData, getScanCells, judgeGame, scanInfoFrom } from './GameLogic.js';
 import { Action, ConnectingStatus, GameStatus, MapObject, Method, Reason, Rote, Team, Winner } from './types.js';
 
 function makeState(overrides: Partial<GameState> = {}): GameState {
@@ -13,6 +13,20 @@ function makeState(overrides: Partial<GameState> = {}): GameState {
     leaveItems: countItems(map),
     isDisconnected: [false, false],
     ...overrides,
+  };
+}
+
+/** 障害物・アイテムのない盤面。探索範囲のテストで「置いた1マス」だけを見分けるために使う。 */
+function makeEmptyState(coolPos: { x: number; y: number }): GameState {
+  const map = createRandomMap();
+  const field = map.field.map(row => row.map(() => MapObject.NOTHING));
+  return {
+    map: { ...map, field },
+    teamPos: [{ ...coolPos }, { x: map.size.x - 2, y: map.size.y - 2 }],
+    teamScore: [0, 0],
+    turnCount: 100,
+    leaveItems: 0,
+    isDisconnected: [false, false],
   };
 }
 
@@ -68,6 +82,136 @@ describe('getAroundData', () => {
     expect(around.data[0]).toBe(MapObject.BLOCK); // 左上
     expect(around.data[1]).toBe(MapObject.BLOCK); // 上
     expect(around.data[3]).toBe(MapObject.BLOCK); // 左
+  });
+
+  it('method を渡さなければ従来どおり自機中心の 3x3 を返す', () => {
+    const state = makeState({ teamPos: [{ x: 5, y: 5 }, { x: 9, y: 9 }] });
+    const around = getAroundData(state, Team.COOL);
+    const expected = getScanCells({ x: 5, y: 5 }, Action.WALK, Rote.UNKNOWN)
+      .map(c => state.map.field[c.y][c.x]);
+    expect(around.data).toEqual(expected);
+  });
+
+  it('LOOK では指定方向の 3x3 を返す (自機中心とは別のマス)', () => {
+    // 自機 (5,5) の 3 マス上 (5,2) にだけ ITEM を置く。
+    // LOOK(UP) の範囲 (距離1〜3) には入るが、自機中心の 3x3 には入らない位置。
+    const state = makeEmptyState({ x: 5, y: 5 });
+    state.map.field[2][5] = MapObject.ITEM;
+    const method: Method = { team: Team.COOL, action: Action.LOOK, rote: Rote.UP };
+
+    // LOOK の中心は (5,3) なので row-major の index 1 が (5,2)
+    expect(getAroundData(state, Team.COOL, method).data[1]).toBe(MapObject.ITEM);
+    // 自機中心の 3x3 には含まれない
+    expect(getAroundData(state, Team.COOL).data).not.toContain(MapObject.ITEM);
+  });
+
+  it('SEARCH では指定方向の直線 9 マスを近い順に返す', () => {
+    // 自機 (5,10) の 7 マス上 (5,3) にだけ ITEM → SEARCH(UP) の index 6
+    const state = makeEmptyState({ x: 5, y: 10 });
+    state.map.field[3][5] = MapObject.ITEM;
+    const method: Method = { team: Team.COOL, action: Action.SEARCH, rote: Rote.UP };
+    expect(getAroundData(state, Team.COOL, method).data[6]).toBe(MapObject.ITEM);
+    // ITEM は1マスだけなので、他は全て NOTHING
+    expect(getAroundData(state, Team.COOL, method).data.filter(v => v === MapObject.ITEM)).toHaveLength(1);
+  });
+});
+
+describe('getScanCells', () => {
+  const origin = { x: 5, y: 5 };
+
+  it('WALK/PUT は自機中心の 3x3 を row-major で返す', () => {
+    for (const action of [Action.WALK, Action.PUT]) {
+      const cells = getScanCells(origin, action, Rote.UP);
+      expect(cells).toHaveLength(9);
+      expect(cells[0]).toEqual({ x: 4, y: 4 });
+      expect(cells[4]).toEqual(origin);
+      expect(cells[8]).toEqual({ x: 6, y: 6 });
+    }
+  });
+
+  it('LOOK は 2 マス先を中心とする 3x3 (= 距離 1〜3 の帯) を返す', () => {
+    // UP: 中心 (5,3) → y は 2,3,4。自機 (5,5) と隣接し、間に隙間がないこと
+    const up = getScanCells(origin, Action.LOOK, Rote.UP);
+    expect(up).toHaveLength(9);
+    expect(up[0]).toEqual({ x: 4, y: 2 });
+    expect(up[4]).toEqual({ x: 5, y: 3 });
+    expect(up[8]).toEqual({ x: 6, y: 4 });
+    expect(up.some(c => c.y === origin.y - 1)).toBe(true); // 自機の真上に接している
+    expect(up.some(c => c.y === origin.y)).toBe(false);    // 自機の行は含まない
+
+    expect(getScanCells(origin, Action.LOOK, Rote.DOWN)[4]).toEqual({ x: 5, y: 7 });
+    expect(getScanCells(origin, Action.LOOK, Rote.RIGHT)[4]).toEqual({ x: 7, y: 5 });
+    expect(getScanCells(origin, Action.LOOK, Rote.LEFT)[4]).toEqual({ x: 3, y: 5 });
+  });
+
+  it('SEARCH は指定方向の直線 9 マスを近い順に返す', () => {
+    const up = getScanCells(origin, Action.SEARCH, Rote.UP);
+    expect(up).toHaveLength(9);
+    expect(up[0]).toEqual({ x: 5, y: 4 }); // 距離1 (最も近い)
+    expect(up[8]).toEqual({ x: 5, y: -4 }); // 距離9 (盤外座標もそのまま返す)
+
+    expect(getScanCells(origin, Action.SEARCH, Rote.RIGHT)[0]).toEqual({ x: 6, y: 5 });
+    expect(getScanCells(origin, Action.SEARCH, Rote.DOWN)[8]).toEqual({ x: 5, y: 14 });
+    expect(getScanCells(origin, Action.SEARCH, Rote.LEFT)[8]).toEqual({ x: -4, y: 5 });
+  });
+
+  it('方向が UNKNOWN なら自機中心に縮退する', () => {
+    expect(getScanCells(origin, Action.LOOK, Rote.UNKNOWN))
+      .toEqual(getScanCells(origin, Action.WALK, Rote.UNKNOWN));
+    expect(getScanCells(origin, Action.SEARCH, Rote.UNKNOWN).every(c => c.x === 5 && c.y === 5)).toBe(true);
+  });
+});
+
+describe('scanInfoFrom', () => {
+  const state = () => makeState({ teamPos: [{ x: 5, y: 5 }, { x: 9, y: 9 }] });
+
+  it('LOOK/SEARCH のときだけ範囲を返す', () => {
+    const look = scanInfoFrom(state(), 0, { team: Team.COOL, action: Action.LOOK, rote: Rote.UP });
+    expect(look).not.toBeNull();
+    expect(look!.team).toBe(0);
+    expect(look!.action).toBe(Action.LOOK);
+    expect(look!.cells).toHaveLength(9);
+
+    // teamPos[1] = (9,9) なので LEFT の最も近いマスは (8,9)
+    const search = scanInfoFrom(state(), 1, { team: Team.HOT, action: Action.SEARCH, rote: Rote.LEFT });
+    expect(search!.team).toBe(1);
+    expect(search!.cells[0]).toEqual({ x: 8, y: 9 });
+  });
+
+  it('WALK / PUT では null', () => {
+    expect(scanInfoFrom(state(), 0, { team: Team.COOL, action: Action.WALK, rote: Rote.UP })).toBeNull();
+    expect(scanInfoFrom(state(), 0, { team: Team.COOL, action: Action.PUT, rote: Rote.UP })).toBeNull();
+  });
+
+  it('方向が UNKNOWN なら null (縮退した範囲を描画側に渡さない)', () => {
+    expect(scanInfoFrom(state(), 0, { team: Team.COOL, action: Action.SEARCH, rote: Rote.UNKNOWN })).toBeNull();
+    expect(scanInfoFrom(state(), 0, { team: Team.COOL, action: Action.LOOK, rote: Rote.UNKNOWN })).toBeNull();
+  });
+});
+
+describe('judgeGame — LOOK/SEARCH 実装後も 3x3 判定であること', () => {
+  it('下敷き・囲まれ判定は自機中心の 3x3 のまま', () => {
+    const map = createRandomMap();
+    const field = map.field.map(row => [...row]);
+    const p = { x: 5, y: 5 };
+    // 自機の上下左右をブロックで囲む (囲まれ判定が成立する配置)
+    field[p.y][p.x]     = MapObject.NOTHING;
+    field[p.y - 1][p.x] = MapObject.BLOCK;
+    field[p.y + 1][p.x] = MapObject.BLOCK;
+    field[p.y][p.x - 1] = MapObject.BLOCK;
+    field[p.y][p.x + 1] = MapObject.BLOCK;
+    const state: GameState = {
+      map: { ...map, field },
+      teamPos: [p, { x: 1, y: 1 }],
+      teamScore: [0, 0],
+      turnCount: 100,
+      leaveItems: countItems({ ...map, field }),
+      isDisconnected: [false, false],
+    };
+    // COOL が囲まれている → HOT の勝ち
+    const result = judgeGame(state, 1);
+    expect(result.winner).toBe(Winner.HOT);
+    expect([Reason.TRAPPED, Reason.CONFINED]).toContain(result.reason);
   });
 });
 

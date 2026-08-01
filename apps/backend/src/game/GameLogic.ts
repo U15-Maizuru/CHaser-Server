@@ -6,7 +6,10 @@ import {
   GameStatus,
   MapObject,
   Method,
+  Point,
   Reason,
+  Rote,
+  ScanInfo,
   TEAM_COUNT,
   Team,
   Winner,
@@ -88,21 +91,71 @@ export function applyMethod(state: GameState, method: Method): GameState {
   return next;
 }
 
-export function getAroundData(state: GameState, team: Team): AroundData {
-  const pos = state.teamPos[team as unknown as 0 | 1];
-  const data: MapObject[] = [];
+/** pos を中心とする 3x3 を row-major (左上→右下) で返す */
+function grid3x3(pos: Point): Point[] {
+  const cells: Point[] = [];
   for (let dy = -1; dy <= 1; dy++) {
     for (let dx = -1; dx <= 1; dx++) {
-      const nx = pos.x + dx;
-      const ny = pos.y + dy;
-      if (nx < 0 || nx >= state.map.size.x || ny < 0 || ny >= state.map.size.y) {
-        data.push(MapObject.BLOCK);
-      } else {
-        data.push(state.map.field[ny][nx]);
-      }
+      cells.push({ x: pos.x + dx, y: pos.y + dy });
     }
   }
+  return cells;
+}
+
+/**
+ * 行動が調べるマスを返す (常に9要素・盤外の座標も含む)。本家 CHaser 準拠:
+ *
+ * - LOOK   : 指定方向に 2 マス離れた地点を中心とする 3x3 (= その方向の距離 1〜3 の帯)。row-major 順。
+ * - SEARCH : 指定方向の直線 9 マス (距離 1〜9)。index 0 が最も近い。
+ * - それ以外 (WALK / PUT / GETREADY / UNKNOWN): 自機中心の 3x3。
+ *
+ * rote が UNKNOWN のとき getRoteVector は {0,0} を返すため、LOOK/SEARCH は自機中心に縮退する。
+ * 不正な方向は Game.ts 側で切断扱いになるので、ここでは縮退した値を返すだけに留める。
+ */
+export function getScanCells(pos: Point, action: Action, rote: Rote): Point[] {
+  const v = getRoteVector(rote);
+  if (action === Action.LOOK) {
+    return grid3x3({ x: pos.x + v.x * 2, y: pos.y + v.y * 2 });
+  }
+  if (action === Action.SEARCH) {
+    return Array.from({ length: 9 }, (_, i) => ({
+      x: pos.x + v.x * (i + 1),
+      y: pos.y + v.y * (i + 1),
+    }));
+  }
+  return grid3x3(pos);
+}
+
+/**
+ * 指定マスのマップ情報を返す。method を省略すると自機中心の 3x3 (従来の挙動)。
+ *
+ * judgeGame の下敷き判定 (data[4]) / 囲まれ判定 (data[1][3][5][7]) は 3x3 前提なので、
+ * judgeGame からは必ず method なしで呼ぶこと。
+ */
+export function getAroundData(state: GameState, team: Team, method?: Method): AroundData {
+  const pos = state.teamPos[team as unknown as 0 | 1];
+  const cells = getScanCells(pos, method?.action ?? Action.WALK, method?.rote ?? Rote.UNKNOWN);
+  const data = cells.map(({ x, y }) =>
+    x < 0 || x >= state.map.size.x || y < 0 || y >= state.map.size.y
+      ? MapObject.BLOCK
+      : state.map.field[y][x],
+  );
   return { connect: ConnectingStatus.CONTINUE, data };
+}
+
+/**
+ * 盤面演出用に、LOOK/SEARCH が調べた範囲を組み立てる。それ以外の行動と、
+ * 方向が不正で範囲が縮退する場合は null。
+ */
+export function scanInfoFrom(state: GameState, team: 0 | 1, method: Method): ScanInfo | null {
+  if (method.action !== Action.LOOK && method.action !== Action.SEARCH) return null;
+  if (method.rote === Rote.UNKNOWN) return null;
+  return {
+    team,
+    action: method.action,
+    rote:   method.rote,
+    cells:  getScanCells(state.teamPos[team], method.action, method.rote),
+  };
 }
 
 export function judgeGame(state: GameState, currentPlayer: number): GameStatus {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Action, Rote } from '@u15/ws-types';
 import {
   BG_CARD,
   COOL_COLOR, COOL_LIGHT, COOL_PALE, COOL_DARK,
@@ -9,16 +10,6 @@ import {
   FONT_UI,
 } from '../styles/tokens';
 
-const ACTION_WALK   = 0;
-const ACTION_LOOK   = 1;
-const ACTION_SEARCH = 2;
-const ACTION_PUT    = 3;
-
-const ROTE_UP    = 0;
-const ROTE_DOWN  = 1;
-const ROTE_RIGHT = 2;
-const ROTE_LEFT  = 3;
-
 interface Props {
   slot:          0 | 1;
   manualRequest: { slot: 0 | 1; aroundData: number[] } | null;
@@ -26,7 +17,7 @@ interface Props {
 }
 
 export function ManualControls({ slot, manualRequest, onAction }: Props) {
-  const [selectedAction, setSelectedAction] = useState(ACTION_WALK);
+  const [selectedAction, setSelectedAction] = useState<Action>(Action.WALK);
 
   const isWaiting  = manualRequest?.slot === slot;
 
@@ -38,10 +29,10 @@ export function ManualControls({ slot, manualRequest, onAction }: Props) {
   useEffect(() => {
     if (!isWaiting) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowUp')    { e.preventDefault(); send(ROTE_UP); }
-      if (e.key === 'ArrowDown')  { e.preventDefault(); send(ROTE_DOWN); }
-      if (e.key === 'ArrowRight') { e.preventDefault(); send(ROTE_RIGHT); }
-      if (e.key === 'ArrowLeft')  { e.preventDefault(); send(ROTE_LEFT); }
+      if (e.key === 'ArrowUp')    { e.preventDefault(); send(Rote.UP); }
+      if (e.key === 'ArrowDown')  { e.preventDefault(); send(Rote.DOWN); }
+      if (e.key === 'ArrowRight') { e.preventDefault(); send(Rote.RIGHT); }
+      if (e.key === 'ArrowLeft')  { e.preventDefault(); send(Rote.LEFT); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -81,22 +72,22 @@ export function ManualControls({ slot, manualRequest, onAction }: Props) {
             value={selectedAction}
             onChange={e => setSelectedAction(Number(e.target.value))}
           >
-            <option value={ACTION_WALK}>移動 (WALK)</option>
-            <option value={ACTION_LOOK}>観察 (LOOK)</option>
-            <option value={ACTION_SEARCH}>探索 (SEARCH)</option>
-            <option value={ACTION_PUT}>設置 (PUT)</option>
+            <option value={Action.WALK}>移動 (WALK)</option>
+            <option value={Action.LOOK}>観察 (LOOK)</option>
+            <option value={Action.SEARCH}>探索 (SEARCH)</option>
+            <option value={Action.PUT}>設置 (PUT)</option>
           </select>
         </div>
 
         {/* 方向パッド */}
         <div style={s.dpad}>
           <div style={s.dpadRow}>
-            <DPadBtn disabled={!isWaiting} color={base} light={light} onClick={() => send(ROTE_UP)}>↑</DPadBtn>
+            <DPadBtn disabled={!isWaiting} color={base} light={light} onClick={() => send(Rote.UP)}>↑</DPadBtn>
           </div>
           <div style={s.dpadRow}>
-            <DPadBtn disabled={!isWaiting} color={base} light={light} onClick={() => send(ROTE_LEFT)}>←</DPadBtn>
-            <DPadBtn disabled={!isWaiting} color={base} light={light} onClick={() => send(ROTE_DOWN)}>↓</DPadBtn>
-            <DPadBtn disabled={!isWaiting} color={base} light={light} onClick={() => send(ROTE_RIGHT)}>→</DPadBtn>
+            <DPadBtn disabled={!isWaiting} color={base} light={light} onClick={() => send(Rote.LEFT)}>←</DPadBtn>
+            <DPadBtn disabled={!isWaiting} color={base} light={light} onClick={() => send(Rote.DOWN)}>↓</DPadBtn>
+            <DPadBtn disabled={!isWaiting} color={base} light={light} onClick={() => send(Rote.RIGHT)}>→</DPadBtn>
           </div>
         </div>
 

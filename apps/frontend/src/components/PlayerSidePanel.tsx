@@ -39,6 +39,16 @@ interface PanelDim {
   soloTotalLabelFont: number; soloTotalValueFont: number;
 }
 
+// 文字送りの見積り (em)。correction の二分探索は高さ (scrollHeight) しか見ないため、
+// 横方向は「この幅なら何 px まで1行に収まるか」をここから逆算して上限にする。
+// ラベル「合計ポイント」= 全角6文字 + letterSpacing (0.04〜0.06em) ≒ 6.4em。
+const LABEL_EM = 6.4;
+// ポイント値は FONT_NUM (等幅 = 0.6em/文字)。4桁を基準に「9999pt」= 6文字 ≒ 3.6em、
+// フォント差の余裕を見て 3.7em。桁数で文字サイズが変わらないよう、常に4桁前提で決める。
+const POINTS_EM = 3.7;
+// s.teamBox の左右パディング (statsGrid の使える幅を求めるのに使う)
+const TEAM_BOX_PAD_H = 8;
+
 // width: パネルに割り当てられた実際の幅 (px)。150 は基準幅で、これを 1.0 とした相対スケールを
 // 内部要素のフォント/余白計算に使う。correction: 実測した内容の高さがカードの実高さに収まらない
 // 場合に PlayerSidePanel 側で計算する縮小補正 (1 = 補正なし)。幅だけを基準に文字サイズを決めると
@@ -47,6 +57,19 @@ interface PanelDim {
 // 見積りではなく実測ベースにしている)。
 function buildDim(width: number, correction: number): PanelDim {
   const scale = (width / 150) * correction;
+
+  // 横方向の余白は先に確定させ、文字が使える実幅を出す
+  const gridGap       = clampNum(4 * scale, 3, 19);
+  const totalPadH     = clampNum(8 * scale, 6, 30);
+  const statValuePadH = clampNum(4 * scale, 3, 15);
+
+  // 1試合制の合計ポイント欄 (totalSection の内側いっぱいを1要素が使う)
+  const totalInnerW = Math.max(20, width - totalPadH * 2);
+  // StatCell 1枚の幅 (2列を gap で分ける)。teamBox 側と totalSection 側で左右余白が
+  // 違うため、狭いほうに合わせる
+  const cellW      = Math.max(16, (Math.min(width - TEAM_BOX_PAD_H * 2, totalInnerW) - gridGap) / 2);
+  const cellInnerW = Math.max(12, cellW - statValuePadH * 2);
+
   return {
     cardW: width,
     teamBoxGap: clampNum(6 * scale, 4, 26),
@@ -56,21 +79,24 @@ function buildDim(width: number, correction: number): PanelDim {
     headerMarginB: clampNum(3 * scale, 2, 13),
     dotsFont: clampNum(5 * scale, 4, 19),
     labelFont: clampNum(14 * scale, 10, 45),
-    gridGap: clampNum(4 * scale, 3, 19),
+    gridGap,
     badgeFont: clampNum(9 * scale, 7, 26),
     badgePadV: clampNum(3 * scale, 2, 11),
     badgePadH: clampNum(8 * scale, 6, 30),
     totalPadV: clampNum(7 * scale, 5, 30),
-    totalPadH: clampNum(8 * scale, 6, 30),
+    totalPadH,
     totalHeaderFont: clampNum(11 * scale, 8, 34),
     totalHeaderMarginB: clampNum(5 * scale, 4, 22),
     totalHeaderPadT: clampNum(5 * scale, 4, 22),
-    statLabelFont: clampNum(10 * scale, 7, 28),
-    statValueFont: clampNum(15 * scale, 10, 49),
+    // 2試合制 TOTAL 欄のラベル「合計ポイント」が省略記号に化けない上限で頭打ちにする
+    statLabelFont: Math.min(clampNum(10 * scale, 7, 28), cellW / LABEL_EM),
+    statValueFont: Math.min(clampNum(15 * scale, 10, 49), cellInnerW / POINTS_EM),
     statValuePadV: clampNum(4 * scale, 2, 19),
-    statValuePadH: clampNum(4 * scale, 3, 15),
-    soloTotalLabelFont: clampNum(13 * scale, 9, 44),
-    soloTotalValueFont: clampNum(30 * scale, 18, 140),
+    statValuePadH,
+    // 1試合制は文字が大きいぶん横にあふれやすい。ラベルは1行に収まる上限、
+    // 値は4桁 (9999pt) が収まる上限で頭打ちにする
+    soloTotalLabelFont: Math.min(clampNum(13 * scale, 9, 44), totalInnerW / LABEL_EM),
+    soloTotalValueFont: Math.min(clampNum(30 * scale, 18, 140), totalInnerW / POINTS_EM),
   };
 }
 
@@ -220,7 +246,7 @@ function SingleModeContent({ side, snapshot, roundResults, dim }: {
         <div style={{
           ...s.totalHeader,
           fontSize: dim.soloTotalLabelFont, marginBottom: dim.totalHeaderMarginB, paddingTop: dim.totalHeaderPadT,
-        }}>⭐ 合計ポイント</div>
+        }}>合計ポイント</div>
         <div style={{ ...s.soloTotalValue, fontSize: dim.soloTotalValueFont }}>{totalPoints}pt</div>
       </div>
     </>
@@ -479,6 +505,8 @@ const s: Record<string, React.CSSProperties> = {
   totalHeader: {
     fontWeight: 700, color: WIN_BASE,
     letterSpacing: '0.06em',
+    // フォント差で見積り (LABEL_EM) をわずかに超えても「合計ポイント」を折り返させない
+    whiteSpace: 'nowrap',
   },
   totalGrid: { display: 'flex' },
   // 1試合制の合計ポイント (StatCell を介さない単独の大きい数値)

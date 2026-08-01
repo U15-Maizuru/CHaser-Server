@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { MapObject } from '@u15/ws-types';
-import type { GameStateSnapshot, Point } from '@u15/ws-types';
+import { Action, MapObject } from '@u15/ws-types';
+import type { GameStateSnapshot, Point, ScanInfo } from '@u15/ws-types';
 import { useTextures, type TextureKey } from '../hooks/useTextures';
 import type { DecisiveEffect } from '../lib/decisiveEffect';
 
@@ -33,8 +33,23 @@ const VEIL_WIPE_MS = 800; // ラウンド終了時にダーク幕が上から消
 // これが終わったあとも、演出そのものは静止した状態で結果表示中ずっと残り続ける。
 const DECISIVE_MS = 500;
 
+// LOOK/SEARCH の探索範囲演出。歩行アニメ (MAX_WALK_MS=260) より長めに出す:
+// 観戦者が「どこを調べたか」を認識できる必要があるため、ターン間隔いっぱいまで使う。
+const MIN_SCAN_MS = 220;
+const MAX_SCAN_MS = 900;
+// 演出全体の何割を過ぎたらフェードアウトを始めるか
+const SCAN_FADE_START = 0.65;
+
 function easeOutQuad(t: number): number {
   return 1 - (1 - t) * (1 - t);
+}
+
+// 探索範囲演出の不透明度。出現時に素早く立ち上がり、後半でフェードアウトする
+function scanAlpha(ratio: number): number {
+  if (ratio >= 1) return 0;
+  const appear = Math.min(1, Math.max(0, ratio) / 0.15);
+  const fade   = ratio > SCAN_FADE_START ? 1 - (ratio - SCAN_FADE_START) / (1 - SCAN_FADE_START) : 1;
+  return Math.max(0, appear * fade);
 }
 
 interface Props {
@@ -65,6 +80,12 @@ interface BlockPop {
 interface ItemFade {
   x:        number;
   y:        number;
+  start:    number;
+  duration: number;
+}
+
+interface ScanFx {
+  info:     ScanInfo;
   start:    number;
   duration: number;
 }
@@ -115,6 +136,10 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
   const itemFadesRef      = useRef<ItemFade[]>([]);
   const itemAnimStatesRef = useRef<Map<string, { scale: number; alpha: number }>>(new Map());
 
+  // LOOK/SEARCH の探索範囲演出。snapshot.lastScan (サーバーが確定させたマス) をそのまま描く。
+  // チームごとに最大1件だけ保持する (同じチームが連続で探索したときに重ならないように)。
+  const scanFxRef = useRef<ScanFx[]>([]);
+
   // 決着演出。decisiveAnimRef は最初のインパクト (リング拡散・ブロックのポップイン) の
   // 進行状態だけを持ち、完了すると null に戻る。演出の内容そのものは decisiveRef が
   // 保持し続けるため、インパクトが終わったあとも静止した状態で残る。
@@ -150,6 +175,13 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
     });
     itemAnimStatesRef.current = states;
     return itemFadesRef.current.length > 0;
+  };
+
+  // 期限切れの探索範囲演出を取り除く。まだ残っていれば true を返す (rAF ループ継続判定に使う)。
+  // 進行度は描画時に start/duration から都度計算するため、ここでは間引くだけでよい。
+  const updateScanFxStates = (now: number): boolean => {
+    scanFxRef.current = scanFxRef.current.filter(fx => now - fx.start < fx.duration);
+    return scanFxRef.current.length > 0;
   };
 
   const drawFrame = (positions: readonly [Point, Point], now: number = performance.now()) => {
@@ -401,10 +433,96 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
           maskCtx.roundRect(centerX - visSize / 2, centerY - visSize / 2, visSize, visSize, radius);
           maskCtx.fill();
         }
+
+        // 探索したマスも幕を打ち抜いて中身を見せる。演出のフェードに合わせて
+        // globalAlpha を落とすことで、演出の終了とともに穴が閉じていく。
+        for (const fx of scanFxRef.current) {
+          const alpha = scanAlpha((now - fx.start) / fx.duration);
+          if (alpha <= 0) continue;
+          maskCtx.globalAlpha = alpha;
+          for (const c of fx.info.cells) {
+            if (c.x < 0 || c.x >= size.x || c.y < 0 || c.y >= size.y) continue;
+            maskCtx.beginPath();
+            maskCtx.roundRect(cx(c.x), cy(c.y), CELL, CELL, Math.max(2, CELL * 0.12));
+            maskCtx.fill();
+          }
+        }
         maskCtx.restore();
 
         ctx.drawImage(maskCanvas, 0, 0);
       }
+    }
+
+    // 5. LOOK/SEARCH の探索範囲。ダーク幕 (4) より後に描くことで、幕が出ていても
+    // 「どのチームがどこを調べたか」の枠が常に鮮明に出る。中身が見えるかどうかは
+    // 上のマスク打ち抜き側が担当し、こちらは枠とタイントだけを受け持つ。
+    for (const fx of scanFxRef.current) {
+      const ratio = Math.min(1, (now - fx.start) / fx.duration);
+      const alpha = scanAlpha(ratio);
+      if (alpha <= 0) continue;
+
+      const { cells, action } = fx.info;
+      const color   = fx.info.team === 0 ? COLOR.cool : COLOR.hot;
+      const eased   = easeOutQuad(ratio);
+      const visible = cells.filter(c => c.x >= 0 && c.x < size.x && c.y >= 0 && c.y < size.y);
+      if (visible.length === 0) continue;
+      const lineW = Math.max(2.5, CELL * 0.12);
+
+      // 角丸枠を1本描く。盤外にはみ出した分は canvas 端で切れるので境界チェックは不要。
+      // 明るい床テクスチャの上でもチーム色が沈まないよう、外側に暗いハローを先に敷く。
+      const strokeBounds = (box: Point[], a: number, round: number) => {
+        const xs = box.map(c => cx(c.x));
+        const ys = box.map(c => cy(c.y));
+        const bx = Math.min(...xs);
+        const by = Math.min(...ys);
+        const bw = Math.max(...xs) + CELL - bx;
+        const bh = Math.max(...ys) + CELL - by;
+        const path = new Path2D();
+        path.roundRect(bx + lineW / 2, by + lineW / 2, bw - lineW, bh - lineW, round);
+
+        ctx.globalAlpha = a * 0.45;
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth   = lineW * 2;
+        ctx.stroke(path);
+
+        ctx.globalAlpha = a;
+        ctx.strokeStyle = color;
+        ctx.lineWidth   = lineW;
+        ctx.stroke(path);
+        return { bx, by, bw, bh };
+      };
+
+      ctx.save();
+      if (action === Action.LOOK) {
+        // 3x3 をまとめて1つの枠で囲み、内側を淡くタイントする
+        ctx.fillStyle   = color;
+        ctx.globalAlpha = alpha * 0.4;
+        for (const c of visible) ctx.fillRect(cx(c.x), cy(c.y), CELL, CELL);
+
+        const box = strokeBounds(cells, alpha, Math.max(3, CELL * 0.18));
+
+        // 発生時に一度だけ広がる発光リング (決着演出のインパクトリングと同じ手法)
+        if (ratio < 1) {
+          ctx.globalAlpha = alpha * (1 - eased) * 0.8;
+          ctx.beginPath();
+          ctx.arc(box.bx + box.bw / 2, box.by + box.bh / 2, (box.bw / 2) * (0.3 + 0.8 * eased), 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      } else {
+        // SEARCH: 自機から伸びるビーム。近いほど濃く、先端へ向かってスイープが走る。
+        // cells は index 0 が自機に最も近い順で届く (盤面反転は cx/cy が吸収する)。
+        const head = eased * cells.length;
+        ctx.fillStyle = color;
+        cells.forEach((c, i) => {
+          if (c.x < 0 || c.x >= size.x || c.y < 0 || c.y >= size.y) return;
+          const falloff = 1 - (i / cells.length) * 0.6;
+          const sweep   = Math.max(0, 1 - Math.abs(i - head));
+          ctx.globalAlpha = Math.min(1, alpha * (0.42 * falloff + 0.5 * sweep));
+          ctx.fillRect(cx(c.x), cy(c.y), CELL, CELL);
+        });
+        strokeBounds(visible, alpha * 0.85, Math.max(3, CELL * 0.15));
+      }
+      ctx.restore();
     }
   };
 
@@ -416,6 +534,7 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
     const isActive =
       !!animRef.current[0] || !!animRef.current[1] ||
       blockPopsRef.current.length > 0 || itemFadesRef.current.length > 0 ||
+      scanFxRef.current.length > 0 ||
       wipeRef.current !== null || decisiveAnimRef.current !== null;
     if (!isActive) return;
 
@@ -439,6 +558,7 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
       }
       const blocksActive = updateBlockAnimStates(now2);
       const itemsActive  = updateItemFadeStates(now2);
+      const scanActive   = updateScanFxStates(now2);
 
       let wipeActive = false;
       if (wipeRef.current) {
@@ -464,7 +584,7 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
       }
 
       drawFrame(renderPosRef.current, now2);
-      rafRef.current = (animating || blocksActive || itemsActive || wipeActive || decisiveActive)
+      rafRef.current = (animating || blocksActive || itemsActive || scanActive || wipeActive || decisiveActive)
         ? requestAnimationFrame(tick)
         : null;
     };
@@ -478,10 +598,12 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
   // より前に確実に歩行を完了させるため)。
   useEffect(() => {
     const now = performance.now();
-    let duration = MIN_WALK_MS;
+    let duration     = MIN_WALK_MS;
+    let scanDuration = MIN_SCAN_MS;
     if (lastSnapshotTimeRef.current !== null) {
       const interval = now - lastSnapshotTimeRef.current;
-      duration = Math.min(MAX_WALK_MS, Math.max(MIN_WALK_MS, interval * SAFETY_FACTOR));
+      duration     = Math.min(MAX_WALK_MS, Math.max(MIN_WALK_MS, interval * SAFETY_FACTOR));
+      scanDuration = Math.min(MAX_SCAN_MS, Math.max(MIN_SCAN_MS, interval * SAFETY_FACTOR));
     }
     lastSnapshotTimeRef.current = now;
 
@@ -529,11 +651,24 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
         }
       }
     }
+    // 探索範囲演出: LOOK/SEARCH が行われたターンだけ lastScan が載る。
+    // ラウンド/試合の切り替え時 (isReset) は他のアニメ状態と同じく破棄する。
+    if (isReset) {
+      scanFxRef.current = [];
+    } else if (snapshot.lastScan) {
+      const info = snapshot.lastScan;
+      scanFxRef.current = [
+        ...scanFxRef.current.filter(fx => fx.info.team !== info.team),
+        { info, start: now, duration: scanDuration },
+      ];
+    }
+
     prevFieldRef.current = field;
     prevTurnCountRef.current = snapshot.turnCount;
 
     updateBlockAnimStates(now);
     updateItemFadeStates(now);
+    updateScanFxStates(now);
     drawFrame(renderPosRef.current, now);
     startLoopIfNeeded();
     // snapshot 全体の変化 (= 新しいターンの受信) だけをターン間隔の計測・アニメ判定のトリガーにしたい
@@ -564,6 +699,8 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
   // null に戻ると消える (= フッターの結果ピルとまったく同じライフサイクル)。
   useEffect(() => {
     decisiveAnimRef.current = decisive ? { start: performance.now(), duration: DECISIVE_MS } : null;
+    // 探索範囲はダーク幕より後 (= 決着演出より後) に描くため、残しておくと決着演出に被る
+    if (decisive) scanFxRef.current = [];
     drawFrame(renderPosRef.current);
     startLoopIfNeeded();
     // eslint-disable-next-line react-hooks/exhaustive-deps

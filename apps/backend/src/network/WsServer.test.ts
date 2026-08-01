@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { GameSession } from '../game/Game.js';
 import { createRandomMap } from '../game/GameSystem.js';
 import { countItems } from '../game/GameLogic.js';
-import { Winner, Reason } from '../game/types.js';
+import { Winner, Reason, Action, Rote, type ScanInfo } from '../game/types.js';
 import { WsServer } from './WsServer.js';
 import { RoomManager } from '../RoomManager.js';
 import type { WsMessage, LobbyMessage } from '@u15/ws-types';
@@ -177,6 +177,44 @@ describe('WsServer', () => {
     if (msg.type === 'game_state') {
       expect(msg.payload.turnCount).toBe(100);
       expect(msg.payload.playerNames).toEqual(['COOL', 'HOT']);
+      // scan なしで emit された場合は null (未定義のままフロントに渡さない)
+      expect(msg.payload.lastScan).toBeNull();
+    }
+    ws.close();
+  });
+
+  it('stateUpdate の探索範囲 (ScanInfo) が game_state の lastScan として届く', async () => {
+    const room    = rm.createRoom()!;
+    const session = new GameSession();
+    server.attachRoom(room.id, session, ['COOL', 'HOT']);
+
+    const { ws, wait } = await connectWs(WS_PORT);
+    await wait('room_list');
+
+    ws.send(JSON.stringify({ type: 'join_room', payload: { roomId: room.id } }));
+    await wait('room_joined');
+
+    const msgPromise = wait('game_state');
+    const map  = createRandomMap();
+    const scan: ScanInfo = {
+      team:   0,
+      action: Action.SEARCH,
+      rote:   Rote.RIGHT,
+      cells:  Array.from({ length: 9 }, (_, i) => ({ x: i + 1, y: 5 })),
+    };
+    session.emit('stateUpdate', {
+      map,
+      teamPos:        [map.teamFirstPoint[0], map.teamFirstPoint[1]],
+      teamScore:      [0, 0] as [number, number],
+      turnCount:      100,
+      leaveItems:     countItems(map),
+      isDisconnected: [false, false] as [boolean, boolean],
+    }, scan);
+
+    const msg = await msgPromise;
+    expect(msg.type).toBe('game_state');
+    if (msg.type === 'game_state') {
+      expect(msg.payload.lastScan).toEqual(scan);
     }
     ws.close();
   });

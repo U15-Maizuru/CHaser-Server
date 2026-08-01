@@ -89,6 +89,49 @@ async function bodyText(page) {
 }
 
 /**
+ * 手動操作ウィンドウで指定アクション (観察/探索) を上方向に1回送る。
+ * 手番でないタイミングに当たると演出が出ないので、方向ボタンが有効になるまで待つ。
+ */
+async function sendManualScan(manualPage, optionLabel, timeoutMs = 15000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const r = await manualPage.evaluate((label) => {
+      const btn = [...document.querySelectorAll('button')]
+        .find(b => !b.disabled && b.textContent === '↑');
+      if (!btn) return 'NOT_MY_TURN';
+
+      const select = document.querySelector('select');
+      if (!select) return 'NO_SELECT';
+      const opt = [...select.options].find(o => o.textContent?.includes(label));
+      if (!opt) return 'NO_OPTION: ' + label;
+      // React の onChange を発火させるため、value 設定後に change を明示的に投げる
+      const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
+      setter.call(select, opt.value);
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+
+      btn.click();
+      return 'OK';
+    }, optionLabel);
+    if (r !== 'NOT_MY_TURN') return r;
+    await wait(100);
+  }
+  return 'NOT_MY_TURN';
+}
+
+/** 設定ダイアログの「ダークモード」チェックボックスを目的の状態にする */
+async function setDarkModeCheckbox(page, on) {
+  return page.evaluate((want) => {
+    const row = [...document.querySelectorAll('tr')]
+      .find(tr => tr.textContent?.includes('ダークモード'));
+    if (!row) return 'NO_ROW';
+    const box = row.querySelector('input[type="checkbox"]');
+    if (!box) return 'NO_CHECKBOX';
+    if (box.checked !== want) box.click();
+    return 'OK';
+  }, on);
+}
+
+/**
  * セットアップ画面「対戦設定」の対戦ルールチップ (2試合制 / リピート / デモ) を
  * 目的の状態に切り替える。ON のチップは先頭に "✓ " が付く。
  */
@@ -471,6 +514,54 @@ async function testManualMode(app, page) {
       : fail('アクション選択 (WALK/LOOK 等) が表示される');
 
     await ss(manualPage, '11_manual_controls');
+
+    // LOOK / SEARCH の探索範囲演出。演出は 220〜900ms で消えるためクリック直後に撮る。
+    // タイミング依存なので pass/fail の判定材料にはせず、目視確認用の成果物として残す
+    // (盤面に出るのはメイン窓なので、スクショ対象は page 側)。
+    for (const [label, name] of [['観察 (LOOK)', '11a_scan_look'], ['探索 (SEARCH)', '11b_scan_search']]) {
+      const sent = await sendManualScan(manualPage, label);
+      if (sent === 'OK') {
+        // 演出は 220〜900ms で消えるので即座に撮る
+        await ss(page, name);
+        pass(`${label} の探索範囲を盤面に描画できる (${name}.png)`);
+      } else {
+        fail(`${label} の探索範囲を盤面に描画できる`, sent);
+      }
+      await wait(200);
+    }
+
+    // ダークモード中は探索範囲だけベールが打ち抜かれる。ダークモードは保存不要の
+    // ライブ切替なので、対戦中に設定ダイアログから ON にしてそのまま撮る。
+    await clickText(page, '設定');
+    await wait(500);
+    const darkOn = await setDarkModeCheckbox(page, true);
+    await clickText(page, 'キャンセル');
+    await wait(400);
+
+    if (darkOn === 'OK') {
+      const sent = await sendManualScan(manualPage, '探索 (SEARCH)');
+      if (sent === 'OK') {
+        await ss(page, '11c_scan_search_dark');
+        pass('ダークモード中でも探索範囲が見える (11c_scan_search_dark.png)');
+      } else {
+        fail('ダークモード中でも探索範囲が見える', sent);
+      }
+      await wait(200);
+      // 後続のテストに影響しないよう元に戻す
+      await clickText(page, '設定');
+      await wait(500);
+      await setDarkModeCheckbox(page, false);
+      await clickText(page, 'キャンセル');
+      await wait(400);
+    } else {
+      fail('ダークモード中でも探索範囲が見える', `ダークモード切替に失敗: ${darkOn}`);
+    }
+
+    // 探索アクションでゲームが壊れていないこと (この後の通常ループが回れば OK)
+    const afterScanText = await bodyText(page);
+    !afterScanText.includes('エラー')
+      ? pass('LOOK/SEARCH を実行してもゲームが継続する')
+      : fail('LOOK/SEARCH を実行してもゲームが継続する', afterScanText.slice(0, 200));
   }
 
   // ゲーム終了まで ↑/↓ ボタンを送り続ける (タイムアウト 40 秒)

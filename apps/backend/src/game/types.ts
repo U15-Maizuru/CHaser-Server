@@ -1,7 +1,7 @@
-import { MapObject, Winner, Reason } from '@u15/ws-types';
+import { MapObject, Winner, Reason, Action, Rote } from '@u15/ws-types';
 import type { Point } from '@u15/ws-types';
-export { MapObject, Winner, Reason } from '@u15/ws-types';
-export type { Point } from '@u15/ws-types';
+export { MapObject, Winner, Reason, Action, Rote } from '@u15/ws-types';
+export type { Point, ScanInfo } from '@u15/ws-types';
 
 export const TEAM_COUNT  = 2;
 export const ROUND_COUNT = 2;
@@ -31,22 +31,8 @@ export enum MapOverlay {
   ERASE,
 }
 
-export enum Action {
-  WALK,
-  LOOK,
-  SEARCH,
-  PUT,
-  GETREADY,
-  UNKNOWN,
-}
-
-export enum Rote {
-  UP,
-  DOWN,
-  RIGHT,
-  LEFT,
-  UNKNOWN,
-}
+// Action / Rote は @u15/ws-types が単一情報源 (フロントの手動操作 UI と共有するため)。
+// 上の re-export により、バックエンド側は従来どおり './types.js' から import できる。
 
 export interface Method {
   team:   Team;
