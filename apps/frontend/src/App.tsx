@@ -10,7 +10,7 @@ import { MainWindow }      from './components/MainWindow';
 import { BottomBar }       from './components/BottomBar';
 import { SettingDialog }   from './components/SettingDialog';
 import { MapEditorDialog } from './components/MapEditorDialog';
-import { MapManagementDialog } from './components/MapManagementDialog';
+import { MapLibraryDialog } from './components/MapLibraryDialog';
 import { ProgramLibraryDialog } from './components/ProgramLibraryDialog';
 import { DisplayMode }     from './components/DisplayMode';
 import { ManualMode }      from './components/ManualMode';
@@ -58,7 +58,7 @@ function ControlApp({ roomId }: { roomId: string }) {
   const countdown = useStartCountdown(serverStatus?.phase, state.turnInfo);
 
   const [showSettings,       setShowSettings]       = useState(false);
-  const [showMapManagement,  setShowMapManagement]  = useState(false);
+  const [showMapLibrary,     setShowMapLibrary]     = useState(false);
   const [showMapEditor,      setShowMapEditor]      = useState(false);
   const [showProgramLibrary, setShowProgramLibrary] = useState(false);
   const [currentMap,         setCurrentMap]         = useState<InlineMapData | null>(null);
@@ -104,9 +104,9 @@ function ControlApp({ roomId }: { roomId: string }) {
   // ハードコードの既定値 (15×17 / ブロック20 / アイテム51 / ターン100) のままになる。
   // そのため接続後に一度だけ push する。
   //
-  // 受け取ったサーバーはその場でマップを作り直すため、ファイル読込・エディタ由来の
-  // マップ (mapIsCustom) が出ている間は送らない。コントロール窓を後から開いたときに
-  // 選択済みのカスタムマップを黙って捨ててしまうのを防ぐ。
+  // 受け取ったサーバーはその場でマップを作り直すため、ライブラリ・エディタ由来の
+  // マップが選ばれている間 (mapSource.kind !== 'random') は送らない。コントロール窓を
+  // 後から開いたときに選択済みのマップを黙って捨ててしまうのを防ぐ。
   const didCommitMapParams = useRef(false);
   useEffect(() => {
     if (!isConnected) { didCommitMapParams.current = false; return; }
@@ -115,7 +115,7 @@ function ControlApp({ roomId }: { roomId: string }) {
     // 対戦中・2試合制のセット中は canEditMap ゲートで黙って捨てられるので、
     // 送れる状態になるまで待ってから一度だけ送る
     if (!canEditMap) return;
-    if (serverStatus.mapIsCustom) return;
+    if (serverStatus.mapSource.kind !== 'random') return;
     didCommitMapParams.current = true;
     state.setMapParams(toMapParams(mapGenParams));
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -173,35 +173,35 @@ function ControlApp({ roomId }: { roomId: string }) {
     setEditorSeed(data
       ? { field: data.field as MapObject[][], size: data.size, turn: data.turn, teamFirstPoint: data.teamFirstPoint }
       : defaultEditableMap);
-    setShowMapManagement(false);
     setShowMapEditor(true);
   };
 
   const handleApplyMapEntry = (entry: MapCatalogEntry) => {
-    state.loadMap(entry.mapPath);
-    setShowMapManagement(false);
+    state.loadMap(entry.id);
     void refreshCurrentMap();
   };
 
   const handleMapEditorApply = (map: EditableMap) => {
-    state.loadMapData({ field: map.field, size: map.size, turn: map.turn, teamFirstPoint: map.teamFirstPoint });
+    state.loadMapData(toInlineMapData(map));
     void refreshCurrentMap();
   };
 
-  const handleMapEditorSaveToLibrary = (map: EditableMap, displayName: string) => {
+  // ランダム生成・エディタ由来のマップを残す手段。ライブラリ保存もダウンロードも
+  // 「今出ているマップ」に対して働くので、エディタとマップ列の両方から同じものを使う。
+  const saveMapToLibrary = (data: InlineMapData, displayName: string) => {
     void fetch(`${HTTP_BASE}/api/maps/save-inline`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ displayName, data: { field: map.field, size: map.size, turn: map.turn, teamFirstPoint: map.teamFirstPoint } }),
+      body:    JSON.stringify({ displayName, data }),
     });
   };
 
-  const handleMapEditorDownload = (map: EditableMap, displayName: string) => {
+  const downloadMap = (data: InlineMapData, displayName: string) => {
     void (async () => {
       const res = await fetch(`${HTTP_BASE}/api/maps/export`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ displayName, data: { field: map.field, size: map.size, turn: map.turn, teamFirstPoint: map.teamFirstPoint } }),
+        body:    JSON.stringify({ displayName, data }),
       });
       if (!res.ok) return;
       const blob = await res.blob();
@@ -241,17 +241,10 @@ function ControlApp({ roomId }: { roomId: string }) {
         />
       )}
 
-      {showMapManagement && (
-        <MapManagementDialog
+      {showMapLibrary && (
+        <MapLibraryDialog
           httpBase={HTTP_BASE}
-          roomId={roomId}
-          theme={prefs.theme}
-          currentMap={currentMap}
-          canApply={canEditMap}
-          onApplyEntry={handleApplyMapEntry}
-          onApplyParams={handleApplyMapParams}
-          onOpenEditor={() => void openMapEditor()}
-          onClose={() => setShowMapManagement(false)}
+          onClose={() => setShowMapLibrary(false)}
         />
       )}
 
@@ -261,8 +254,8 @@ function ControlApp({ roomId }: { roomId: string }) {
           theme={prefs.theme}
           httpBase={HTTP_BASE}
           onApply={handleMapEditorApply}
-          onSaveToLibrary={handleMapEditorSaveToLibrary}
-          onDownload={handleMapEditorDownload}
+          onSaveToLibrary={(map, name) => saveMapToLibrary(toInlineMapData(map), name)}
+          onDownload={(map, name) => downloadMap(toInlineMapData(map), name)}
           onClose={() => setShowMapEditor(false)}
         />
       )}
@@ -284,9 +277,16 @@ function ControlApp({ roomId }: { roomId: string }) {
               displayTitle={prefs.displayTitle}
               theme={prefs.theme}
               currentMap={currentMap}
+              canEditMap={canEditMap}
               onSetClient={state.setClient}
               onDeleteProgram={state.deleteProgram}
               onOpenLibraryManager={() => setShowProgramLibrary(true)}
+              onApplyMapEntry={handleApplyMapEntry}
+              onApplyMapParams={handleApplyMapParams}
+              onOpenMapEditor={() => void openMapEditor()}
+              onSaveCurrentMap={name => { if (currentMap) saveMapToLibrary(currentMap, name); }}
+              onDownloadCurrentMap={name => { if (currentMap) downloadMap(currentMap, name); }}
+              onOpenMapLibrary={() => setShowMapLibrary(true)}
             />
           ) : (
             <MainWindow
@@ -311,7 +311,7 @@ function ControlApp({ roomId }: { roomId: string }) {
           onNextRound={state.requestNextRound}
           onRepeat={state.requestRepeat}
           onReset={state.requestReset}
-          onOpenMapManagement={() => setShowMapManagement(true)}
+          onOpenMapLibrary={() => setShowMapLibrary(true)}
           onOpenProgramLibrary={() => setShowProgramLibrary(true)}
           onOpenSettings={() => setShowSettings(true)}
           onToggleFullscreen={window.electronAPI
@@ -350,9 +350,14 @@ const defaultStatus = {
   currentRound: 0 as const,
   roundResults: [],
   darkMode:     false,
-  mapIsCustom:  false,
+  mapSource:    { kind: 'random' as const },
   displayPrefs: DEFAULT_DISPLAY_PREFS,
 };
+
+/** EditableMap / InlineMapData の相互変換 (余分なフィールドを落として送る) */
+function toInlineMapData(map: EditableMap): InlineMapData {
+  return { field: map.field, size: map.size, turn: map.turn, teamFirstPoint: map.teamFirstPoint };
+}
 
 const defaultEditableMap: EditableMap = {
   field: Array.from({ length: 17 }, () => Array(15).fill(MapObject.NOTHING)),

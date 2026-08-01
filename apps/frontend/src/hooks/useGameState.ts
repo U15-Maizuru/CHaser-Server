@@ -38,7 +38,7 @@ export interface GameStateHook {
   setLogDir:        (dir: string) => void;
   setPythonCommand: (command: string) => void;
   sendManualAction: (slot: 0 | 1, action: number, rote: number) => void;
-  loadMap:          (filePath: string) => void;
+  loadMap:          (catalogId: string) => void;
   setMapParams:     (params: MapParams) => void;
   loadMapData:      (data: InlineMapData) => void;
 }
@@ -149,7 +149,7 @@ export function useGameState(wsUrl: string, roomId: string): GameStateHook {
     setLogDir:        (dir)                        => send({ type: 'set_log_dir',       payload: { dir } }),
     setPythonCommand: (command)                    => send({ type: 'set_python_command', payload: { command } }),
     sendManualAction: (slot, action, rote)         => send({ type: 'manual_action',     payload: { slot, action, rote } }),
-    loadMap:          (filePath)                   => send({ type: 'load_map',          payload: { filePath } }),
+    loadMap:          (catalogId)                  => send({ type: 'load_map',          payload: { catalogId } }),
     setMapParams:     (params)                     => send({ type: 'set_map_params',    payload: params }),
     loadMapData:      (data)                       => send({ type: 'load_map_data',     payload: data }),
   };

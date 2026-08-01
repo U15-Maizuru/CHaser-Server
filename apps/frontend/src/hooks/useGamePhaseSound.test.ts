@@ -25,7 +25,7 @@ function status(phase: ServerStatusPayload['phase']): ServerStatusPayload {
     currentRound: 0,
     roundResults: [],
     darkMode: false,
-    mapIsCustom: false,
+    mapSource: { kind: 'random' },
     displayPrefs: DEFAULT_DISPLAY_PREFS,
   };
 }

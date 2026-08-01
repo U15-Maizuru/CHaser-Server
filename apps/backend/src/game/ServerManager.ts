@@ -12,6 +12,7 @@ import { RoundController } from './RoundController.js';
 import { START_COUNTDOWN_SECONDS, Winner } from '@u15/ws-types';
 import type { ManualClient } from '../clients/ManualClient.js';
 import { pickRandomPair } from '../programCatalog.js';
+import { getMapCatalogEntry } from '../mapCatalog.js';
 import type {
   CatalogEntry,
   ClientType,
@@ -146,9 +147,13 @@ export class ServerManager extends EventEmitter {
     this.slots.setPythonCommand(command || undefined);
   }
 
-  loadMap(filePath: string): void {
+  /** マップライブラリのエントリを対戦で使う。ファイルパスの解決はここだけで行う
+   *  (クライアントからサーバー上の任意パスを読ませないため) */
+  loadMap(catalogId: string): void {
     if (!this.round.canEditMap()) return;
-    if (this.mapManager.loadFromFile(filePath)) this.emitStatus();
+    const entry = getMapCatalogEntry(catalogId);
+    if (!entry) return;
+    if (this.mapManager.loadFromCatalog(entry.mapPath, entry.id, entry.displayName)) this.emitStatus();
   }
 
   setMapParams(params: MapParams): void {
@@ -227,7 +232,7 @@ export class ServerManager extends EventEmitter {
       this.slots.swapSlotConfigs();
     }
     this.slots.resetForNextRound();
-    this.mapManager.regenerate();
+    this.mapManager.refreshForNewGame();
     this.round.resetForNewGame();
 
     await this.slots.startListeningBoth();
@@ -237,7 +242,7 @@ export class ServerManager extends EventEmitter {
   async requestReset(): Promise<void> {
     this.clearDemoTimer();
     this.slots.resetAllToDefault();
-    this.mapManager.regenerate();
+    this.mapManager.refreshForNewGame();
     this.round.resetForNewGame();
 
     await this.slots.startListeningBoth();
@@ -260,7 +265,7 @@ export class ServerManager extends EventEmitter {
       currentRound: this.round.currentRound,
       roundResults: this.round.roundResults,
       darkMode:     this.darkMode,
-      mapIsCustom:  this.mapManager.isCustom,
+      mapSource:    this.mapManager.sourceInfo,
       displayPrefs: this.displayPrefs,
     };
   }

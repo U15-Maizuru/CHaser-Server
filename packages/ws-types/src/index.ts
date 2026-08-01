@@ -135,8 +135,8 @@ export interface ServerStatusPayload {
   currentRound: 0 | 1;
   roundResults: RoundResult[];
   darkMode:     boolean;
-  /** 現在のマップがパラメータからのランダム生成ではなく、ファイル読み込み/インライン(エディタ)由来かどうか */
-  mapIsCustom:  boolean;
+  /** 現在のマップがどのソース由来か (選択状態そのもの)。全コントロール窓で共有される */
+  mapSource:    MapSourceInfo;
   /** 観戦画面の表示・音声設定。コントロールパネルが決め、全観戦画面 (Electron / ブラウザ) に配信される */
   displayPrefs: DisplayPrefs;
 }
@@ -185,6 +185,16 @@ export interface CatalogEntry {
   demoEnabled:    boolean; // デモモードのランダム対戦候補に含めるか
 }
 
+/** 現在のマップの出どころ。'random' のときだけリセット・リピートで引き直す */
+export type MapSourceKind = 'random' | 'catalog' | 'editor';
+
+export interface MapSourceInfo {
+  kind:         MapSourceKind;
+  /** kind==='catalog' のとき: 選択中のマップライブラリのエントリ */
+  catalogId?:   string;
+  displayName?: string;
+}
+
 export interface MapParams {
   itemNum:  number;
   blockNum: number;
@@ -220,7 +230,7 @@ export type FrontendMessage =
   | { type: 'delete_program';    payload: { slot: 0 | 1 } }
   | { type: 'request_start' }
   | { type: 'request_reset' }
-  | { type: 'load_map';          payload: { filePath: string } }
+  | { type: 'load_map';          payload: { catalogId: string } }
   | { type: 'set_map_params';    payload: MapParams }
   | { type: 'load_map_data';     payload: InlineMapData }
   | { type: 'set_double_mode';   payload: { enabled: boolean } }

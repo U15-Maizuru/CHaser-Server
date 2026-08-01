@@ -125,9 +125,10 @@ U15-server-maizuru/
 │   │       │   ├── Lobby.tsx           ロビー画面 (Web モード)
 │   │       │   ├── DisplayMode.tsx     対戦表示 (wsUrl/roomId を props で受け取る)
 │   │       │   ├── StartupDialog.tsx
-│   │       │   ├── MapManagementDialog.tsx  マップ設定 (ライブラリ選択・アップロード・ランダム生成・エディタ起動) の統合モーダル
+│   │       │   ├── MapLibraryDialog.tsx     マップライブラリの管理モーダル (追加・DL・削除のみ。選択はしない)
+│   │       │   ├── MapSourceSection.tsx     使うマップの選択 (ライブラリ/ランダム生成/エディタ) — マップ列にインライン展開
 │   │       │   ├── MapEditorDialog.tsx      Canvas ベースのマップ編集 (現在のマップを起点に編集し、適用/ライブラリ保存/ダウンロードを分離)
-│   │       │   ├── MapThumbnail.tsx         マップの縮小プレビュー (現在マップ要約カードで使用)
+│   │       │   ├── MapThumbnail.tsx         マップの縮小プレビュー (マップ列で使用)
 │   │       │   ├── MainWindow.tsx      盤面・スコア・進行状況の表示 (対戦表示/コントロール共用)
 │   │       │   ├── ManualMode.tsx      手動操作ウィンドウのルート
 │   │       │   ├── ManualControls.tsx  手動操作の入力パネル (矢印キー/ボタン)
@@ -237,7 +238,7 @@ type FrontendMessage =
   | { type: 'set_client'; payload: { slot, clientType, processConfig? } }
   | { type: 'delete_program'; payload: { slot } }
   | { type: 'request_start' } | { type: 'request_reset' }
-  | { type: 'load_map'; payload: { filePath } }
+  | { type: 'load_map'; payload: { catalogId } }
   | { type: 'set_map_params'; payload: MapParams }
   | { type: 'load_map_data'; payload: InlineMapData }
   | { type: 'set_double_mode' | 'set_repeat_mode' | 'set_demo_mode' | 'set_dark_mode'; payload: { enabled } }
@@ -291,7 +292,7 @@ class RoomManager {
 | クラス | 責務 |
 |---|---|
 | `SlotManager` | スロットごとのクライアント接続 (Process/Tcp/Manual/Com) のライフサイクル管理。`setClientType` / `deleteProgram` / `startListening` など |
-| `MapManager` | マップ状態の保持・生成・読込 (`loadMap` / `setMapParams` / `loadMapData` / `getCurrentMapData`) |
+| `MapManager` | マップ状態と**選択中のソース** (`random` / `catalog` / `editor`) の保持。`loadFromCatalog` / `setMapParams` / `loadInlineData` / `refreshForNewGame` / `getCurrentMapData` |
 | `RoundController` | フェーズ (`setup`/`playing`/`finished`)・2試合制のラウンド進行・デモ/リピートモード・ターン表示待機時間 |
 
 ```typescript
@@ -395,9 +396,9 @@ ws.onopen = () => {
 | `request_next_round` | — | 2試合制: 次ラウンドの準備 (先後を入れ替えて再接続待ちにする) |
 | `request_repeat` | — | 最終戦終了後、接続 (type) を維持したまま先後を入れ替えて再戦準備する |
 | `manual_action` | `{slot, action, rote}` | 手動操作 |
-| `load_map` | `{filePath}` | マップ読み込み |
-| `set_map_params` | `{...}` | ランダムマップパラメータ |
-| `load_map_data` | `{...}` | マップデータ直接送信 |
+| `load_map` | `{catalogId}` | マップライブラリのエントリを選択 (パスの解決はサーバー側) |
+| `set_map_params` | `{...}` | ランダム生成に切り替え、パラメータを記憶して生成 |
+| `load_map_data` | `{...}` | マップデータ直接送信 (エディタ由来) |
 
 > **重要**: ゲームメッセージはルームに `join_room` してから有効になります。未入室のソケットからのメッセージは無視されます。
 
@@ -438,8 +439,8 @@ ws.onopen = () => {
 | `/api/maps/:id/download` | GET | ライブラリ内マップのダウンロード (Content-Disposition 付き) |
 | `/api/maps/current?room=<id>` | GET | 指定ルームの現在のマップ (`InlineMapData`)。エディタ起点・現在マップ表示に使用 |
 | `/api/maps/random` | POST | ステートレスなランダムマップ生成 (`MapParams` → `InlineMapData`)。`GameSystem.createRandomMap` を直接呼ぶだけでどの部屋にも影響しない |
-| `/api/maps/save-inline` | POST | エディタで組んだマップ (`InlineMapData`) をライブラリへ保存 |
-| `/api/maps/export` | POST | エディタの内容をライブラリに残さずそのままダウンロード |
+| `/api/maps/save-inline` | POST | 今出ているマップ (`InlineMapData`) をライブラリへ保存。ランダム生成・エディタのどちらからも使う |
+| `/api/maps/export` | POST | 今出ているマップをライブラリに残さずそのままダウンロード |
 
 アップロードされたファイルは `server/rooms/<roomId>/programs/cool/` 等にルーム別に保存されます。プログラム・マップの各ライブラリは `server/program-catalog/` / `server/map-catalog/` にルームを跨いで共通保存されます。
 
@@ -593,10 +594,14 @@ App.tsx (ErrorBoundary でラップ)
 │
 ├── ControlApp              (?room=xxx&mode=control)
 │   ├── SettingDialog.tsx        表示/対戦/BGM/環境 (全フェーズ)。設定の集約先
-│   ├── ProgramLibraryDialog.tsx プログラムライブラリ CRUD (setup フェーズのみ)
-│   ├── MapManagementDialog.tsx  マップ設定 (setup かつ roundResults が空のときのみ)
-│   │   └── MapEditorDialog.tsx  (MapManagementDialog の「エディタで編集...」から開く)
-│   ├── StartupDialog.tsx        セットアップ画面 = COOL / マッププレビュー / HOT の3カラム
+│   ├── ProgramLibraryDialog.tsx プログラムライブラリの管理 (setup フェーズのみ)
+│   ├── MapLibraryDialog.tsx     マップライブラリの管理 (setup フェーズのみ)
+│   ├── MapEditorDialog.tsx      (マップ列「エディタ」タブの「エディタで編集...」から開く)
+│   ├── StartupDialog.tsx        セットアップ画面 = COOL / マップ / HOT の3カラム
+│   │   ├── TeamSetupPanel.tsx
+│   │   │   └── ProgramLibrarySection.tsx  使うプログラムの「選択」専用
+│   │   └── MapPreviewColumn (StartupDialog 内)
+│   │       └── MapSourceSection.tsx       使うマップの「選択」専用 (ライブラリ/ランダム/エディタ)
 │   └── MainWindow.tsx
 │
 └── ManualMode.tsx           (?room=xxx&mode=manual&slot=0|1 — 手動操作ウィンドウ)
@@ -633,16 +638,41 @@ App.tsx (ErrorBoundary でラップ)
 | A. クライアント表示設定 | `muted` `bgmTrack` `theme` `displayTitle` | localStorage (`useClientPrefs`)。storage イベントで観戦ウィンドウと同期する | `SettingDialog` (全フェーズ) |
 | B. 対戦設定・サーバー既読返し | `doubleMode` `repeatMode` `demoMode` `darkMode` | **`ServerStatusPayload`**。クライアントにキャッシュを持たない | `SettingDialog`「対戦」タブ (`darkMode` のみ「表示」タブ) |
 | C. 対戦設定・サーバー未返却 | `timeout` `turnDelay` | クライアントのキャッシュのみ (`useMatchConfig`) | `SettingDialog`「対戦」タブ |
-| C'. マップ生成パラメータ | `sizeIdx` `blockNum` `itemNum` `turnNum` `mirror` | クライアントのキャッシュ (`useMapGenParams`) + **サーバーも `MapManager.params` として保持** | `MapManagementDialog`「ランダム生成」 |
+| B'. マップの選択状態 | `mapSource` (`random` / `catalog` / `editor`) | **`ServerStatusPayload.mapSource`**。`MapManager` が保持する | `StartupDialog` マップ列の `MapSourceSection` |
+| C'. マップ生成パラメータ | `sizeIdx` `blockNum` `itemNum` `turnNum` `mirror` | クライアントのキャッシュ (`useMapGenParams`) + **サーバーも `MapManager.params` として保持** | `MapSourceSection`「ランダム」タブ・`MapEditorDialog` |
 | D. 環境設定 (ローカル限定) | `logDir` `pythonCommand` | クライアントのキャッシュ (`useEnvConfig`) | `SettingDialog`「環境」タブ |
 
 **分類 C' は接続後に一度 push すること。** `MapManager` は自分の `params` を使って
 起動時・`requestReset`・`requestRepeat` でマップを再生成する。クライアントが `set_map_params` を
 送らない限りサーバー側はハードコードの既定値 (15×17 / ブロック20 / アイテム51 / ターン100) を
 使い続けるため、保存済みの設定が初期マップとリセット後の再生成に効かない。`ControlApp` は
-接続後・かつ `canEditMap` かつ `mapIsCustom` が false のときに一度だけ送る (`mapIsCustom` の
-ときに送らないのは、後からコントロール窓を開いたときに選択済みのカスタムマップを
-再生成で捨ててしまわないため)。
+接続後・かつ `canEditMap` かつ `mapSource.kind === 'random'` のときに一度だけ送る
+(`random` 以外で送らないのは、後からコントロール窓を開いたときに選択済みのライブラリ・
+エディタのマップを再生成で捨ててしまわないため)。
+
+### マップの「登録」と「使用」の分離
+
+プログラムライブラリと同じ2段階構成にしてある。**アップロードしただけでは対戦に使われない。**
+
+| 役割 | プログラム | マップ |
+|---|---|---|
+| 管理 (追加・DL・削除) | `ProgramLibraryDialog` (フッター「プログラム管理...」) | `MapLibraryDialog` (フッター「マップ管理...」) |
+| 選択 (対戦で使うもの) | `ProgramLibrarySection` (チームパネル内) | `MapSourceSection` (マップ列内) |
+
+マップの選択は3ソースから行い、サーバーが `MapManager.source` として覚える:
+
+| `kind` | 設定経路 | `requestReset` / `requestRepeat` 後 |
+|---|---|---|
+| `random` | `set_map_params` | 記憶したパラメータで**引き直す** |
+| `catalog` | `load_map {catalogId}` | 選んだマップのまま |
+| `editor` | `load_map_data` | 適用したマップのまま |
+
+`refreshForNewGame()` がこの分岐を担う (以前は無条件 `regenerate()` で、選んだマップが消えていた)。
+`random` / `editor` のマップは `/api/maps/save-inline` でライブラリに保存でき、
+`/api/maps/export` でそのままダウンロードできる。保存してもソースは切り替わらない。
+
+> **`window.prompt` を使わないこと。** Electron の renderer は `prompt()` を実装していないため、
+> 名前の入力はダイアログ内のテキスト入力で受け取る (`MapEditorDialog` / `MapSourceSection`)。
 
 **分類 B をローカルにキャッシュして再送しないこと。** 以前は `useSettings` の値を setup フェーズに入るたび
 re-push していたため、コントロールウィンドウを複数開くと互いの古い値で上書きし合っていた。これらは
@@ -655,7 +685,7 @@ UI が受け付けると「押せるのに何も起きない」状態になる�
 |---|---|---|
 | `canStart()` = `phase==='setup'` | `set_client` / `request_start` | セットアップ画面自体が setup のときだけ描画される |
 | `canStart()` = `phase==='setup'` | `set_*_mode` | `SettingDialog` は全フェーズで開けるため、「対戦」タブのチップを `disabled` にし理由を表示する。**UI 側は `setup && roundResults.length===0` とサーバーより厳しく塞ぐ** (セット内でルールが変わるのを防ぐため) |
-| `canEditMap()` = `setup && roundResults.length===0` | `load_map` / `set_map_params` / `load_map_data` | 「マップ設定...」ボタンを非表示にし、`MapManagementDialog` にも `canApply` を渡して二重に塞ぐ。`StartupDialog` 中央のマッププレビューは表示専用なので常に出す |
+| `canEditMap()` = `setup && roundResults.length===0` | `load_map` / `set_map_params` / `load_map_data` | `MapSourceSection` の「変更」トリガを `disabled` にする (理由は `StartupDialog` の帯で説明)。プレビューと `MapLibraryDialog` (管理のみ) は選択を伴わないので setup 中は常に出す |
 | ゲートなし | `request_reset` / `set_dark_mode` / `set_turn_delay` / `set_tcp_timeout` | `request_reset` は BottomBar に常設 (デモ/リピート/対戦中からの唯一の出口)。`darkMode` と進行パラメータは全フェーズで編集可 (`turnDelay` は `requestStart` 時に値渡しで消費されるため、効くのは次の試合から) |
 
 ### WS URL の自動検出

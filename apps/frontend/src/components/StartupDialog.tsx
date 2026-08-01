@@ -1,8 +1,9 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import type { ClientType, InlineMapData, ProcessConfig, ServerStatusPayload } from '@u15/ws-types';
+import type { ClientType, InlineMapData, MapCatalogEntry, ProcessConfig, ServerStatusPayload } from '@u15/ws-types';
 import { MapObject } from '@u15/ws-types';
 import { TeamSetupPanel } from './TeamSetupPanel';
 import { MapThumbnail } from './MapThumbnail';
+import { MapSourceSection, sourceLabel } from './MapSourceSection';
 import { useTextures } from '../hooks/useTextures';
 import {
   BG_ROOT, BG_HEADER, BG_CARD,
@@ -21,9 +22,17 @@ interface Props {
   displayTitle:         string;
   theme:                string;
   currentMap:           InlineMapData | null;
+  /** マップを差し替えてよいか (バックエンドの RoundController.canEditMap と同じ条件) */
+  canEditMap:           boolean;
   onSetClient:          (slot: 0 | 1, type: ClientType, cfg?: ProcessConfig) => void;
   onDeleteProgram:      (slot: 0 | 1) => void;
   onOpenLibraryManager: () => void;
+  onApplyMapEntry:      (entry: MapCatalogEntry) => void;
+  onApplyMapParams:     () => void;
+  onOpenMapEditor:      () => void;
+  onSaveCurrentMap:     (displayName: string) => void;
+  onDownloadCurrentMap: (displayName: string) => void;
+  onOpenMapLibrary:     () => void;
 }
 
 const TEAM_LABEL  = ['COOL', 'HOT']        as const;
@@ -32,11 +41,13 @@ const TEAM_BGCOL  = [COOL_PALE, HOT_PALE]   as const;
 const TEAM_DARK   = [COOL_DARK, HOT_DARK]   as const;
 
 export function StartupDialog({
-  status, httpBase, roomId, displayTitle, theme, currentMap,
+  status, httpBase, roomId, displayTitle, theme, currentMap, canEditMap,
   onSetClient, onDeleteProgram, onOpenLibraryManager,
+  onApplyMapEntry, onApplyMapParams, onOpenMapEditor,
+  onSaveCurrentMap, onDownloadCurrentMap, onOpenMapLibrary,
 }: Props) {
   // 2試合制の第2試合待機中も phase は 'setup' に戻るが、マップもルールもセット内で
-  // 固定されており変更できない。マップ設定ボタン (BottomBar) と対戦ルール
+  // 固定されており変更できない。マップの選択 (マップ列の「変更」) と対戦ルール
   // (SettingDialog の「対戦」タブ) がどちらも塞がるため、その理由をここで伝える。
   const isMidSet = status.roundResults.length > 0;
 
@@ -101,9 +112,17 @@ export function StartupDialog({
 
         <MapPreviewColumn
           status={status}
+          httpBase={httpBase}
           theme={theme}
           currentMap={currentMap}
+          canEditMap={canEditMap}
           columnsSize={columnsSize}
+          onApplyMapEntry={onApplyMapEntry}
+          onApplyMapParams={onApplyMapParams}
+          onOpenMapEditor={onOpenMapEditor}
+          onSaveCurrentMap={onSaveCurrentMap}
+          onDownloadCurrentMap={onDownloadCurrentMap}
+          onOpenMapLibrary={onOpenMapLibrary}
         />
 
         <TeamSetupPanel
@@ -129,38 +148,58 @@ export function StartupDialog({
 const COLUMNS_GAP  = 16;  // s.columns の gap と一致させる
 const TEAM_MIN_W   = 280; // TeamSetupPanel の minWidth と一致させる
 const MAP_COL_PAD  = 16;  // s.mapColumn の左右パディング
-// ラベル・要約テキスト・上下パディング・gap がプレビューの外で使う高さ (実測 118px に余裕を足した値)。
-// ここを小さく見積もるとマップ列が行の高さを超え、縦スクロールバーを自分で呼び出してしまう。
-const MAP_COL_CHROME_H = 124;
+const MAP_COL_VPAD = 14;  // s.mapColumn の上下パディング
+const MAP_COL_GAP  = 8;   // s.mapColumn の gap
 // プレビューが取りうる幅の範囲。上限は「これ以上大きくしても情報が増えない」線、
 // 下限を割り込む狭さでは列自体が折り返して COOL/HOT の下に回る
 const PREVIEW_MIN_W = 140;
 const PREVIEW_MAX_W = 340;
+// マップ選択パネルが読める最小幅。プレビューがこれより細くても列はこの幅を保つ
+const PANEL_MIN_W   = 220;
 // 折り返しの境界ちょうどに座らないための安全マージン。垂直スクロールバーの出現で
 // 行幅がわずかに減っても、3カラムが1行に収まったままでいられるようにする
 const WRAP_SAFETY = 16;
 
-// 表示専用。マップの差し替えはフッターの「マップ設定...」に一本化しているため、
-// ここにはボタンもクリック操作も置かない。
-function MapPreviewColumn({ status, theme, currentMap, columnsSize }: {
+// プレビュー + 「使用するマップ」の選択 (MapSourceSection)。
+// アップロード・削除はここでは行わず、フッターの「マップ管理...」に一本化する。
+function MapPreviewColumn({
+  status, httpBase, theme, currentMap, canEditMap, columnsSize,
+  onApplyMapEntry, onApplyMapParams, onOpenMapEditor,
+  onSaveCurrentMap, onDownloadCurrentMap, onOpenMapLibrary,
+}: {
   status: ServerStatusPayload;
+  httpBase: string;
   theme: string;
   currentMap: InlineMapData | null;
+  canEditMap: boolean;
   columnsSize: { width: number; height: number };
+  onApplyMapEntry:      (entry: MapCatalogEntry) => void;
+  onApplyMapParams:     () => void;
+  onOpenMapEditor:      () => void;
+  onSaveCurrentMap:     (displayName: string) => void;
+  onDownloadCurrentMap: (displayName: string) => void;
+  onOpenMapLibrary:     () => void;
 }) {
   const tex = useTextures(theme);
 
-  if (!currentMap) {
-    return (
-      <div style={s.mapColumn}>
-        <div style={s.mapLabel}>マップ</div>
-        <span style={s.hint}>読み込み中...</span>
-      </div>
-    );
-  }
+  // ── プレビュー以外 (ラベル・要約・選択パネル) が使う高さを実測する ─────────────
+  // 選択パネルは開閉で高さが変わるので定数では持てない。ただしこの高さは
+  // プレビューの大きさには一切依存しないため、「測定→反映→再測定」の循環にはならない。
+  const headerRef = useRef<HTMLDivElement>(null);
+  const footerRef = useRef<HTMLDivElement>(null);
+  const [chromeH, setChromeH] = useState(0);
 
-  const blocks = countObj(currentMap.field, MapObject.BLOCK);
-  const items  = countObj(currentMap.field, MapObject.ITEM);
+  useLayoutEffect(() => {
+    const measure = () => {
+      const h = (headerRef.current?.offsetHeight ?? 0) + (footerRef.current?.offsetHeight ?? 0);
+      setChromeH(prev => (prev === h ? prev : h));
+    };
+    const obs = new ResizeObserver(measure);
+    if (headerRef.current) obs.observe(headerRef.current);
+    if (footerRef.current) obs.observe(footerRef.current);
+    measure();
+    return () => obs.disconnect();
+  }, [currentMap === null]);
 
   // 幅の予算 = 行の実幅から「COOL/HOT が最小幅を取ったあとの残り」を出し、
   // この列自身のパディングと安全マージンを差し引いたもの。こうして求めた幅に
@@ -170,18 +209,54 @@ function MapPreviewColumn({ status, theme, currentMap, columnsSize }: {
   // 3カラムに割れない幅では、COOL と HOT を引き離すより両者を並べたまま
   // マップを下段へ送るほうが読みやすい。order で折り返し順だけを入れ替える。
   const inline = budgetW >= PREVIEW_MIN_W;
+  const availW = inline ? budgetW : columnsSize.width - MAP_COL_PAD * 2;
   const previewW = inline
     ? Math.min(PREVIEW_MAX_W, budgetW)
-    : Math.max(PREVIEW_MIN_W, Math.min(PREVIEW_MAX_W, columnsSize.width - MAP_COL_PAD * 2));
-  const previewH = Math.max(120, columnsSize.height - MAP_COL_CHROME_H);
+    : Math.max(PREVIEW_MIN_W, Math.min(PREVIEW_MAX_W, availW));
+  // 列の幅はプレビューと選択パネルの両方が要る幅。予算を超えない範囲で広げる。
+  const contentW = Math.max(previewW, Math.min(PANEL_MIN_W, Math.max(availW, PREVIEW_MIN_W)));
+
+  const column = { ...s.mapColumn, order: inline ? 0 : 1, width: contentW };
+
+  const selector = (
+    <MapSourceSection
+      httpBase={httpBase}
+      source={status.mapSource}
+      canEdit={canEditMap}
+      onApplyEntry={onApplyMapEntry}
+      onApplyParams={onApplyMapParams}
+      onOpenEditor={onOpenMapEditor}
+      onSaveCurrent={onSaveCurrentMap}
+      onDownloadCurrent={onDownloadCurrentMap}
+      onOpenLibraryManager={onOpenMapLibrary}
+    />
+  );
+
+  if (!currentMap) {
+    return (
+      <div style={column}>
+        <div ref={headerRef} style={s.mapLabel}>マップ</div>
+        <span style={s.hint}>読み込み中...</span>
+        <div ref={footerRef} style={s.mapFooter}>{selector}</div>
+      </div>
+    );
+  }
+
+  const blocks = countObj(currentMap.field, MapObject.BLOCK);
+  const items  = countObj(currentMap.field, MapObject.ITEM);
+
+  const previewH = Math.max(
+    120,
+    columnsSize.height - chromeH - MAP_COL_VPAD * 2 - MAP_COL_GAP * 2,
+  );
   const cellSize = Math.max(4, Math.min(
     Math.floor(previewW / currentMap.size.x),
     Math.floor(previewH / currentMap.size.y),
   ));
 
   return (
-    <div style={{ ...s.mapColumn, order: inline ? 0 : 1 }}>
-      <div style={s.mapLabel}>マップ</div>
+    <div style={column}>
+      <div ref={headerRef} style={s.mapLabel}>マップ</div>
       <MapThumbnail
         field={currentMap.field as MapObject[][]}
         size={currentMap.size}
@@ -189,10 +264,13 @@ function MapPreviewColumn({ status, theme, currentMap, columnsSize }: {
         textures={tex}
         cellSize={cellSize}
       />
-      <div style={s.mapInfo}>
-        <span style={s.mapKind}>{status.mapIsCustom ? 'カスタム' : 'ランダム生成'}</span>
-        <span>{currentMap.size.x}×{currentMap.size.y} ・ ターン {currentMap.turn}</span>
-        <span>ブロック {blocks} ・ アイテム {items}</span>
+      <div ref={footerRef} style={s.mapFooter}>
+        <div style={s.mapInfo}>
+          <span style={s.mapKind}>{sourceLabel(status.mapSource)}</span>
+          <span>{currentMap.size.x}×{currentMap.size.y} ・ ターン {currentMap.turn}</span>
+          <span>ブロック {blocks} ・ アイテム {items}</span>
+        </div>
+        {selector}
       </div>
     </div>
   );
@@ -270,11 +348,18 @@ const s: Record<string, React.CSSProperties> = {
     boxShadow: SHADOW_SM,
   },
   mapLabel: { fontSize: 9, color: TEXT_MUTED, letterSpacing: 1, alignSelf: 'flex-start' },
+  // 要約 + マップ選択パネル。プレビュー高さを決めるために高さを実測する塊
+  mapFooter: {
+    width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+  },
   mapInfo: {
-    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
+    width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
     fontSize: 10, color: TEXT_SECONDARY, fontFamily: FONT_NUM,
   },
-  mapKind: { fontSize: 11, fontWeight: 700, color: TEXT_PRIMARY, fontFamily: FONT_UI },
+  mapKind: {
+    maxWidth: '100%', fontSize: 11, fontWeight: 700, color: TEXT_PRIMARY, fontFamily: FONT_UI,
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  },
   hint: { fontSize: 10, color: TEXT_MUTED },
 
   columns: {

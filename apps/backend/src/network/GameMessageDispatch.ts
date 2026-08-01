@@ -35,7 +35,7 @@ export class GameMessageDispatch {
         manager.requestReset().catch((e) => this.deps.sendError(ws, `リセットに失敗しました: ${(e as Error).message}`));
         break;
       case 'load_map':
-        manager.loadMap(msg.payload.filePath);
+        manager.loadMap(msg.payload.catalogId);
         break;
       case 'set_map_params':
         manager.setMapParams(msg.payload);

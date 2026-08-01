@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { MapObject } from '@u15/ws-types';
 import type { Point } from '@u15/ws-types';
 import { useTextures, type TextureKey } from '../hooks/useTextures';
+import { MAP_SIZES, useMapGenParams } from '../hooks/useMapGenParams';
 import {
   BG_ROOT, BG_CARD, BORDER_COLOR, COOL_COLOR, COOL_PALE,
   TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
@@ -28,11 +29,7 @@ interface Props {
 
 type Tool = 'nothing' | 'block' | 'item' | 'start';
 
-const CELL    = 28;
-const SIZES   = [
-  { label: '決戦 (15×17)', x: 15, y: 17 },
-  { label: '広域 (21×17)', x: 21, y: 17 },
-] as const;
+const CELL = 28;
 
 function emptyField(x: number, y: number): MapObject[][] {
   return Array.from({ length: y }, () => Array(x).fill(MapObject.NOTHING));
@@ -56,9 +53,11 @@ export function MapEditorDialog({ initialMap, theme, httpBase, onApply, onSaveTo
   }));
   const [tool,     setTool]     = useState<Tool>('nothing');
   const [symmetry, setSymmetry] = useState(true);
-  const [sizeIdx,  setSizeIdx]  = useState(0);
+  const [name,     setName]     = useState('');
   const [generating, setGenerating] = useState(false);
   const dragging = useRef(false);
+  // 生成パラメータはマップ列の「ランダム生成」と同じものを使う (設定の二重管理を避ける)
+  const { params: gen, update: setGen } = useMapGenParams();
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const tex = useTextures(theme);
@@ -168,14 +167,16 @@ export function MapEditorDialog({ initialMap, theme, httpBase, onApply, onSaveTo
   // 実際の生成アルゴリズムはバックエンド (GameSystem.createRandomMap) 側の一箇所のみに存在させ、
   // フロントエンドはここで再実装しない (挙動の重複・drift を防ぐため)。
   const handleRandom = async () => {
-    const sz = SIZES[sizeIdx];
+    const sz = MAP_SIZES[gen.sizeIdx] ?? MAP_SIZES[0];
     const size: Point = { x: sz.x, y: sz.y };
     setGenerating(true);
     try {
       const res = await fetch(`${httpBase}/api/maps/random`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ size, blockNum: 20, itemNum: 51, turnNum: map.turn, mirror: symmetry }),
+        body: JSON.stringify({
+          size, blockNum: gen.blockNum, itemNum: gen.itemNum, turnNum: map.turn, mirror: symmetry,
+        }),
       });
       if (res.ok) {
         const { data } = await res.json() as { data: { field: MapObject[][]; size: Point; turn: number; teamFirstPoint: [Point, Point] } };
@@ -196,15 +197,15 @@ export function MapEditorDialog({ initialMap, theme, httpBase, onApply, onSaveTo
     onApply(map);
     onClose();
   };
+  // Electron は window.prompt を実装していないため、名前はダイアログ内の入力欄で受け取る
+  const trimmedName = name.trim();
   const handleSaveToLibrary = () => {
-    const name = window.prompt('ライブラリに保存する名前を入力してください');
-    if (!name) return;
-    onSaveToLibrary(map, name);
+    if (!trimmedName) return;
+    onSaveToLibrary(map, trimmedName);
   };
   const handleDownload = () => {
-    const name = window.prompt('ダウンロードするファイル名を入力してください');
-    if (!name) return;
-    onDownload(map, name);
+    if (!trimmedName) return;
+    onDownload(map, trimmedName);
   };
 
   const blocks = countObj(map.field, MapObject.BLOCK);
@@ -235,12 +236,13 @@ export function MapEditorDialog({ initialMap, theme, httpBase, onApply, onSaveTo
           <div style={s.sidebar}>
             {/* サイズ */}
             <Label>フィールドサイズ</Label>
-            <select value={sizeIdx} onChange={e => setSizeIdx(Number(e.target.value))} style={s.select}>
-              {SIZES.map((sz, i) => <option key={i} value={i}>{sz.label}</option>)}
+            <select value={gen.sizeIdx} onChange={e => setGen({ sizeIdx: Number(e.target.value) })} style={s.select}>
+              {MAP_SIZES.map((sz, i) => <option key={i} value={i}>{sz.label}</option>)}
             </select>
             <button style={s.btnSm} onClick={handleRandom} disabled={generating}>
               {generating ? '生成中...' : 'ランダム生成'}
             </button>
+            <span style={s.hint}>サイズはランダム生成でのみ反映されます</span>
 
             <Divider />
 
@@ -277,8 +279,35 @@ export function MapEditorDialog({ initialMap, theme, httpBase, onApply, onSaveTo
             <Divider />
 
             <button style={s.btnSm} onClick={handleClear}>全消し</button>
-            <button style={s.btnSm} onClick={handleSaveToLibrary}>ライブラリに保存...</button>
-            <button style={s.btnSm} onClick={handleDownload}>ダウンロード</button>
+
+            <Divider />
+
+            {/* このマップを残す */}
+            <Label>マップ名</Label>
+            <input
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="保存・DL 用の名前"
+              style={s.textInput}
+            />
+            <button
+              style={{ ...s.btnSm, ...(trimmedName ? {} : s.btnDisabled) }}
+              disabled={!trimmedName}
+              onClick={handleSaveToLibrary}
+            >
+              ライブラリに保存
+            </button>
+            <button
+              style={{ ...s.btnSm, ...(trimmedName ? {} : s.btnDisabled) }}
+              disabled={!trimmedName}
+              onClick={handleDownload}
+            >
+              ダウンロード
+            </button>
+
+            <Divider />
+
             <button style={s.btnPrimary} onClick={handleApply}>適用して閉じる</button>
             <button style={s.btnSm} onClick={onClose}>キャンセル</button>
           </div>
@@ -337,6 +366,12 @@ const s: Record<string, React.CSSProperties> = {
     border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM, color: TEXT_PRIMARY,
     fontSize: 12, fontFamily: FONT_NUM,
   },
+  textInput: {
+    width: '100%', boxSizing: 'border-box', padding: '4px 8px', background: BG_CARD,
+    border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM, color: TEXT_PRIMARY,
+    fontSize: 11, fontFamily: FONT_UI,
+  },
+  hint: { fontSize: 9, lineHeight: 1.5, color: TEXT_MUTED },
   toolBtn: {
     padding: '6px 0', border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM,
     background: BG_CARD, color: TEXT_SECONDARY, fontSize: 11, cursor: 'pointer', textAlign: 'left',
@@ -355,4 +390,5 @@ const s: Record<string, React.CSSProperties> = {
     padding: '8px 0', border: 'none', borderRadius: RADIUS_SM,
     background: WIN_BASE, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
   },
+  btnDisabled: { opacity: 0.4, cursor: 'not-allowed' },
 };

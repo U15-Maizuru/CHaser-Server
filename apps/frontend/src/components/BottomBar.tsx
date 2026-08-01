@@ -8,7 +8,7 @@ interface Props {
   onNextRound:          () => void;
   onRepeat:             () => void;
   onReset:              () => void;
-  onOpenMapManagement:  () => void;
+  onOpenMapLibrary:  () => void;
   onOpenProgramLibrary: () => void;
   onOpenSettings:       () => void;
   onToggleFullscreen?:  () => void;  // Electron ローカル起動時のみ
@@ -27,7 +27,7 @@ interface Props {
 export function BottomBar({
   isConnected, status,
   onStart, onNextRound, onRepeat, onReset,
-  onOpenMapManagement, onOpenProgramLibrary, onOpenSettings, onToggleFullscreen,
+  onOpenMapLibrary, onOpenProgramLibrary, onOpenSettings, onToggleFullscreen,
 }: Props) {
   const allReady = status.clients.every(c => c.state === 'ready');
   const { phase, doubleMode, repeatMode, roundResults } = status;
@@ -42,10 +42,6 @@ export function BottomBar({
   const showResetAsPrimary   = matchFinished && !repeatMode;
   const showResetAsSecondary = !showResetAsPrimary;
 
-  // マップは「セット内で不変」なので、2試合制の第2試合待機中 (roundResults が既にある setup)
-  // は変更できない (ServerManager.loadMap 等の canEditMap ゲート)。押せるが無反応、を避ける。
-  const canEditMap = phase === 'setup' && roundResults.length === 0;
-
   const handleSecondaryReset = () => {
     const message = phase === 'playing'
       ? '対戦を中断してセットアップに戻ります。よろしいですか？'
@@ -59,10 +55,11 @@ export function BottomBar({
 
   return (
     <div style={s.footer}>
-      {/* 左: 対戦の準備 (setup フェーズでのみ意味を持つ) */}
+      {/* 左: ライブラリの管理 (アップロード・削除)。対戦で使うマップ・プログラムの
+          「選択」はセットアップ画面側にあるので、ここは setup 中なら常に開ける */}
       <div style={s.leftCluster}>
-        {canEditMap && (
-          <button style={s.btnSecondary} onClick={onOpenMapManagement}>マップ設定...</button>
+        {phase === 'setup' && (
+          <button style={s.btnSecondary} onClick={onOpenMapLibrary}>マップ管理...</button>
         )}
         {phase === 'setup' && (
           <button style={s.btnSecondary} onClick={onOpenProgramLibrary}>プログラム管理...</button>

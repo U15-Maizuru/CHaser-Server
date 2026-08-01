@@ -182,13 +182,13 @@ describe('ServerManager', () => {
 
       const regenerateSpy = vi.spyOn(MapManager.prototype, 'regenerate');
       sm.setMapParams({ itemNum: 11, blockNum: 4, turnNum: 50, mirror: false });
-      sm.loadMap('/does/not/matter.map');
+      sm.loadMap('does-not-exist');
       sm.loadMapData({
         field: [[0]], size: { x: 1, y: 1 }, turn: 10,
         teamFirstPoint: [{ x: 0, y: 0 }, { x: 0, y: 0 }],
       });
       expect(regenerateSpy).not.toHaveBeenCalled();
-      expect(sm.getStatus().mapIsCustom).toBe(false); // loadMapData も無視されている
+      expect(sm.getStatus().mapSource.kind).toBe('random'); // loadMapData も無視されている
       regenerateSpy.mockRestore();
     });
 
