@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import type { InlineMapData, MapCatalogEntry, Point } from '@u15/ws-types';
+import type { InlineMapData, MapCatalogEntry } from '@u15/ws-types';
 import { MapObject } from '@u15/ws-types';
 import { FileDropZone } from './FileDropZone';
 import { MapThumbnail } from './MapThumbnail';
 import { useTextures } from '../hooks/useTextures';
+import { MAP_SIZES, useMapGenParams } from '../hooks/useMapGenParams';
 import {
   BG_ROOT, BG_CARD, BORDER_COLOR,
   TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
@@ -21,35 +22,11 @@ interface Props {
    *  false のとき、適用系の操作はサーバー側で黙って無視されるため UI 側で塞ぐ。 */
   canApply:      boolean;
   onApplyEntry:  (entry: MapCatalogEntry) => void;
-  onApplyInline: (data: InlineMapData) => void;
+  /** 生成パラメータをサーバーへ送る。サーバー側はこれを覚えてリセット・リピート時の
+   *  再生成にも使うため、ここで作ったマップは「カスタム」扱いにならない。 */
+  onApplyParams: () => void;
   onOpenEditor:  () => void;
   onClose:       () => void;
-}
-
-const SIZES = [
-  { label: '決戦 (15×17)', x: 15, y: 17 },
-  { label: '広域 (21×17)', x: 21, y: 17 },
-] as const;
-
-const GEN_PARAMS_KEY = 'u15_map_gen_params';
-
-interface GenParams {
-  sizeIdx:  number;
-  blockNum: number;
-  itemNum:  number;
-  turnNum:  number;
-  mirror:   boolean;
-}
-
-const DEFAULT_GEN_PARAMS: GenParams = { sizeIdx: 0, blockNum: 20, itemNum: 51, turnNum: 100, mirror: true };
-
-function loadGenParams(): GenParams {
-  try {
-    const raw = localStorage.getItem(GEN_PARAMS_KEY);
-    return raw ? { ...DEFAULT_GEN_PARAMS, ...JSON.parse(raw) } : DEFAULT_GEN_PARAMS;
-  } catch {
-    return DEFAULT_GEN_PARAMS;
-  }
 }
 
 function countObj(field: number[][], obj: MapObject): number {
@@ -58,12 +35,11 @@ function countObj(field: number[][], obj: MapObject): number {
 
 export function MapManagementDialog({
   httpBase, theme, currentMap, canApply,
-  onApplyEntry, onApplyInline, onOpenEditor, onClose,
+  onApplyEntry, onApplyParams, onOpenEditor, onClose,
 }: Props) {
   const [entries, setEntries] = useState<MapCatalogEntry[]>([]);
   const [query,   setQuery]   = useState('');
-  const [gen,     setGen]     = useState<GenParams>(loadGenParams);
-  const [generating, setGenerating] = useState(false);
+  const { params: gen, update: setGen } = useMapGenParams();
   const tex = useTextures(theme);
 
   const fetchEntries = () => {
@@ -77,10 +53,6 @@ export function MapManagementDialog({
 
   useEffect(fetchEntries, [httpBase]);
 
-  useEffect(() => {
-    localStorage.setItem(GEN_PARAMS_KEY, JSON.stringify(gen));
-  }, [gen]);
-
   const handleDelete = (id: string) => {
     fetch(`${httpBase}/api/maps/${id}`, { method: 'DELETE' })
       .then(() => fetchEntries())
@@ -88,25 +60,6 @@ export function MapManagementDialog({
   };
 
   const handleUploaded = () => fetchEntries();
-
-  const handleGenerate = async () => {
-    if (!canApply) return;
-    setGenerating(true);
-    try {
-      const size: Point = { x: SIZES[gen.sizeIdx].x, y: SIZES[gen.sizeIdx].y };
-      const res = await fetch(`${httpBase}/api/maps/random`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ size, blockNum: gen.blockNum, itemNum: gen.itemNum, turnNum: gen.turnNum, mirror: gen.mirror }),
-      });
-      if (res.ok) {
-        const { data } = await res.json() as { data: InlineMapData };
-        onApplyInline(data);
-      }
-    } finally {
-      setGenerating(false);
-    }
-  };
 
   const q = query.trim().toLowerCase();
   const filtered = q ? entries.filter(e => e.displayName.toLowerCase().includes(q)) : entries;
@@ -214,36 +167,39 @@ export function MapManagementDialog({
             <Label>ランダム生成</Label>
             <select
               value={gen.sizeIdx}
-              onChange={e => setGen(g => ({ ...g, sizeIdx: Number(e.target.value) }))}
+              onChange={e => setGen({ sizeIdx: Number(e.target.value) })}
               style={s.select}
             >
-              {SIZES.map((sz, i) => <option key={i} value={i}>{sz.label}</option>)}
+              {MAP_SIZES.map((sz, i) => <option key={i} value={i}>{sz.label}</option>)}
             </select>
             <div style={s.genGrid}>
               <label style={s.genLabel}>ブロック数
                 <input type="number" min={0} max={200} value={gen.blockNum}
-                  onChange={e => setGen(g => ({ ...g, blockNum: Number(e.target.value) }))} style={s.numInput} />
+                  onChange={e => setGen({ blockNum: Number(e.target.value) })} style={s.numInput} />
               </label>
               <label style={s.genLabel}>アイテム数
                 <input type="number" min={0} max={200} value={gen.itemNum}
-                  onChange={e => setGen(g => ({ ...g, itemNum: Number(e.target.value) }))} style={s.numInput} />
+                  onChange={e => setGen({ itemNum: Number(e.target.value) })} style={s.numInput} />
               </label>
               <label style={s.genLabel}>ターン数
                 <input type="number" min={10} max={500} step={10} value={gen.turnNum}
-                  onChange={e => setGen(g => ({ ...g, turnNum: Number(e.target.value) }))} style={s.numInput} />
+                  onChange={e => setGen({ turnNum: Number(e.target.value) })} style={s.numInput} />
               </label>
             </div>
             <div style={s.checkRow}>
-              <input type="checkbox" checked={gen.mirror} onChange={e => setGen(g => ({ ...g, mirror: e.target.checked }))} />
+              <input type="checkbox" checked={gen.mirror} onChange={e => setGen({ mirror: e.target.checked })} />
               <span style={s.checkLabel}>対称配置</span>
             </div>
             <button
               style={{ ...s.btnPrimary, ...(canApply ? {} : s.btnDisabled) }}
-              onClick={handleGenerate}
-              disabled={generating || !canApply}
+              onClick={onApplyParams}
+              disabled={!canApply}
             >
-              {generating ? '生成中...' : '生成して使用'}
+              生成して使用
             </button>
+            <span style={s.hint}>
+              この設定はサーバーが記憶し、リセット・リピート後の再生成にも使われます。
+            </span>
           </section>
         </div>
       </div>

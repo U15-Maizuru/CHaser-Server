@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useGameState }      from './hooks/useGameState';
 import { useMatchConfig }    from './hooks/useMatchConfig';
+import { useMapGenParams, toMapParams } from './hooks/useMapGenParams';
 import { useEnvConfig }      from './hooks/useEnvConfig';
 import { useGamePhaseSound } from './hooks/useGamePhaseSound';
 import { useStartCountdown } from './hooks/useStartCountdown';
@@ -45,6 +46,7 @@ export default function App() {
 function ControlApp({ roomId }: { roomId: string }) {
   const state = useGameState(WS_URL, roomId);
   const { config: matchConfig, update: updateMatchConfig } = useMatchConfig();
+  const { params: mapGenParams }               = useMapGenParams();
   const { envConfig, update: updateEnvConfig } = useEnvConfig();
   const { serverStatus, isConnected, gameEnd, snapshot } = state;
   // 表示・BGM 設定はサーバーが真実を持つ (ダークモードと同じ)。複数のコントロール窓を
@@ -80,8 +82,8 @@ function ControlApp({ roomId }: { roomId: string }) {
   }, [serverStatus?.clients]);
 
   // ターン表示時間 / TCP タイムアウトは ServerStatusPayload に含まれない (サーバーが
-  // 返してこない) ため、接続後に一度だけ保存値を送って同期させる。以降はセットアップ
-  // 画面での明示的な編集時 (blur) にのみ送る。
+  // 返してこない) ため、接続後に一度だけ保存値を送って同期させる。以降は設定ダイアログ
+  // 「対戦」タブでの明示的な編集時 (blur) にのみ送る。
   const didCommitMatchConfig = useRef(false);
   useEffect(() => {
     if (!isConnected) { didCommitMatchConfig.current = false; return; }
@@ -95,6 +97,32 @@ function ControlApp({ roomId }: { roomId: string }) {
   const commitMatchConfig = () => {
     state.setTurnDelay(matchConfig.turnDelay);
     state.setTcpTimeout(matchConfig.timeout * 1000);
+  };
+
+  // マップ生成パラメータも ServerStatusPayload に含まれない。サーバーは受け取った値を
+  // 覚えてリセット・リピート時の再生成にも使うので、送らないと初期マップだけが
+  // ハードコードの既定値 (15×17 / ブロック20 / アイテム51 / ターン100) のままになる。
+  // そのため接続後に一度だけ push する。
+  //
+  // 受け取ったサーバーはその場でマップを作り直すため、ファイル読込・エディタ由来の
+  // マップ (mapIsCustom) が出ている間は送らない。コントロール窓を後から開いたときに
+  // 選択済みのカスタムマップを黙って捨ててしまうのを防ぐ。
+  const didCommitMapParams = useRef(false);
+  useEffect(() => {
+    if (!isConnected) { didCommitMapParams.current = false; return; }
+    if (didCommitMapParams.current) return;
+    if (!serverStatus) return;
+    // 対戦中・2試合制のセット中は canEditMap ゲートで黙って捨てられるので、
+    // 送れる状態になるまで待ってから一度だけ送る
+    if (!canEditMap) return;
+    if (serverStatus.mapIsCustom) return;
+    didCommitMapParams.current = true;
+    state.setMapParams(toMapParams(mapGenParams));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected, serverStatus, canEditMap]);
+
+  const handleApplyMapParams = () => {
+    state.setMapParams(toMapParams(mapGenParams));
   };
 
   // 環境設定 (ログ保存先・Pythonコマンド): Electron ローカル起動時のみ意味を持つ
@@ -155,11 +183,6 @@ function ControlApp({ roomId }: { roomId: string }) {
     void refreshCurrentMap();
   };
 
-  const handleApplyGeneratedMap = (data: InlineMapData) => {
-    state.loadMapData(data);
-    setCurrentMap(data);
-  };
-
   const handleMapEditorApply = (map: EditableMap) => {
     state.loadMapData({ field: map.field, size: map.size, turn: map.turn, teamFirstPoint: map.teamFirstPoint });
     void refreshCurrentMap();
@@ -201,11 +224,18 @@ function ControlApp({ roomId }: { roomId: string }) {
         <SettingDialog
           prefs={prefs}
           envConfig={envConfig}
+          status={serverStatus ?? defaultStatus}
+          matchConfig={matchConfig}
           darkMode={serverStatus?.darkMode ?? false}
           httpBase={HTTP_BASE}
           onSetDisplayPrefs={state.setDisplayPrefs}
           onSaveEnv={updateEnvConfig}
           onSetDarkMode={state.setDarkMode}
+          onSetDoubleMode={state.setDoubleMode}
+          onSetRepeatMode={state.setRepeatMode}
+          onSetDemoMode={state.setDemoMode}
+          onChangeMatchConfig={updateMatchConfig}
+          onCommitMatchConfig={commitMatchConfig}
           onUploadMusic={handleUploadMusic}
           onClose={() => setShowSettings(false)}
         />
@@ -219,7 +249,7 @@ function ControlApp({ roomId }: { roomId: string }) {
           currentMap={currentMap}
           canApply={canEditMap}
           onApplyEntry={handleApplyMapEntry}
-          onApplyInline={handleApplyGeneratedMap}
+          onApplyParams={handleApplyMapParams}
           onOpenEditor={() => void openMapEditor()}
           onClose={() => setShowMapManagement(false)}
         />
@@ -254,16 +284,9 @@ function ControlApp({ roomId }: { roomId: string }) {
               displayTitle={prefs.displayTitle}
               theme={prefs.theme}
               currentMap={currentMap}
-              matchConfig={matchConfig}
               onSetClient={state.setClient}
               onDeleteProgram={state.deleteProgram}
               onOpenLibraryManager={() => setShowProgramLibrary(true)}
-              onOpenMapManagement={() => setShowMapManagement(true)}
-              onSetDoubleMode={state.setDoubleMode}
-              onSetRepeatMode={state.setRepeatMode}
-              onSetDemoMode={state.setDemoMode}
-              onChangeMatchConfig={updateMatchConfig}
-              onCommitMatchConfig={commitMatchConfig}
             />
           ) : (
             <MainWindow

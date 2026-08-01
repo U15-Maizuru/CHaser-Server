@@ -1,15 +1,16 @@
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { ClientType, InlineMapData, ProcessConfig, ServerStatusPayload } from '@u15/ws-types';
 import { MapObject } from '@u15/ws-types';
 import { TeamSetupPanel } from './TeamSetupPanel';
 import { MapThumbnail } from './MapThumbnail';
 import { useTextures } from '../hooks/useTextures';
-import type { MatchConfig } from '../hooks/useMatchConfig';
 import {
   BG_ROOT, BG_HEADER, BG_CARD,
   BORDER_COLOR, COOL_COLOR, COOL_PALE, COOL_DARK, HOT_COLOR, HOT_PALE, HOT_DARK,
   TURN_BASE, TURN_LIGHT, TURN_PALE,
   TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
-  RADIUS_SM,
+  RADIUS_MD, RADIUS_SM,
+  SHADOW_SM,
   FONT_UI, FONT_NUM,
 } from '../styles/tokens';
 
@@ -20,16 +21,9 @@ interface Props {
   displayTitle:         string;
   theme:                string;
   currentMap:           InlineMapData | null;
-  matchConfig:          MatchConfig;
   onSetClient:          (slot: 0 | 1, type: ClientType, cfg?: ProcessConfig) => void;
   onDeleteProgram:      (slot: 0 | 1) => void;
   onOpenLibraryManager: () => void;
-  onOpenMapManagement:  () => void;
-  onSetDoubleMode:      (enabled: boolean) => void;
-  onSetRepeatMode:      (enabled: boolean) => void;
-  onSetDemoMode:        (enabled: boolean) => void;
-  onChangeMatchConfig:  (patch: Partial<MatchConfig>) => void;
-  onCommitMatchConfig:  () => void;
 }
 
 const TEAM_LABEL  = ['COOL', 'HOT']        as const;
@@ -38,15 +32,30 @@ const TEAM_BGCOL  = [COOL_PALE, HOT_PALE]   as const;
 const TEAM_DARK   = [COOL_DARK, HOT_DARK]   as const;
 
 export function StartupDialog({
-  status, httpBase, roomId, displayTitle, theme, currentMap, matchConfig,
-  onSetClient, onDeleteProgram, onOpenLibraryManager, onOpenMapManagement,
-  onSetDoubleMode, onSetRepeatMode, onSetDemoMode,
-  onChangeMatchConfig, onCommitMatchConfig,
+  status, httpBase, roomId, displayTitle, theme, currentMap,
+  onSetClient, onDeleteProgram, onOpenLibraryManager,
 }: Props) {
   // 2試合制の第2試合待機中も phase は 'setup' に戻るが、マップもルールもセット内で
-  // 固定されており変更できない。同じ画面で同じ操作を見せると「押せるのに効かない」
-  // 状態になるため、この場合は設定を編集させず要約だけを見せる。
+  // 固定されており変更できない。マップ設定ボタン (BottomBar) と対戦ルール
+  // (SettingDialog の「対戦」タブ) がどちらも塞がるため、その理由をここで伝える。
   const isMidSet = status.roundResults.length > 0;
+
+  // ── 3カラム行の実サイズを計測 ──────────────────────────────────────────────
+  // 測定するのは行コンテナ「だけ」。この幅・高さはウィンドウサイズだけで決まり、
+  // マッププレビューの大きさには左右されないので「測定→反映→再測定」の循環に陥らない
+  // (MainWindow のセルサイズ導出と同じ方針)。
+  const columnsRef = useRef<HTMLDivElement>(null);
+  const [columnsSize, setColumnsSize] = useState({ width: 0, height: 0 });
+
+  useLayoutEffect(() => {
+    if (!columnsRef.current) return;
+    const obs = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect;
+      setColumnsSize({ width, height });
+    });
+    obs.observe(columnsRef.current);
+    return () => obs.disconnect();
+  }, []);
 
   return (
     <div style={s.root}>
@@ -67,193 +76,125 @@ export function StartupDialog({
         )}
       </div>
 
-      {/* 対戦設定 */}
-      {isMidSet ? (
+      {isMidSet && (
         <div style={s.midSetStrip}>
           第{(status.currentRound ?? 0) + 1}試合 — マップと対戦ルールは第1試合と共通です。
           両チームの再接続を待って「ゲームスタート」を押してください。
         </div>
-      ) : (
-        <MatchSetupStrip
+      )}
+
+      {/* COOL / マップ / HOT の3カラム (対戦中の MainWindow と同じ骨格) */}
+      <div ref={columnsRef} style={s.columns}>
+        <TeamSetupPanel
+          slot={0}
+          label={TEAM_LABEL[0]}
+          color={TEAM_COLOR[0]}
+          bgColor={TEAM_BGCOL[0]}
+          darkColor={TEAM_DARK[0]}
+          info={status.clients[0]}
+          httpBase={httpBase}
+          roomId={roomId}
+          onSetType={(type, cfg) => onSetClient(0, type, cfg)}
+          onDeleteProgram={() => onDeleteProgram(0)}
+          onOpenLibraryManager={onOpenLibraryManager}
+        />
+
+        <MapPreviewColumn
           status={status}
           theme={theme}
           currentMap={currentMap}
-          matchConfig={matchConfig}
-          onOpenMapManagement={onOpenMapManagement}
-          onSetDoubleMode={onSetDoubleMode}
-          onSetRepeatMode={onSetRepeatMode}
-          onSetDemoMode={onSetDemoMode}
-          onChangeMatchConfig={onChangeMatchConfig}
-          onCommitMatchConfig={onCommitMatchConfig}
+          columnsSize={columnsSize}
         />
-      )}
 
-      {/* Two-column team panels */}
-      <div style={s.columns}>
-        {([0, 1] as const).map(slot => (
-          <TeamSetupPanel
-            key={slot}
-            slot={slot}
-            label={TEAM_LABEL[slot]}
-            color={TEAM_COLOR[slot]}
-            bgColor={TEAM_BGCOL[slot]}
-            darkColor={TEAM_DARK[slot]}
-            info={status.clients[slot]}
-            httpBase={httpBase}
-            roomId={roomId}
-            onSetType={(type, cfg) => onSetClient(slot, type, cfg)}
-            onDeleteProgram={() => onDeleteProgram(slot)}
-            onOpenLibraryManager={onOpenLibraryManager}
-          />
-        ))}
+        <TeamSetupPanel
+          slot={1}
+          label={TEAM_LABEL[1]}
+          color={TEAM_COLOR[1]}
+          bgColor={TEAM_BGCOL[1]}
+          darkColor={TEAM_DARK[1]}
+          info={status.clients[1]}
+          httpBase={httpBase}
+          roomId={roomId}
+          onSetType={(type, cfg) => onSetClient(1, type, cfg)}
+          onDeleteProgram={() => onDeleteProgram(1)}
+          onOpenLibraryManager={onOpenLibraryManager}
+        />
       </div>
     </div>
   );
 }
 
-// ── 対戦設定ストリップ ────────────────────────────────────────────────────────
+// ── マッププレビュー列 ────────────────────────────────────────────────────────
 
-interface StripProps {
-  status:              ServerStatusPayload;
-  theme:               string;
-  currentMap:          InlineMapData | null;
-  matchConfig:         MatchConfig;
-  onOpenMapManagement: () => void;
-  onSetDoubleMode:     (enabled: boolean) => void;
-  onSetRepeatMode:     (enabled: boolean) => void;
-  onSetDemoMode:       (enabled: boolean) => void;
-  onChangeMatchConfig: (patch: Partial<MatchConfig>) => void;
-  onCommitMatchConfig: () => void;
-}
+const COLUMNS_GAP  = 16;  // s.columns の gap と一致させる
+const TEAM_MIN_W   = 280; // TeamSetupPanel の minWidth と一致させる
+const MAP_COL_PAD  = 16;  // s.mapColumn の左右パディング
+// ラベル・要約テキスト・上下パディング・gap がプレビューの外で使う高さ (実測 118px に余裕を足した値)。
+// ここを小さく見積もるとマップ列が行の高さを超え、縦スクロールバーを自分で呼び出してしまう。
+const MAP_COL_CHROME_H = 124;
+// プレビューが取りうる幅の範囲。上限は「これ以上大きくしても情報が増えない」線、
+// 下限を割り込む狭さでは列自体が折り返して COOL/HOT の下に回る
+const PREVIEW_MIN_W = 140;
+const PREVIEW_MAX_W = 340;
+// 折り返しの境界ちょうどに座らないための安全マージン。垂直スクロールバーの出現で
+// 行幅がわずかに減っても、3カラムが1行に収まったままでいられるようにする
+const WRAP_SAFETY = 16;
 
-function MatchSetupStrip({
-  status, theme, currentMap, matchConfig,
-  onOpenMapManagement, onSetDoubleMode, onSetRepeatMode, onSetDemoMode,
-  onChangeMatchConfig, onCommitMatchConfig,
-}: StripProps) {
+// 表示専用。マップの差し替えはフッターの「マップ設定...」に一本化しているため、
+// ここにはボタンもクリック操作も置かない。
+function MapPreviewColumn({ status, theme, currentMap, columnsSize }: {
+  status: ServerStatusPayload;
+  theme: string;
+  currentMap: InlineMapData | null;
+  columnsSize: { width: number; height: number };
+}) {
   const tex = useTextures(theme);
 
-  const blocks = currentMap ? countObj(currentMap.field, MapObject.BLOCK) : 0;
-  const items  = currentMap ? countObj(currentMap.field, MapObject.ITEM)  : 0;
+  if (!currentMap) {
+    return (
+      <div style={s.mapColumn}>
+        <div style={s.mapLabel}>マップ</div>
+        <span style={s.hint}>読み込み中...</span>
+      </div>
+    );
+  }
 
-  const handleDemoToggle = (enabled: boolean) => {
-    // setDemoMode(true) はサーバー側で randomizeFromCatalog() を呼び、両スロットの
-    // プログラム選択を即座に上書きする。取り返しがつくとはいえ驚きが大きいので確認する。
-    if (enabled && !window.confirm(
-      'デモモードを ON にすると、両チームのプログラムがライブラリ（デモ対象）から'
-      + 'ランダムに選び直されます。現在の選択は失われます。よろしいですか？',
-    )) return;
-    onSetDemoMode(enabled);
-  };
+  const blocks = countObj(currentMap.field, MapObject.BLOCK);
+  const items  = countObj(currentMap.field, MapObject.ITEM);
+
+  // 幅の予算 = 行の実幅から「COOL/HOT が最小幅を取ったあとの残り」を出し、
+  // この列自身のパディングと安全マージンを差し引いたもの。こうして求めた幅に
+  // 収めておけば、プレビューが原因で HOT が次の行に押し出されることがない。
+  const budgetW = columnsSize.width - TEAM_MIN_W * 2 - COLUMNS_GAP * 2 - MAP_COL_PAD * 2 - WRAP_SAFETY;
+
+  // 3カラムに割れない幅では、COOL と HOT を引き離すより両者を並べたまま
+  // マップを下段へ送るほうが読みやすい。order で折り返し順だけを入れ替える。
+  const inline = budgetW >= PREVIEW_MIN_W;
+  const previewW = inline
+    ? Math.min(PREVIEW_MAX_W, budgetW)
+    : Math.max(PREVIEW_MIN_W, Math.min(PREVIEW_MAX_W, columnsSize.width - MAP_COL_PAD * 2));
+  const previewH = Math.max(120, columnsSize.height - MAP_COL_CHROME_H);
+  const cellSize = Math.max(4, Math.min(
+    Math.floor(previewW / currentMap.size.x),
+    Math.floor(previewH / currentMap.size.y),
+  ));
 
   return (
-    <div style={s.strip}>
-      {/* 現在のマップ */}
-      <section style={s.stripSection}>
-        <div style={s.stripLabel}>マップ</div>
-        <div style={s.mapRow}>
-          {currentMap && (
-            <MapThumbnail
-              field={currentMap.field as MapObject[][]}
-              size={currentMap.size}
-              teamFirstPoint={currentMap.teamFirstPoint}
-              textures={tex}
-              cellSize={5}
-            />
-          )}
-          <div style={s.mapInfo}>
-            {currentMap ? (
-              <>
-                <span style={s.mapKind}>{status.mapIsCustom ? 'カスタム' : 'ランダム生成'}</span>
-                <span>{currentMap.size.x}×{currentMap.size.y} ・ ターン {currentMap.turn}</span>
-                <span>ブロック {blocks} ・ アイテム {items}</span>
-              </>
-            ) : (
-              <span style={s.hint}>読み込み中...</span>
-            )}
-          </div>
-          <button style={s.changeBtn} onClick={onOpenMapManagement}>変更...</button>
-        </div>
-      </section>
-
-      <div style={s.stripDivider} />
-
-      {/* 対戦ルール */}
-      <section style={s.stripSection}>
-        <div style={s.stripLabel}>対戦ルール</div>
-        <div style={s.chipRow}>
-          <ToggleChip
-            active={status.doubleMode}
-            onClick={() => onSetDoubleMode(!status.doubleMode)}
-            title="先攻・後攻を入れ替えた2試合を行い、合計得点で勝者を決める"
-          >
-            2試合制
-          </ToggleChip>
-          <ToggleChip
-            active={status.repeatMode}
-            onClick={() => onSetRepeatMode(!status.repeatMode)}
-            title="対戦終了後、接続を保ったまま先後を入れ替えて再戦できるようにする"
-          >
-            リピート
-          </ToggleChip>
-          <ToggleChip
-            active={status.demoMode}
-            onClick={() => handleDemoToggle(!status.demoMode)}
-            title="無人で自動進行する。プログラムはライブラリからランダムに選ばれる"
-          >
-            デモ
-          </ToggleChip>
-        </div>
-        {status.demoMode && (
-          <span style={s.hint}>準備完了で自動開始します。止めるには下部の「リセット」を押してください。</span>
-        )}
-      </section>
-
-      <div style={s.stripDivider} />
-
-      {/* 進行パラメータ */}
-      <section style={s.stripSection}>
-        <div style={s.stripLabel}>進行 (次の試合から反映)</div>
-        <div style={s.numRow}>
-          <label style={s.numLabel}>
-            ターン表示
-            <input
-              type="number" min={0} max={10} step={0.1}
-              value={(matchConfig.turnDelay / 1000).toFixed(1)}
-              onChange={e => onChangeMatchConfig({ turnDelay: Math.round(Number(e.target.value) * 1000) })}
-              onBlur={onCommitMatchConfig}
-              style={s.numInput}
-            />
-            <span style={s.unit}>秒</span>
-          </label>
-          <label style={s.numLabel}>
-            TCPタイムアウト
-            <input
-              type="number" min={1} max={60} step={1}
-              value={matchConfig.timeout}
-              onChange={e => onChangeMatchConfig({ timeout: Number(e.target.value) })}
-              onBlur={onCommitMatchConfig}
-              style={s.numInput}
-            />
-            <span style={s.unit}>秒</span>
-          </label>
-        </div>
-      </section>
+    <div style={{ ...s.mapColumn, order: inline ? 0 : 1 }}>
+      <div style={s.mapLabel}>マップ</div>
+      <MapThumbnail
+        field={currentMap.field as MapObject[][]}
+        size={currentMap.size}
+        teamFirstPoint={currentMap.teamFirstPoint}
+        textures={tex}
+        cellSize={cellSize}
+      />
+      <div style={s.mapInfo}>
+        <span style={s.mapKind}>{status.mapIsCustom ? 'カスタム' : 'ランダム生成'}</span>
+        <span>{currentMap.size.x}×{currentMap.size.y} ・ ターン {currentMap.turn}</span>
+        <span>ブロック {blocks} ・ アイテム {items}</span>
+      </div>
     </div>
-  );
-}
-
-function ToggleChip({ active, onClick, title, children }: {
-  active: boolean; onClick: () => void; title: string; children: React.ReactNode;
-}) {
-  return (
-    <button
-      style={{ ...s.chip, ...(active ? s.chipActive : {}) }}
-      onClick={onClick}
-      title={title}
-    >
-      {active ? '✓ ' : ''}{children}
-    </button>
   );
 }
 
@@ -302,22 +243,6 @@ const s: Record<string, React.CSSProperties> = {
     letterSpacing: 1,
   },
 
-  // 対戦設定ストリップ
-  strip: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    flexWrap: 'wrap',
-    gap: 16,
-    margin: '12px 16px 0',
-    padding: '10px 14px',
-    background: BG_CARD,
-    border: `1px solid ${BORDER_COLOR}`,
-    borderRadius: RADIUS_SM,
-    flexShrink: 0,
-  },
-  stripSection: { display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 },
-  stripLabel:   { fontSize: 9, color: TEXT_MUTED, letterSpacing: 1 },
-  stripDivider: { width: 1, alignSelf: 'stretch', background: BORDER_COLOR },
   midSetStrip: {
     margin: '12px 16px 0',
     padding: '10px 14px',
@@ -330,37 +255,27 @@ const s: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
 
-  mapRow:  { display: 'flex', alignItems: 'center', gap: 10 },
-  mapInfo: { display: 'flex', flexDirection: 'column', gap: 1, fontSize: 10, color: TEXT_SECONDARY, fontFamily: FONT_NUM },
-  mapKind: { fontSize: 10, fontWeight: 700, color: TEXT_PRIMARY, fontFamily: FONT_UI },
-  changeBtn: {
-    padding: '4px 12px', border: `1px solid ${BORDER_COLOR}`, borderRadius: 99,
-    background: BG_CARD, color: TEXT_SECONDARY, fontSize: 11, cursor: 'pointer', flexShrink: 0,
-  },
-
-  chipRow: { display: 'flex', gap: 6, flexWrap: 'wrap' },
-  chip: {
-    padding: '5px 12px',
-    border: `1px solid ${BORDER_COLOR}`,
-    borderRadius: 99,
+  // マッププレビュー列 (COOL と HOT の間)
+  mapColumn: {
+    flex: '0 0 auto',
+    alignSelf: 'flex-start',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 8,
+    padding: '14px 16px',
     background: BG_CARD,
-    color: TEXT_SECONDARY,
-    fontSize: 11,
-    fontWeight: 600,
-    cursor: 'pointer',
-    whiteSpace: 'nowrap',
+    border: `1px solid ${BORDER_COLOR}`,
+    borderRadius: RADIUS_MD,
+    boxShadow: SHADOW_SM,
   },
-  chipActive: { background: TURN_BASE, borderColor: TURN_BASE, color: '#fff' },
-
-  numRow:   { display: 'flex', gap: 12, flexWrap: 'wrap' },
-  numLabel: { display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: TEXT_SECONDARY },
-  numInput: {
-    width: 56, padding: '4px 6px', background: BG_ROOT,
-    border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM, color: TEXT_PRIMARY,
-    fontSize: 12, fontFamily: FONT_NUM,
+  mapLabel: { fontSize: 9, color: TEXT_MUTED, letterSpacing: 1, alignSelf: 'flex-start' },
+  mapInfo: {
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
+    fontSize: 10, color: TEXT_SECONDARY, fontFamily: FONT_NUM,
   },
-  unit: { fontSize: 10, color: TEXT_MUTED },
-  hint: { fontSize: 9, color: TEXT_MUTED },
+  mapKind: { fontSize: 11, fontWeight: 700, color: TEXT_PRIMARY, fontFamily: FONT_UI },
+  hint: { fontSize: 10, color: TEXT_MUTED },
 
   columns: {
     flex: 1,
@@ -369,6 +284,10 @@ const s: Record<string, React.CSSProperties> = {
     flexWrap: 'wrap',
     gap: 16,
     overflow: 'auto',
+    // スクロールバーの領域を常に確保する。これが無いと「プレビューを大きくする →
+    // 行が縦にあふれてスクロールバーが出る → 行の内幅が縮む → プレビューが小さくなる →
+    // スクロールバーが消える」という循環に入り、既定ウィンドウサイズで画面が振動する。
+    scrollbarGutter: 'stable',
     padding: '16px 16px 0',
     alignItems: 'stretch',
   },

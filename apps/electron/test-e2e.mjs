@@ -131,19 +131,51 @@ async function setDarkModeCheckbox(page, on) {
   }, on);
 }
 
+/** 設定ダイアログを開いて「対戦」タブを表示する */
+async function openMatchTab(page) {
+  await clickText(page, '設定');
+  await wait(500);
+  await clickText(page, '対戦');
+  await wait(300);
+}
+
+/** 設定ダイアログを ✕ で閉じる (「対戦」タブは即時反映なので保存不要) */
+async function closeSettingDialog(page) {
+  await clickText(page, '✕');
+  await wait(400);
+}
+
+/** 「対戦」タブの対戦ルールチップ (2試合制 / リピート / デモ) を読み取る */
+async function readMatchRuleChips(page) {
+  return page.evaluate(() => {
+    const out = {};
+    for (const b of document.querySelectorAll('button')) {
+      const label = (b.textContent ?? '').replace('✓', '').trim();
+      if (!['2試合制', 'リピート', 'デモ'].includes(label)) continue;
+      out[label] = { active: (b.textContent ?? '').includes('✓'), disabled: b.disabled };
+    }
+    return out;
+  });
+}
+
 /**
- * セットアップ画面「対戦設定」の対戦ルールチップ (2試合制 / リピート / デモ) を
- * 目的の状態に切り替える。ON のチップは先頭に "✓ " が付く。
+ * 設定ダイアログ「対戦」タブの対戦ルールチップを目的の状態に切り替えて閉じる。
+ * ON のチップは先頭に "✓ " が付く。押した時点で反映されるので保存操作は要らない。
  */
 async function setMatchRuleChip(page, label, on) {
-  return page.evaluate(({ label, on }) => {
+  await openMatchTab(page);
+  const result = await page.evaluate(({ label, on }) => {
     const btn = [...document.querySelectorAll('button')]
       .find(b => (b.textContent ?? '').replace('✓', '').trim() === label);
     if (!btn) return 'NOT_FOUND';
+    if (btn.disabled) return 'DISABLED';
     const active = (btn.textContent ?? '').includes('✓');
     if (active !== on) btn.click();
     return 'OK';
   }, { label, on });
+  await wait(300);
+  await closeSettingDialog(page);
+  return result;
 }
 
 /** テキストが現れるまで待つ */
@@ -238,10 +270,16 @@ async function testSetupUI(page) {
     ? pass('プログラム選択 UI が表示される')
     : fail('プログラム選択 UI が表示される');
 
-  // 対戦設定ストリップ (マップ要約 + 対戦ルール)
-  text.includes('対戦ルール') && text.includes('2試合制')
-    ? pass('対戦設定ストリップがセットアップ画面に表示される')
-    : fail('対戦設定ストリップがセットアップ画面に表示される');
+  // 中央のマッププレビュー列 (表示専用。差し替えはフッターの「マップ設定...」から)
+  const hasPreviewCanvas = await page.evaluate(() => document.querySelectorAll('canvas').length > 0);
+  hasPreviewCanvas && text.includes('マップ') && text.includes('ターン')
+    ? pass('マッププレビュー列がセットアップ画面の中央に表示される')
+    : fail('マッププレビュー列がセットアップ画面の中央に表示される', `canvas=${hasPreviewCanvas}`);
+
+  // 対戦ルール・進行は設定ダイアログへ移したので、セットアップ画面には無いのが正
+  !text.includes('2試合制') && !text.includes('TCPタイムアウト')
+    ? pass('対戦ルール/進行の操作はセットアップ画面に残っていない')
+    : fail('対戦ルール/進行の操作はセットアップ画面に残っていない');
 
   // スタートボタンが初期は無効
   const startDisabled = await page.evaluate(() => {
@@ -273,22 +311,36 @@ async function testSettingsDialog(page) {
     ? pass('設定ダイアログが開く')
     : fail('設定ダイアログが開く');
 
-  text.includes('表示') && text.includes('BGM')
-    ? pass('タブ (表示 / BGM) が存在する')
-    : fail('タブ (表示 / BGM) が存在する');
+  text.includes('表示') && text.includes('対戦') && text.includes('BGM')
+    ? pass('タブ (表示 / 対戦 / BGM) が存在する')
+    : fail('タブ (表示 / 対戦 / BGM) が存在する');
 
   text.includes('テクスチャテーマ') && text.includes('ダークモード')
     ? pass('表示設定項目 (テーマ・ダークモード) が表示される')
     : fail('表示設定項目 (テーマ・ダークモード) が表示される');
 
-  // 対戦ルール・進行パラメータはセットアップ画面へ移したので、ここには無いのが正
-  !text.includes('リピートモード') && !text.includes('TCP タイムアウト')
-    ? pass('対戦ルール/進行の設定は設定ダイアログに含まれない')
-    : fail('対戦ルール/進行の設定は設定ダイアログに含まれない');
-
   await ss(page, '02_settings_dialog');
-  await clickText(page, 'キャンセル');
+
+  // 対戦ルール・進行パラメータはここに統合されている
+  await clickText(page, '対戦');
   await wait(400);
+  const matchText = await bodyText(page);
+  matchText.includes('2試合制') && matchText.includes('リピート') && matchText.includes('デモ')
+    ? pass('「対戦」タブに対戦ルールのチップが揃う')
+    : fail('「対戦」タブに対戦ルールのチップが揃う');
+
+  matchText.includes('ターン表示') && matchText.includes('TCPタイムアウト')
+    ? pass('「対戦」タブに進行パラメータが表示される')
+    : fail('「対戦」タブに進行パラメータが表示される');
+
+  // setup フェーズなのでルールは編集できる
+  const chips = await readMatchRuleChips(page);
+  Object.values(chips).length === 3 && Object.values(chips).every(c => !c.disabled)
+    ? pass('セットアップ中は対戦ルールのチップが有効')
+    : fail('セットアップ中は対戦ルールのチップが有効', JSON.stringify(chips));
+
+  await ss(page, '02b_settings_match_tab');
+  await closeSettingDialog(page);
 }
 
 /** テスト 3: CPU vs CPU 通常1試合 */
@@ -352,7 +404,7 @@ async function testCpuVsCpu(page) {
 async function testDoubleMatch(page) {
   section('2試合制モード');
 
-  // セットアップ画面の「対戦設定」で 2試合制 を ON (即時反映・保存ボタン不要)
+  // 設定ダイアログ「対戦」タブで 2試合制 を ON (即時反映・保存ボタン不要)
   const toggled = await setMatchRuleChip(page, '2試合制', true);
   toggled === 'OK'
     ? pass('"2試合制" チップを ON にできる')
@@ -403,18 +455,20 @@ async function testDoubleMatch(page) {
     : fail('"第2試合" バッジが表示される');
 
   // セット中はマップ・ルールを変更させない (押せるのに無反応、を防ぐ)。
-  // 説明文にも「対戦ルール」の語が含まれるため、本文ではなく操作ボタンの有無で判定する。
-  const midSetControls = await page.evaluate(() => {
-    const labels = [...document.querySelectorAll('button')]
-      .map(b => (b.textContent ?? '').replace('✓', '').trim());
-    return {
-      hasRuleChip: ['2試合制', 'リピート', 'デモ'].some(l => labels.includes(l)),
-      hasMapBtn:   labels.includes('マップ設定...'),
-    };
-  });
-  !midSetControls.hasRuleChip && !midSetControls.hasMapBtn
-    ? pass('第2試合待機中はマップ/対戦ルールの変更 UI が出ない')
-    : fail('第2試合待機中はマップ/対戦ルールの変更 UI が出ない', JSON.stringify(midSetControls));
+  // マップは入口ボタン自体を消し、対戦ルールは「対戦」タブのチップを disabled にする。
+  const hasMapBtn = await page.evaluate(() =>
+    [...document.querySelectorAll('button')].some(b => b.textContent?.trim() === 'マップ設定...')
+  );
+  !hasMapBtn
+    ? pass('第2試合待機中はフッターの「マップ設定...」が出ない')
+    : fail('第2試合待機中はフッターの「マップ設定...」が出ない');
+
+  await openMatchTab(page);
+  const midSetChips = await readMatchRuleChips(page);
+  Object.values(midSetChips).length === 3 && Object.values(midSetChips).every(c => c.disabled)
+    ? pass('第2試合待機中は対戦ルールのチップが無効になる')
+    : fail('第2試合待機中は対戦ルールのチップが無効になる', JSON.stringify(midSetChips));
+  await closeSettingDialog(page);
 
   await ss(page, '08_double_setup_round2');
 

@@ -592,11 +592,11 @@ App.tsx (ErrorBoundary でラップ)
 │   └── MainWindow.tsx      (playing/finished フェーズ)
 │
 ├── ControlApp              (?room=xxx&mode=control)
-│   ├── SettingDialog.tsx        表示/BGM/環境のみ (全フェーズ)。対戦ルールは持たない
+│   ├── SettingDialog.tsx        表示/対戦/BGM/環境 (全フェーズ)。設定の集約先
 │   ├── ProgramLibraryDialog.tsx プログラムライブラリ CRUD (setup フェーズのみ)
 │   ├── MapManagementDialog.tsx  マップ設定 (setup かつ roundResults が空のときのみ)
 │   │   └── MapEditorDialog.tsx  (MapManagementDialog の「エディタで編集...」から開く)
-│   ├── StartupDialog.tsx        セットアップ画面 = チーム設定 + 「対戦設定」ストリップ
+│   ├── StartupDialog.tsx        セットアップ画面 = COOL / マッププレビュー / HOT の3カラム
 │   └── MainWindow.tsx
 │
 └── ManualMode.tsx           (?room=xxx&mode=manual&slot=0|1 — 手動操作ウィンドウ)
@@ -631,9 +631,18 @@ App.tsx (ErrorBoundary でラップ)
 | 分類 | 例 | 真実の所在 | UI 上の置き場所 |
 |---|---|---|---|
 | A. クライアント表示設定 | `muted` `bgmTrack` `theme` `displayTitle` | localStorage (`useClientPrefs`)。storage イベントで観戦ウィンドウと同期する | `SettingDialog` (全フェーズ) |
-| B. 対戦設定・サーバー既読返し | `doubleMode` `repeatMode` `demoMode` `darkMode` | **`ServerStatusPayload`**。クライアントにキャッシュを持たない | `StartupDialog` の「対戦設定」ストリップ (`darkMode` のみ全フェーズ操作可のため `SettingDialog`) |
-| C. 対戦設定・サーバー未返却 | `timeout` `turnDelay` | クライアントのキャッシュのみ (`useMatchConfig`) | `StartupDialog` の「対戦設定」ストリップ |
+| B. 対戦設定・サーバー既読返し | `doubleMode` `repeatMode` `demoMode` `darkMode` | **`ServerStatusPayload`**。クライアントにキャッシュを持たない | `SettingDialog`「対戦」タブ (`darkMode` のみ「表示」タブ) |
+| C. 対戦設定・サーバー未返却 | `timeout` `turnDelay` | クライアントのキャッシュのみ (`useMatchConfig`) | `SettingDialog`「対戦」タブ |
+| C'. マップ生成パラメータ | `sizeIdx` `blockNum` `itemNum` `turnNum` `mirror` | クライアントのキャッシュ (`useMapGenParams`) + **サーバーも `MapManager.params` として保持** | `MapManagementDialog`「ランダム生成」 |
 | D. 環境設定 (ローカル限定) | `logDir` `pythonCommand` | クライアントのキャッシュ (`useEnvConfig`) | `SettingDialog`「環境」タブ |
+
+**分類 C' は接続後に一度 push すること。** `MapManager` は自分の `params` を使って
+起動時・`requestReset`・`requestRepeat` でマップを再生成する。クライアントが `set_map_params` を
+送らない限りサーバー側はハードコードの既定値 (15×17 / ブロック20 / アイテム51 / ターン100) を
+使い続けるため、保存済みの設定が初期マップとリセット後の再生成に効かない。`ControlApp` は
+接続後・かつ `canEditMap` かつ `mapIsCustom` が false のときに一度だけ送る (`mapIsCustom` の
+ときに送らないのは、後からコントロール窓を開いたときに選択済みのカスタムマップを
+再生成で捨ててしまわないため)。
 
 **分類 B をローカルにキャッシュして再送しないこと。** 以前は `useSettings` の値を setup フェーズに入るたび
 re-push していたため、コントロールウィンドウを複数開くと互いの古い値で上書きし合っていた。これらは
@@ -644,9 +653,10 @@ UI が受け付けると「押せるのに何も起きない」状態になる�
 
 | ゲート (`RoundController`) | 対象コマンド | UI 側の扱い |
 |---|---|---|
-| `canStart()` = `phase==='setup'` | `set_client` / `set_*_mode` / `request_start` | セットアップ画面自体が setup のときだけ描画される |
-| `canEditMap()` = `setup && roundResults.length===0` | `load_map` / `set_map_params` / `load_map_data` | 「マップ設定...」ボタンと「対戦設定」ストリップを非表示にし、`MapManagementDialog` にも `canApply` を渡して二重に塞ぐ |
-| ゲートなし | `request_reset` / `set_dark_mode` / `set_turn_delay` / `set_tcp_timeout` | `request_reset` は BottomBar に常設 (デモ/リピート/対戦中からの唯一の出口)。`darkMode` は即時反映 |
+| `canStart()` = `phase==='setup'` | `set_client` / `request_start` | セットアップ画面自体が setup のときだけ描画される |
+| `canStart()` = `phase==='setup'` | `set_*_mode` | `SettingDialog` は全フェーズで開けるため、「対戦」タブのチップを `disabled` にし理由を表示する。**UI 側は `setup && roundResults.length===0` とサーバーより厳しく塞ぐ** (セット内でルールが変わるのを防ぐため) |
+| `canEditMap()` = `setup && roundResults.length===0` | `load_map` / `set_map_params` / `load_map_data` | 「マップ設定...」ボタンを非表示にし、`MapManagementDialog` にも `canApply` を渡して二重に塞ぐ。`StartupDialog` 中央のマッププレビューは表示専用なので常に出す |
+| ゲートなし | `request_reset` / `set_dark_mode` / `set_turn_delay` / `set_tcp_timeout` | `request_reset` は BottomBar に常設 (デモ/リピート/対戦中からの唯一の出口)。`darkMode` と進行パラメータは全フェーズで編集可 (`turnDelay` は `requestStart` 時に値渡しで消費されるため、効くのは次の試合から) |
 
 ### WS URL の自動検出
 

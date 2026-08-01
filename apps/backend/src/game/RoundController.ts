@@ -7,7 +7,7 @@ export class RoundController {
   demoMode:     boolean       = false;
   currentRound: 0 | 1         = 0;
   roundResults: RoundResult[] = [];
-  turnDelayMs:  number        = 1000; // 1ターンあたりの表示待機時間 (デフォルト1秒)
+  turnDelayMs:  number        = 500;  // 1ターンあたりの表示待機時間 (デフォルト0.5秒)
 
   setDoubleMode(enabled: boolean): void {
     this.doubleMode = enabled;

@@ -14,7 +14,7 @@ export interface MatchConfig {
 
 const DEFAULTS: MatchConfig = {
   timeout:   10,
-  turnDelay: 1000,
+  turnDelay: 500,
 };
 
 const STORAGE_KEY = 'u15_match_config';
