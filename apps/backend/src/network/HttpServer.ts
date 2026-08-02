@@ -10,6 +10,7 @@ import {
   sanitizeFilename,
   sendFileDownload,
 } from './httpUtil.js';
+import { handleTournamentRequest, type TournamentRouteDeps } from '../tournament/httpRoutes.js';
 import type { InlineMapData, MapParams } from '@u15/ws-types';
 import { MapObject } from '@u15/ws-types';
 import type { RoomManager } from '../RoomManager.js';
@@ -77,6 +78,7 @@ export function handleHttpRequest(
   req: IncomingMessage,
   res: ServerResponse,
   rm?: RoomManager,
+  tournamentDeps?: TournamentRouteDeps,
 ): void {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
@@ -91,6 +93,9 @@ export function handleHttpRequest(
   const url  = new URL(req.url ?? '/', `http://${req.headers.host}`);
   const slot = url.searchParams.get('slot');
   const room = url.searchParams.get('room');
+
+  // /api/tournament/* は大会運営モジュールへ委譲する
+  if (handleTournamentRequest(req, res, url, tournamentDeps ?? { boundRoomOf: () => null })) return;
 
   // GET /api/default-room → ローカルモードで Electron が roomId を取得するエンドポイント
   if (req.method === 'GET' && url.pathname === '/api/default-room') {

@@ -7,6 +7,7 @@ import type { ManualClient } from '../clients/ManualClient.js';
 import type { RoomManager } from '../RoomManager.js';
 import { LobbyRouter } from './LobbyRouter.js';
 import { GameMessageDispatch } from './GameMessageDispatch.js';
+import type { TournamentOrchestrator } from '../tournament/TournamentOrchestrator.js';
 import type {
   GameStateSnapshot,
   ScanInfo,
@@ -21,6 +22,8 @@ export class WsServer {
   readonly httpServer: HttpServer;
 
   private rm: RoomManager | null = null;
+  /** join_room 時に追加で流すメッセージの提供元 (大会運営などが登録する) */
+  getExtraJoinMessages?: (roomId: string) => WsMessage[];
   private lobbyRouter:   LobbyRouter          | null = null;
   private gameDispatch:  GameMessageDispatch  | null = null;
 
@@ -28,6 +31,7 @@ export class WsServer {
   private readonly roomSockets     = new Map<string, Set<WebSocket>>();
   private readonly lastRoomStatus  = new Map<string, ServerStatusPayload>();
   private readonly roomManualClients = new Map<string, Map<0 | 1, ManualClient>>();
+  private tournament: TournamentOrchestrator | null = null;
 
   constructor(port: number) {
     this.httpServer = createServer();
@@ -46,6 +50,12 @@ export class WsServer {
     this.httpServer.listen(port);
   }
 
+  /** 大会運営を配線する (setRoomManager より前に呼ぶこと) */
+  setTournament(t: TournamentOrchestrator): void {
+    this.tournament = t;
+    this.getExtraJoinMessages = (roomId) => t.joinMessagesFor(roomId);
+  }
+
   setRoomManager(rm: RoomManager): void {
     this.rm = rm;
 
@@ -54,11 +64,13 @@ export class WsServer {
       getSocketRoom:     (ws)         => this.socketToRoom.get(ws),
       getLastRoomStatus: (roomId)     => this.lastRoomStatus.get(roomId),
       broadcastAll:      (msg)        => this.broadcastAll(msg),
+      getExtraJoinMessages: (roomId)  => this.getExtraJoinMessages?.(roomId) ?? [],
     });
 
     this.gameDispatch = new GameMessageDispatch(rm, {
       getRoomManualClients: (roomId) => this.roomManualClients.get(roomId),
       sendError:            (ws, message) => this.sendError(ws, message),
+      ...(this.tournament ? { tournament: this.tournament } : {}),
     });
 
     rm.onRoomStatus = (roomId, payload) => {
@@ -81,6 +93,7 @@ export class WsServer {
     };
 
     rm.onRoomDestroyed = (roomId) => {
+      this.tournament?.handleRoomDestroyed(roomId);
       this.lastRoomStatus.delete(roomId);
       this.roomManualClients.delete(roomId);
       const sockets = this.roomSockets.get(roomId);

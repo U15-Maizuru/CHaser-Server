@@ -2,6 +2,7 @@ import os from 'node:os';
 import { RoomManager } from './RoomManager.js';
 import { WsServer }    from './network/WsServer.js';
 import { handleHttpRequest, ensureDirectories } from './network/HttpServer.js';
+import { TournamentOrchestrator } from './tournament/TournamentOrchestrator.js';
 
 const PORT       = Number(process.env['PORT'] ?? 8765);
 const U15_MODE   = process.env['U15_MODE'] ?? 'local';   // 'local' | 'web'
@@ -24,7 +25,15 @@ async function main() {
   const ws = new WsServer(PORT);
   const rm = new RoomManager(U15_MODE === 'web' ? WEB_PORTS : undefined);
 
-  ws.httpServer.on('request', (req, res) => handleHttpRequest(req, res, rm));
+  // 大会運営。ServerManager 等には手を入れず、公開 API と 'status' イベントだけで駆動する
+  const tournament = new TournamentOrchestrator({
+    rm,
+    broadcast: (roomId, msg) => ws.broadcastToRoom(roomId, msg),
+  });
+  ws.setTournament(tournament);
+
+  ws.httpServer.on('request', (req, res) =>
+    handleHttpRequest(req, res, rm, { boundRoomOf: id => tournament.boundRoomOf(id) }));
   ws.setRoomManager(rm);
 
   if (U15_MODE === 'local') {
@@ -47,8 +56,8 @@ async function main() {
     console.log(`  ポートプール: ${WEB_PORTS[0]}–${WEB_PORTS[1]} (最大${(WEB_PORTS[1] - WEB_PORTS[0] + 1) >> 1}並列ルーム)`);
   }
 
-  process.on('SIGINT',  () => { rm.shutdown(); process.exit(0); });
-  process.on('SIGTERM', () => { rm.shutdown(); process.exit(0); });
+  process.on('SIGINT',  () => { tournament.shutdown(); rm.shutdown(); process.exit(0); });
+  process.on('SIGTERM', () => { tournament.shutdown(); rm.shutdown(); process.exit(0); });
 }
 
 main().catch(console.error);

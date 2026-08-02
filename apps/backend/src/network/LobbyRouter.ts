@@ -7,6 +7,12 @@ export interface LobbyRouterDeps {
   getSocketRoom:     (ws: WebSocket) => string | undefined;
   getLastRoomStatus: (roomId: string) => ServerStatusPayload | undefined;
   broadcastAll:      (msg: WsMessage | LobbyMessage) => void;
+  /**
+   * join_room 直後に、その部屋の現在状態として追加で送るメッセージ。
+   * 後から開いたウィンドウが最新状態に追いつくための汎用フック
+   * (server_status と同じ考え方。ここは中身が何かを知らない)。
+   */
+  getExtraJoinMessages?: (roomId: string) => WsMessage[];
 }
 
 /**
@@ -41,6 +47,9 @@ export class LobbyRouter {
         const lastStatus = this.deps.getLastRoomStatus(room.id);
         if (lastStatus) {
           this.send(ws, { type: 'server_status', payload: lastStatus });
+        }
+        for (const extra of this.deps.getExtraJoinMessages?.(room.id) ?? []) {
+          this.send(ws, extra);
         }
         this.send(ws, { type: 'room_joined', payload: { roomId: room.id, ports: room.ports } });
         return true;

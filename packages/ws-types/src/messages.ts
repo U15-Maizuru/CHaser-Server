@@ -1,5 +1,5 @@
 // WebSocket でやりとりするメッセージの union。
-// protocol.ts の型を参照するので、依存の順は protocol → messages。
+// protocol.ts / tournament.ts の型を参照するので、依存の順は protocol → tournament → messages。
 
 import type {
   ClientType,
@@ -14,6 +14,7 @@ import type {
   ServerStatusPayload,
   TurnStartPayload,
 } from './protocol.js';
+import type { TournamentStatePayload } from './tournament.js';
 
 // --- Commands (Frontend → Backend) ---
 
@@ -40,7 +41,17 @@ export type FrontendMessage =
   | { type: 'create_room' }
   | { type: 'join_room';         payload: { roomId: string } }
   | { type: 'list_rooms' }
-  | { type: 'destroy_room' };
+  | { type: 'destroy_room' }
+  // --- 大会運営 ---
+  | { type: 'tournament_bind';            payload: { tournamentId: string } }
+  | { type: 'tournament_unbind' }
+  | { type: 'tournament_arm_match';       payload: { matchId: string } }
+  | { type: 'tournament_confirm_result';  payload: { matchId: string; winnerSide?: 0 | 1; note?: string } }
+  | { type: 'tournament_discard_result';  payload: { matchId: string; rematchMapCatalogId?: string } }
+  | { type: 'tournament_reopen_match';    payload: { matchId: string; cascade?: boolean } }
+  | { type: 'tournament_set_walkover';    payload: { matchId: string; winnerSide: 0 | 1 | null } }
+  | { type: 'tournament_assign_program';  payload: { participantId: string; catalogId: string | null } }
+  | { type: 'tournament_rescan' };
 
 // --- Room / lobby ---
 
@@ -58,4 +69,6 @@ export type WsMessage =
   | { type: 'score_update';  payload: ScoreData }
   | { type: 'game_end';      payload: GameEndPayload }
   | { type: 'server_status'; payload: ServerStatusPayload }
-  | { type: 'manual_request'; payload: { slot: 0 | 1; aroundData: number[] } };
+  | { type: 'manual_request'; payload: { slot: 0 | 1; aroundData: number[] } }
+  /** null = この部屋に大会が紐付いていない */
+  | { type: 'tournament_state'; payload: TournamentStatePayload | null };
