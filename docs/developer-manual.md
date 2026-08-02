@@ -19,6 +19,7 @@
 10. [マルチルーム / Web サービスモード](#10-マルチルーム--web-サービスモード)
 11. [テスト](#11-テスト)
 12. [拡張ガイド](#12-拡張ガイド)
+13. [大会運営 (トーナメント / リーグ)](#13-大会運営-トーナメント--リーグ)
 
 ---
 
@@ -31,7 +32,8 @@
 | 公式用語 | 意味 | コード上の識別子 |
 |---|---|---|
 | **ゲーム** | 1回の対戦 (盤面用意 → 決着 / ターン切れ) | `round` — `currentRound` / `roundResults` / `RoundResult` / `RoundController` / `idxForSide(side, round)` / `roundPointsFor` |
-| **試合** | 同じマップで先後を入れ替えた2ゲームのまとまり | `set` — `computeSetResult` / `SetResult` / `setResult.ts`、および `doubleMode` (= 2ゲーム制) |
+| **試合** | 同じマップで先後を入れ替えた2ゲームのまとまり | `set` — `computeSetResult` / `SetResult` / `setResult.ts`、および `doubleMode` (= 2ゲーム制)<br>大会運営では `match` — `TournamentMatch` / `matchId` / `MatchStatus` (粒度は `set` と同じ) |
+| **回戦 / 節** | トーナメントの1回戦・準決勝、リーグの第N節 | `stage` — `TournamentMatch.stage`。`round` は「ゲーム」に使っているので流用しない |
 
 識別子をリネームすると `ServerStatusPayload` などのプロトコル型まで波及するため、**識別子は
 据え置き、日本語表記だけを公式用語に合わせる**方針を採っている。新しいコードを書くときも
@@ -208,6 +210,14 @@ U15-server-maizuru/
 │
 └── docs/
 ```
+
+---
+
+> 上記に加えて、大会運営機能のファイルがある (詳細は [13章](#13-大会運営-トーナメント--リーグ)):
+> `apps/backend/src/tournament/` (試合グラフ・永続化・オーケストレータ) /
+> `apps/frontend/src/components/tournament/` + `lib/bracketLayout.ts` (トーナメント表) /
+> `packages/ws-types/src/{protocol,scoring,tournament,messages}.ts` (共有型とルール計算) /
+> 実行時データは `server/tournament/<大会id>/`。
 
 ---
 
@@ -911,6 +921,11 @@ pnpm --filter @u15/backend test
 | ネットワーク | `network/TcpClient.test.ts`, `network/WsServer.test.ts`, `network/HttpServer.test.ts` |
 | ルーム・カタログ | `RoomManager.test.ts`, `programCatalog.test.ts`, `mapCatalog.test.ts`, `libTemplates.test.ts` |
 | クライアント | `clients/ProcessClient.test.ts` |
+| 大会運営 | `tournament/bracket.test.ts`, `league.test.ts`, `standings.test.ts`, `progress.test.ts`, `definition.test.ts`, `TournamentStore.test.ts`, `TournamentOrchestrator.test.ts`, `zip.test.ts`, `exporter.test.ts`, `httpRoutes.test.ts` |
+
+大会運営のテストは実ファイルシステム (`server/tournament`, `server/program-catalog`) と
+TCP ポートを共有するため、`apps/backend/vitest.config.ts` で `fileParallelism: false` にしている。
+並列実行すると互いの後片付けで消し合う。
 
 `WsServer.test.ts` は `RoomManager` を使ってルーム対応の統合テストを行います。メッセージ受信はバッファ付き `connectWs()` で競合状態を回避しています。
 
@@ -926,7 +941,12 @@ pnpm --filter @u15/frontend test
 |---|---|
 | フック | `hooks/useTextures.test.ts`, `hooks/useGamePhaseSound.test.ts`, `hooks/usePersistedState.test.ts` |
 | 得点・演出のロジック | `lib/setResult.test.ts`, `lib/roundSide.test.ts`, `lib/decisiveEffect.test.ts` |
-| コンポーネント | `components/PlayerSidePanel.test.tsx` |
+| 大会運営のロジック | `lib/bracketLayout.test.ts`, `lib/bracketSlots.test.ts` |
+| コンポーネント | `components/PlayerSidePanel.test.tsx`, `components/tournament/TournamentEditorDialog.test.tsx` |
+
+`vite.config.ts` は `globals` を有効にしていないため、React Testing Library の**自動 cleanup は動かない**。
+1つのテストファイルで複数回 `render` する場合は `afterEach(cleanup)` を自分で書くこと
+(書かないと前のテストの DOM が残り、`getByLabelText` が多重ヒットして落ちる)。
 
 canvas を多用するコンポーネント (`MapEditorDialog` / `GameBoardCanvas` など) は E2E で既にカバーされているため、フックと純粋ロジック (`lib/`) を切り出した単位でのテストを優先しています。得点表示のようにルールを直接反映する箇所は `PlayerSidePanel.test.tsx` でレンダリング結果まで確認しています。
 
@@ -947,6 +967,13 @@ node apps/electron/test-e2e.mjs
 
 Electron を Playwright から起動する際は、`app.process()` の stdout/stderr を必ず読み捨てること。
 パイプが詰まるとメイン側が停止し、ウィンドウが生成されないままタイムアウトします。
+
+**dev サーバーには `127.0.0.1` でつなぐこと。** `main.ts` の `loadUrl` と、描画側から叩く
+`fetch` の両方に効きます。Chromium 側の名前解決が詰まると (Docker Desktop などが DNS に
+割り込むと起きる) `http://localhost:5173/` の読み込みが返らず、`BrowserWindow` は
+生成されるのに `did-finish-load` が永久に来ない — Playwright からは
+「ウィンドウが0個」に見えるため原因が非常に分かりにくい。同じ URL を `127.0.0.1` /
+`[::1]` で読むと即座に通るので、切り分けにはホスト名を差し替えて試すのが早いです。
 
 ---
 
@@ -983,3 +1010,161 @@ const WEB_PORTS: [number, number] = [13000, 14999]; // デフォルト: 最大50
 ### ルーム TTL の変更
 
 `apps/backend/src/RoomManager.ts` の `ROOM_TTL_MS` を変更します (デフォルト 30分)。
+
+---
+
+## 13. 大会運営 (トーナメント / リーグ)
+
+大会当日の進行 (組み合わせの読み込み → 対戦カードの割り当て → 結果の反映 → 勝ち上がり) を
+サポートする。**トーナメントの1カード = 公式ルールの「試合」= 2ゲーム制の1セット**なので、
+勝敗判定は既存の `computeSetResult()` をそのまま使う。
+
+### 13-1. 設計方針
+
+`ServerManager` / `RoundController` / `SlotManager` / `RoomManager` に大会の知識は持たせない。
+`TournamentOrchestrator` が**公開 API と `'status'` イベントだけ**を使って外から駆動する。
+将来まるごと切り出せるよう、実装は `apps/backend/src/tournament/` に閉じている。
+
+| ファイル | 役割 |
+|---|---|
+| `definition.ts` | `tournament.json` の手書きバリデータ (日本語のエラーメッセージを返す) |
+| `bracket.ts` | 【純関数】参加者 → トーナメントの試合グラフ (標準シード順 / bye / 3位決定戦) |
+| `league.ts` | 【純関数】参加者 → リーグの試合グラフ (円卓法で節に分割) |
+| `standings.ts` | 【純関数】順位表 (勝ち点 → 合計ポイント → 直接対決) |
+| `progress.ts` | 【純関数】slot の解決・bye の自動確定・確定の取り消し |
+| `TournamentStore.ts` | 永続化・フォルダ検出・プログラムライブラリへの取り込み |
+| `zip.ts` | `node:zlib` だけで動く最小 ZIP 展開 (zip-slip 防御込み) |
+| `exporter.ts` | 結果の JSON / CSV 書き出し |
+| `TournamentOrchestrator.ts` | `ServerManager` の駆動・状態機械・配信 |
+| `httpRoutes.ts` | `/api/tournament/*` |
+
+### 13-2. データの置き場所
+
+```
+server/tournament/<大会id>/
+├── tournament.json   ← 人が書く。アプリは読むだけで絶対に書き戻さない
+├── programs/*.py     ← 参加プログラムの原本
+└── state.json        ← アプリが書く進行状態。消せば大会をやり直せる
+```
+
+`server/program-catalog` / `server/map-catalog` と同じグローバル層に置く。ルームは 30分 TTL で
+消えるため、大会データをルームに紐づけて保存してはいけない。
+
+**保存はグローバル (大会単位)、実行はルーム単位** (1大会 ⇄ 1ルームの双方向排他)。
+
+### 13-3. 押さえておくべき不変条件
+
+- **`side 0 = slotA`**: `armMatch` は必ず `slotA → スロット0 (COOL)` で第1ゲームを始める。
+  公式ルール「1回目のゲームでは選手番号の小さい選手を先攻」に対応する。第2ゲームは既存の
+  `swapSlotConfigs()` が入れ替えるので、`idxForSide(side, round)` により
+  `computeSetResult()` の `[0]/[1]` が `slotA/slotB` に一致する。
+  なお `RoundResult.playerNames` は入替**後**の順なので、表示には `resolvedA/resolvedB` を使う。
+- **`armMatch` の順序**: `requestReset()` → `setDoubleMode()` → `setClientType()` ×2。
+  `requestReset` が `resetAllToDefault()` で `processConfig` を消すため、逆順にすると割り当てが失われる。
+  また `roundResults` を空にすることで `canEditMap()` / `canStart()` の両ゲートが通る。
+- **スロットへ触る前に両者を解決する**: 片方だけ割り当ててから失敗すると
+  「COOL だけ準備完了」という中途半端な状態が残る。`resolveSlotConfig()` で先に2人ぶん解決してから
+  `setClientType` を呼ぶ。
+- **`armed` / `in_progress` は永続化しない前提**: これらはプロセス内のスロット割り当てと対になる
+  状態なので、`bind()` のたびに `ready` へ戻す (中断した運営を再開してもカードが詰まらない)。
+- **`addCatalogEntry` は渡したファイルを rename する**: 大会フォルダの原本を直接渡さず、
+  一時ファイルへコピーしてから渡すこと。登録直後に `setDemoEnabled(id, false)` でデモ抽選から外す。
+- **実施順と表示順は別物**: `TournamentMatch.order` は「同一 stage 内の**表示**順」で、
+  トーナメント表では決勝 (order 0) が上、3位決定戦 (order 1) がその下に来る。
+  一方**実施順は3位決定戦が先** — 決勝を締めくくりにするためで、両者は依存関係が無いので選べる。
+  「次の試合」を出す箇所は必ず `compareByPlayOrder` (`@u15/ws-types`) を使うこと。
+  `nextReadyMatch` (backend) と `TournamentPanel` の両方がこれを共有している。
+  なお `resolveMatches` / `downstreamOf` の `stage → order` ソートは依存解決のためのもので、
+  同一 stage 内の順序に意味は無いのでそのままでよい。
+
+### 13-4. 同点 (`winnerSide === null`) の扱い
+
+`calculateBonusBreakdown` は勝者が定まらない決着では加点しないため、引き分けゲームのポイントは
+アイテム×10 のみになる。1勝1敗や2引き分けで合計が並ぶのは**通常運用の範囲**で起こる。
+
+- **リーグ**: 引き分けは正当な結果。そのまま確定できる。
+- **トーナメント**: `confirmResult` は勝者不在のままの確定を**拒否する** (詰み防止)。UI では
+  ①マップを変更して再試合 ②審判裁定で勝者を指定 ③両者敗退 の3択を出す。
+  固定マップ運用 (`rules.mapCatalogId`) では、公式ルール「マップを変更して再試合」に従い
+  別マップを指定しないと `discardResult` が通らない。
+
+### 13-5. WebSocket / HTTP
+
+`FrontendMessage` に `tournament_bind` / `tournament_unbind` / `tournament_arm_match` /
+`tournament_confirm_result` / `tournament_discard_result` / `tournament_reopen_match` /
+`tournament_set_walkover` / `tournament_assign_program` / `tournament_rescan` を追加。
+失敗は握りつぶさず `error` メッセージで理由を返す。
+
+`WsMessage` に `tournament_state` (`TournamentStatePayload | null`) を追加し、bind 中の
+ルームへ丸ごと配信する。後から開いたウィンドウには、`WsServer.getExtraJoinMessages` という
+汎用フック経由で `join_room` 直後にリプレイする (`WsServer` / `LobbyRouter` は「大会」を知らない)。
+
+| エンドポイント | メソッド | 説明 |
+|---|---|---|
+| `/api/tournament` | GET | 検出済み大会の一覧 |
+| `/api/tournament/scan` | POST | `server/tournament/` の再走査 |
+| `/api/tournament/import` | POST | 定義 JSON をボディで取り込み |
+| `/api/tournament/upload` | POST | `.zip` / `.json` のアップロード |
+| `/api/tournament/:id` | GET / DELETE | 詳細プレビュー (`{ state, definition }`) / 削除 |
+| `/api/tournament/:id/reset` | POST | 進行状態のみ初期化 |
+| `/api/tournament/:id/assign` | POST | プログラムライブラリのエントリをまとめて紐付け |
+| `/api/tournament/:id/export` | GET | `?format=json / matches.csv / standings.csv` |
+
+> **ルーティング順序に注意**: `handleTournamentRequest` は固定セグメント (`scan` / `import` /
+> `upload`) を `:id` パターンより先に判定する。逆にすると `id === 'scan'` と解釈されてしまう。
+
+作成 UI (13-7) のために、`GET /api/tournament/:id` は配信用の `state` に加えて生の
+`definition` も返す。`bracket.slots` や `program.file` は `TournamentStatePayload` に現れないため、
+これが無いと編集画面が元の指定を復元できない。
+
+`POST /api/tournament/import` は `?reset=1` で取り込み後に進行状態を作り直す。
+`loadTournament` の噛み合わせ判定 (`stateMatchesDefinition`) は participant id しか見ないので、
+**参加者を変えずに形式やルールだけ変えた上書き**を検知できない。上書き保存では必ず付けること。
+
+運営中 (bind 中) の大会に対する `import` の上書きと `assign` は **409 で拒否する**。
+オーケストレータが進行状態をメモリに握っているため、裏から `state.json` を書き換えると食い違う。
+運営中の割り当ては WS の `tournament_assign_program` を使う。
+
+### 13-6. フロントエンド
+
+| ファイル | 役割 |
+|---|---|
+| `lib/bracketLayout.ts` | 【純関数】試合グラフ → カード座標と接続線のパス |
+| `lib/bracketSlots.ts` | 【純関数】組み合わせ編集のスロット操作 (`autoSlots` / `fitSlots` / 試合数の見積り) |
+| `components/tournament/BracketView.tsx` | トーナメント表。接続線は SVG、カードは絶対配置の DOM |
+| `components/tournament/LeagueTable.tsx` | リーグの星取表 + 順位表 (素の DOM) |
+| `components/tournament/MatchCard.tsx` | 1試合のカード。3画面で共用 (`interactive` で操作の有無を切替) |
+| `components/tournament/TournamentPanel.tsx` | 運営パネル (大会の選択・取り込み・次の一手) |
+| `components/tournament/ResultConfirmDialog.tsx` | 結果確定。同点時の3択を出す |
+| `components/tournament/TournamentEditorDialog.tsx` | 大会データの作成・編集フォーム (13-7) |
+| `components/tournament/TournamentMode.tsx` | `?mode=tournament` のルート |
+
+大会の状態は `useGameState` が `tournament_state` を受けて保持する
+(「サーバーが返す状態はクライアントにキャッシュしない」方針 = 分類 B。localStorage には置かない)。
+新しいフックを作らないのは、control 画面で WebSocket が2本になるのを避けるため。
+
+**ブラケット描画をハイブリッドにした理由**: Canvas だと DPR 対応・テキスト省略・当たり判定を
+全部自前で書くことになり、静的な図には割に合わない。DOM だけだと bye や回戦数の変化で
+接続線が破綻する。線だけ SVG にすれば両方の問題が消える。
+
+### 13-7. 大会データ作成 UI
+
+`TournamentEditorDialog` は **`tournament.json` をフォームで書くための道具**であって、
+独自の保存経路を持たない。保存先は既存の取り込み口 `POST /api/tournament/import` なので、
+手で書いた JSON・zip で取り込んだ大会と出来上がるものは完全に同じ。新しい大会形式を
+足すときは、まず `definition.ts` のスキーマを広げてからこの画面に項目を足す。
+
+**プログラムの割り当てを定義に書かない理由**: プログラムライブラリの `catalogId` は
+その PC の `server/program-catalog` でしか通じない。配布物である `tournament.json` に
+書くと別の PC で壊れるので、`POST /api/tournament/:id/assign` 経由で `state.json` 側へ保存する。
+一方 `{ builtin: 'cpu' }` と `{ file: ... }` は移植できるので定義に残す。
+編集時は `GET /api/tournament/:id` の `state.participants[].programCatalogId` から復元する。
+
+**シード配置の共有**: 「手動で指定する」の初期値は、サーバーが自動生成するのと
+寸分違わぬ並びでなければならない。そのため `seedOrder` / `bracketSizeFor` は
+`@u15/ws-types` (`tournament.ts`) に置き、`apps/backend/src/tournament/bracket.ts` は
+そこから re-export している。二重定義すると必ずズレる。
+
+**参加者 id の扱い**: 表示順がそのまま `seed` (選手番号 = 第1ゲームの先攻順) になる。
+新しい行には `p01`, `p02`, … を採番するが、**既存の大会を編集するときは元の id を必ず保つ**。
+`state.json` の `programs` マップと `bracket.slots` が id で参照しているため。
