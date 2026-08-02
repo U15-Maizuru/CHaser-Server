@@ -800,6 +800,125 @@ async function main() {
     await wait(800);
     console.log('  (ターン表示時間を 0ms に設定しました)');
 
+
+// ── 大会運営 ─────────────────────────────────────────────────────────────────
+
+const E2E_CUP_ID  = 'e2e-cup';
+const E2E_CUP_DIR = path.join(PROJECT_ROOT, 'server/tournament', E2E_CUP_ID);
+
+/** 全員 内蔵CPU の4人トーナメントを書き出す (Python 不要で最後まで回せる) */
+function writeE2ECup() {
+  fs.mkdirSync(E2E_CUP_DIR, { recursive: true });
+  fs.writeFileSync(path.join(E2E_CUP_DIR, 'tournament.json'), JSON.stringify({
+    formatVersion: 1,
+    id: E2E_CUP_ID,
+    name: 'E2E杯',
+    format: 'single-elimination',
+    rules: { doubleMode: false },
+    participants: [
+      { id: 'e1', name: 'E2E-A', seed: 1, program: { builtin: 'cpu' } },
+      { id: 'e2', name: 'E2E-B', seed: 2, program: { builtin: 'cpu' } },
+      { id: 'e3', name: 'E2E-C', seed: 3, program: { builtin: 'cpu' } },
+      { id: 'e4', name: 'E2E-D', seed: 4, program: { builtin: 'cpu' } },
+    ],
+  }, null, 2));
+}
+
+/** 非同期に描画される要素を待ってからクリックする */
+async function clickWhenReady(page, text, timeoutMs = 15000) {
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) {
+    if (await clickText(page, text) === 'OK') return 'OK';
+    await wait(300);
+  }
+  return 'TIMEOUT';
+}
+
+async function testTournament(app, page) {
+  section('大会運営 (トーナメント)');
+
+  writeE2ECup();
+
+  // Electron では「大会運営...」は専用ウィンドウを開く
+  await clickWhenReady(page, '大会運営');
+
+  let tw = null;
+  const deadline = Date.now() + 25000;
+  while (Date.now() < deadline) {
+    tw = app.windows().find(w => w.url().includes('mode=tournament'));
+    if (tw) break;
+    await wait(300);
+  }
+
+  if (!tw) {
+    fail('大会運営ウィンドウが開く');
+    return;
+  }
+  pass('大会運営ウィンドウが開く');
+  await tw.waitForSelector('button', { timeout: 15000 }).catch(() => {});
+  await wait(1200);
+
+  // 一覧に E2E杯 が出ているか (フォルダ配置 → 自動検出)
+  (await bodyText(tw)).includes('E2E杯')
+    ? pass('server/tournament/ に置いた大会が一覧に出る')
+    : fail('server/tournament/ に置いた大会が一覧に出る');
+
+  // 運営開始 → ブラケットが描画される
+  await clickWhenReady(tw, 'この大会を運営');
+  await wait(2000);
+  await ss(tw, 'tournament-bracket');
+
+  const bracket = await tw.evaluate(() => ({
+    paths: document.querySelectorAll('svg path').length,
+    cards: [...document.querySelectorAll('div')]
+      .filter(d => d.style.position === 'absolute' && d.style.left && d.style.top).length,
+  }));
+  bracket.paths >= 2 && bracket.cards >= 3
+    ? pass(`トーナメント表が描画される (線${bracket.paths} カード${bracket.cards})`)
+    : fail('トーナメント表が描画される', JSON.stringify(bracket));
+
+  const twText = await bodyText(tw);
+  twText.includes('準決勝') && twText.includes('決勝')
+    ? pass('回戦の見出しが出る')
+    : fail('回戦の見出しが出る');
+
+  // 試合を準備 → コントロール画面のスロットへ自動割り当てされる
+  await clickWhenReady(tw, 'この試合を準備');
+  await wait(2500);
+
+  const ctrl = await bodyText(page);
+  (ctrl.match(/準備完了/g) ?? []).length >= 2
+    ? pass('両スロットにプログラムが自動割り当てされる')
+    : fail('両スロットにプログラムが自動割り当てされる');
+  await ss(page, 'tournament-armed');
+
+  // 対戦表示画面 (待機中) にもブラケットが出る
+  const dw = app.windows().find(w => w.url().includes('mode=display'));
+  if (dw) {
+    const d = await dw.evaluate(() => document.querySelectorAll('svg path').length);
+    d >= 2 ? pass('対戦表示画面の待機中にブラケットが出る')
+           : fail('対戦表示画面の待機中にブラケットが出る', `paths=${d}`);
+    await ss(dw, 'tournament-display');
+  }
+
+  // エクスポート
+  const exported = await tw.evaluate(async (id) => {
+    const res = await fetch(`http://localhost:8765/api/tournament/${id}/export?format=matches.csv`);
+    const txt = await res.text();
+    return { status: res.status, head: txt.split(String.fromCharCode(13, 10))[0] ?? '' };
+  }, E2E_CUP_ID);
+  exported.status === 200 && exported.head.includes('試合ID')
+    ? pass('試合結果 CSV をエクスポートできる')
+    : fail('試合結果 CSV をエクスポートできる', JSON.stringify(exported));
+
+  // 後始末: 運営を終了してから大会フォルダを消す
+  await clickWhenReady(tw, '運営を終了', 5000);
+  await wait(800);
+  await tw.close().catch(() => {});
+  fs.rmSync(E2E_CUP_DIR, { recursive: true, force: true });
+}
+
+
     // テストスイート実行
     await testSetupUI(page);
     await testSettingsDialog(page);
@@ -807,6 +926,7 @@ async function main() {
     await testCpuVsCpu(page);
     await testDoubleMatch(page);
     await testManualMode(app, page);
+    await testTournament(app, page);
 
   } catch (err) {
     console.error('\n  FATAL:', err.message);

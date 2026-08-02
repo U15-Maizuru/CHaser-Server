@@ -25,4 +25,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   openManualWindow: (slot: 0 | 1): Promise<void> =>
     ipcRenderer.invoke('manual:openWindow', slot),
+
+  openTournamentWindow: (): Promise<void> =>
+    ipcRenderer.invoke('tournament:openWindow'),
 });

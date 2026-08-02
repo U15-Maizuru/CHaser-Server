@@ -1,10 +1,12 @@
-import type { ServerStatusPayload } from '@u15/ws-types';
+import type { ServerStatusPayload, TournamentStatePayload } from '@u15/ws-types';
 import { DEFAULT_DISPLAY_PREFS } from '@u15/ws-types';
 import { useGameState } from '../hooks/useGameState';
 import { useGamePhaseSound } from '../hooks/useGamePhaseSound';
 import { useStartCountdown } from '../hooks/useStartCountdown';
 import { useBgm } from '../hooks/useBgm';
 import { MainWindow } from './MainWindow';
+import { BracketView } from './tournament/BracketView';
+import { LeagueTable } from './tournament/LeagueTable';
 import { idxForSide } from '../lib/roundSide';
 import { roundPointsFor } from '../lib/setResult';
 import {
@@ -39,7 +41,13 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
   }
 
   if (phase === 'setup') {
-    return <SetupWaiting serverStatus={serverStatus} displayTitle={prefs.displayTitle} />;
+    return (
+      <SetupWaiting
+        serverStatus={serverStatus}
+        displayTitle={prefs.displayTitle}
+        tournament={state.tournamentState}
+      />
+    );
   }
 
   return (
@@ -82,7 +90,12 @@ const TEAM_COLORS = [
   { label: 'HOT',  color: HOT_COLOR,  dark: HOT_DARK,  pale: HOT_PALE  },
 ] as const;
 
-function SetupWaiting({ serverStatus, displayTitle }: { serverStatus: ServerStatusPayload | null; displayTitle: string }) {
+function SetupWaiting({ serverStatus, displayTitle, tournament }: {
+  serverStatus: ServerStatusPayload | null;
+  displayTitle: string;
+  /** 大会運営中なら、待機中にトーナメント表 / リーグ表を見せる */
+  tournament?: TournamentStatePayload | null;
+}) {
   const clients      = serverStatus?.clients;
   const doubleMode   = serverStatus?.doubleMode ?? false;
   const currentRound = serverStatus?.currentRound ?? 0;
@@ -131,6 +144,24 @@ function SetupWaiting({ serverStatus, displayTitle }: { serverStatus: ServerStat
           <TeamCard idx={rightIdx} name={clients[rightIdx].name || '---'} state={clients[rightIdx].state} />
         </div>
       )}
+
+      {/* 大会運営中は勝ち上がりを観客に見せる (待機中の間だけ) */}
+      {tournament && (
+        <div style={sw.bracket}>
+          {tournament.format === 'league' ? (
+            <LeagueTable
+              matches={tournament.matches}
+              participants={tournament.participants}
+              standings={tournament.standings ?? []}
+            />
+          ) : (
+            <BracketView
+              matches={tournament.matches}
+              participants={tournament.participants}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -163,9 +194,15 @@ const splash: Record<string, React.CSSProperties> = {
 
 const sw: Record<string, React.CSSProperties> = {
   root: {
-    height: '100vh', display: 'flex', flexDirection: 'column',
+    // 大会のトーナメント表が入ると縦に伸びるので、中央寄せのまま縦スクロールできるようにする
+    minHeight: '100vh', display: 'flex', flexDirection: 'column',
     alignItems: 'center', justifyContent: 'center',
-    background: BG_ROOT, fontFamily: FONT_UI, gap: 40,
+    background: BG_ROOT, fontFamily: FONT_UI, gap: 40, padding: '32px 16px',
+    boxSizing: 'border-box',
+  },
+  // 待機中に見せる勝ち上がり表。横に長い図なので中身側でスクロールさせる
+  bracket: {
+    maxWidth: '100%', display: 'flex', justifyContent: 'center',
   },
   titleWrap: { textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 8 },
   title: { fontSize: 38, fontWeight: 800, letterSpacing: '0.05em', color: TEXT_PRIMARY },

@@ -12,6 +12,8 @@ import { SettingDialog }   from './components/SettingDialog';
 import { MapEditorDialog } from './components/MapEditorDialog';
 import { MapLibraryDialog } from './components/MapLibraryDialog';
 import { ProgramLibraryDialog } from './components/ProgramLibraryDialog';
+import { TournamentPanel } from './components/tournament/TournamentPanel';
+import { TournamentMode }  from './components/tournament/TournamentMode';
 import { DisplayMode }     from './components/DisplayMode';
 import { ManualMode }      from './components/ManualMode';
 import { ErrorBoundary }   from './components/ErrorBoundary';
@@ -40,6 +42,9 @@ export default function App() {
   if (MODE === 'manual') {
     return <ErrorBoundary><ManualMode wsUrl={WS_URL} roomId={ROOM_ID} slot={SLOT} /></ErrorBoundary>;
   }
+  if (MODE === 'tournament') {
+    return <ErrorBoundary><TournamentMode wsUrl={WS_URL} roomId={ROOM_ID} httpBase={HTTP_BASE} /></ErrorBoundary>;
+  }
   return <ErrorBoundary><ControlApp roomId={ROOM_ID} /></ErrorBoundary>;
 }
 
@@ -61,6 +66,7 @@ function ControlApp({ roomId }: { roomId: string }) {
   const [showMapLibrary,     setShowMapLibrary]     = useState(false);
   const [showMapEditor,      setShowMapEditor]      = useState(false);
   const [showProgramLibrary, setShowProgramLibrary] = useState(false);
+  const [showTournament,     setShowTournament]     = useState(false);
   const [currentMap,         setCurrentMap]         = useState<InlineMapData | null>(null);
   const [editorSeed,         setEditorSeed]         = useState<EditableMap | null>(null);
 
@@ -267,6 +273,21 @@ function ControlApp({ roomId }: { roomId: string }) {
         />
       )}
 
+      {showTournament && (
+        <div style={tournamentOverlay}>
+          <div style={tournamentSheet} data-testid="tournament-sheet">
+            <TournamentPanel
+              state={state.tournamentState}
+              httpBase={HTTP_BASE}
+              commands={state.tournament}
+              lastError={state.lastError}
+              clearError={state.clearError}
+              onClose={() => setShowTournament(false)}
+            />
+          </div>
+        </div>
+      )}
+
       <div style={controlLayout}>
         <div style={controlContent}>
           {phase === 'setup' ? (
@@ -313,6 +334,13 @@ function ControlApp({ roomId }: { roomId: string }) {
           onReset={state.requestReset}
           onOpenMapLibrary={() => setShowMapLibrary(true)}
           onOpenProgramLibrary={() => setShowProgramLibrary(true)}
+          onOpenTournament={() => {
+            // Electron では運営席の専用ウィンドウを開く。ブラウザではダイアログで代用する
+            if (window.electronAPI) void window.electronAPI.openTournamentWindow();
+            else setShowTournament(true);
+          }}
+          onOpenTournamentPanel={() => setShowTournament(true)}
+          tournamentName={state.tournamentState?.name ?? null}
           onOpenSettings={() => setShowSettings(true)}
           onToggleFullscreen={window.electronAPI
             ? () => void window.electronAPI?.toggleDisplayFullscreen()
@@ -322,6 +350,19 @@ function ControlApp({ roomId }: { roomId: string }) {
     </>
   );
 }
+
+const tournamentOverlay: React.CSSProperties = {
+  position: 'fixed', inset: 0, background: 'rgba(30,24,48,0.45)',
+  display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 900, padding: 16,
+};
+
+const tournamentSheet: React.CSSProperties = {
+  background: '#faf7ff', borderRadius: 20, padding: 18,
+  // flex アイテムの自動最小サイズ (min-width:auto) が効くと中身の幅で押し広げられるため、
+  // minWidth:0 と boxSizing を明示してシート幅を確実に閉じ込める
+  width: 620, maxWidth: '100%', minWidth: 0, boxSizing: 'border-box',
+  maxHeight: '92vh', overflowY: 'auto',
+};
 
 const controlLayout: React.CSSProperties = {
   display: 'flex', flexDirection: 'column', height: '100vh',

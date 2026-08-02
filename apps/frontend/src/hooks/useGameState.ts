@@ -10,9 +10,23 @@ import type {
   MapParams,
   ProcessConfig,
   ServerStatusPayload,
+  TournamentStatePayload,
   TurnStartPayload,
   WsMessage,
 } from '@u15/ws-types';
+
+/** 大会運営の操作。サーバーが受け付けなければ error メッセージで理由が返る */
+export interface TournamentCommands {
+  bind:     (tournamentId: string) => void;
+  unbind:   () => void;
+  arm:      (matchId: string) => void;
+  confirm:  (matchId: string, winnerSide?: 0 | 1, note?: string) => void;
+  discard:  (matchId: string, rematchMapCatalogId?: string) => void;
+  reopen:   (matchId: string, cascade?: boolean) => void;
+  walkover: (matchId: string, winnerSide: 0 | 1 | null) => void;
+  assignProgram: (participantId: string, catalogId: string | null) => void;
+  rescan:   () => void;
+}
 
 export interface GameStateHook {
   snapshot:     GameStateSnapshot   | null;
@@ -21,6 +35,11 @@ export interface GameStateHook {
   serverStatus: ServerStatusPayload | null;
   isConnected:  boolean;
   manualRequest: { slot: 0 | 1; aroundData: number[] } | null;
+  /** この部屋で運営中の大会。紐付いていなければ null */
+  tournamentState: TournamentStatePayload | null;
+  /** サーバーが操作を断った理由 (表示したら clearError で消す) */
+  lastError:    string | null;
+  clearError:   () => void;
   // Commands
   setClient:        (slot: 0 | 1, type: ClientType, processConfig?: ProcessConfig) => void;
   deleteProgram:    (slot: 0 | 1) => void;
@@ -41,6 +60,7 @@ export interface GameStateHook {
   loadMap:          (catalogId: string) => void;
   setMapParams:     (params: MapParams) => void;
   loadMapData:      (data: InlineMapData) => void;
+  tournament:       TournamentCommands;
 }
 
 export function useGameState(wsUrl: string, roomId: string): GameStateHook {
@@ -50,6 +70,8 @@ export function useGameState(wsUrl: string, roomId: string): GameStateHook {
   const [serverStatus,  setServerStatus]  = useState<ServerStatusPayload | null>(null);
   const [isConnected,   setIsConnected]   = useState(false);
   const [manualRequest, setManualRequest] = useState<{ slot: 0 | 1; aroundData: number[] } | null>(null);
+  const [tournamentState, setTournamentState] = useState<TournamentStatePayload | null>(null);
+  const [lastError,     setLastError]     = useState<string | null>(null);
 
   const wsRef    = useRef<WebSocket | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -81,7 +103,13 @@ export function useGameState(wsUrl: string, roomId: string): GameStateHook {
         case 'room_joined':
         case 'room_list':
         case 'room_created':
+          break;
+        // 大会運営の操作が断られた理由などが届く (黙って消さず UI に見せる)
         case 'error':
+          setLastError(msg.payload.message);
+          break;
+        case 'tournament_state':
+          setTournamentState(msg.payload);
           break;
         case 'server_status':
           setServerStatus(msg.payload);
@@ -133,6 +161,9 @@ export function useGameState(wsUrl: string, roomId: string): GameStateHook {
     serverStatus,
     isConnected,
     manualRequest,
+    tournamentState,
+    lastError,
+    clearError:       ()                           => setLastError(null),
     setClient:        (slot, type, processConfig) => send({ type: 'set_client',        payload: { slot, clientType: type, processConfig } }),
     deleteProgram:    (slot)                       => send({ type: 'delete_program',    payload: { slot } }),
     requestStart:     ()                           => send({ type: 'request_start' }),
@@ -152,5 +183,19 @@ export function useGameState(wsUrl: string, roomId: string): GameStateHook {
     loadMap:          (catalogId)                  => send({ type: 'load_map',          payload: { catalogId } }),
     setMapParams:     (params)                     => send({ type: 'set_map_params',    payload: params }),
     loadMapData:      (data)                       => send({ type: 'load_map_data',     payload: data }),
+    tournament: {
+      bind:     (tournamentId)        => send({ type: 'tournament_bind',           payload: { tournamentId } }),
+      unbind:   ()                    => send({ type: 'tournament_unbind' }),
+      arm:      (matchId)             => send({ type: 'tournament_arm_match',      payload: { matchId } }),
+      confirm:  (matchId, winnerSide, note) =>
+        send({ type: 'tournament_confirm_result', payload: { matchId, winnerSide, note } }),
+      discard:  (matchId, rematchMapCatalogId) =>
+        send({ type: 'tournament_discard_result', payload: { matchId, rematchMapCatalogId } }),
+      reopen:   (matchId, cascade)    => send({ type: 'tournament_reopen_match',   payload: { matchId, cascade } }),
+      walkover: (matchId, winnerSide) => send({ type: 'tournament_set_walkover',   payload: { matchId, winnerSide } }),
+      assignProgram: (participantId, catalogId) =>
+        send({ type: 'tournament_assign_program', payload: { participantId, catalogId } }),
+      rescan:   ()                    => send({ type: 'tournament_rescan' }),
+    },
   };
 }

@@ -10,7 +10,12 @@ interface Props {
   onReset:              () => void;
   onOpenMapLibrary:  () => void;
   onOpenProgramLibrary: () => void;
+  onOpenTournament:     () => void;
+  /** 専用ウィンドウを開く環境でも、その場で操作したいとき用 */
+  onOpenTournamentPanel: () => void;
   onOpenSettings:       () => void;
+  /** 大会運営中はバッジを出す */
+  tournamentName?:      string | null;
   onToggleFullscreen?:  () => void;  // Electron ローカル起動時のみ
 }
 
@@ -27,7 +32,8 @@ interface Props {
 export function BottomBar({
   isConnected, status,
   onStart, onNextRound, onRepeat, onReset,
-  onOpenMapLibrary, onOpenProgramLibrary, onOpenSettings, onToggleFullscreen,
+  onOpenMapLibrary, onOpenProgramLibrary, onOpenTournament, onOpenTournamentPanel,
+  onOpenSettings, onToggleFullscreen, tournamentName,
 }: Props) {
   const allReady = status.clients.every(c => c.state === 'ready');
   const { phase, doubleMode, repeatMode, roundResults } = status;
@@ -95,6 +101,14 @@ export function BottomBar({
 
       {/* 右: フェーズに関係なく常に使えるもの */}
       <div style={s.rightCluster}>
+        <button
+          style={s.btnSecondary}
+          onClick={onOpenTournament}
+          onContextMenu={e => { e.preventDefault(); onOpenTournamentPanel(); }}
+          title={tournamentName ? `運営中: ${tournamentName}` : '大会を運営する (右クリックでこの画面に表示)'}
+        >
+          大会運営...{tournamentName ? ' ●' : ''}
+        </button>
         <button style={s.btnSecondary} onClick={onOpenSettings}>設定</button>
         {onToggleFullscreen && (
           <button style={s.btnIcon} title="観戦画面を全画面化" onClick={onToggleFullscreen}>⛶</button>

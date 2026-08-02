@@ -7,6 +7,7 @@ interface ElectronAPI {
   openPythonExe:   () => Promise<string | null>;
   toggleDisplayFullscreen: () => Promise<boolean>;
   openManualWindow:        (slot: 0 | 1) => Promise<void>;
+  openTournamentWindow:    () => Promise<void>;
 }
 
 interface Window {

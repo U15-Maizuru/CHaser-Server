@@ -158,6 +158,26 @@ function createManualWindow(roomId: string, slot: 0 | 1): void {
   manualWindows[slot] = win;
 }
 
+// ── 大会運営ウィンドウ (必要時のみ) ────────────────────────────────────────
+let tournamentWindow: BrowserWindow | null = null;
+
+function createTournamentWindow(roomId: string): void {
+  if (tournamentWindow && !tournamentWindow.isDestroyed()) {
+    tournamentWindow.focus();
+    return;
+  }
+  const win = new BrowserWindow({
+    width: 1440,
+    height: 900,
+    title: 'U15 Server Maizuru — 大会運営',
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), ...WEB_PREFS },
+  });
+  win.removeMenu();
+  loadUrl(win, `?room=${roomId}&mode=tournament`);
+  win.on('closed', () => { tournamentWindow = null; });
+  tournamentWindow = win;
+}
+
 app.whenReady().then(async () => {
   ipcMain.handle('dialog:openFile', async () => {
     const result = await dialog.showOpenDialog({
@@ -219,6 +239,10 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('manual:openWindow', (_e, slot: 0 | 1) => {
     createManualWindow(roomId, slot);
+  });
+
+  ipcMain.handle('tournament:openWindow', () => {
+    createTournamentWindow(roomId);
   });
 
   createDisplayWindow(roomId);
