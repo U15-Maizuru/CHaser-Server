@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type {
   CatalogEntry, TournamentStatePayload, TournamentSummary,
 } from '@u15/ws-types';
+import { compareByPlayOrder } from '@u15/ws-types';
 import type { TournamentCommands } from '../../hooks/useGameState';
 import { MatchCard } from './MatchCard';
 import { ResultConfirmDialog } from './ResultConfirmDialog';
@@ -53,9 +54,8 @@ export function TournamentPanel({
   const awaiting = state?.matches.find(m => m.status === 'awaiting_confirm') ?? null;
   const nextReady = useMemo(() => {
     if (!state) return null;
-    return [...state.matches]
-      .filter(m => m.status === 'ready')
-      .sort((a, b) => a.stage - b.stage || a.order - b.order)[0] ?? null;
+    // 実施順はバックエンドの nextReadyMatch と同じ規則 (3位決定戦は決勝より先)
+    return [...state.matches].filter(m => m.status === 'ready').sort(compareByPlayOrder)[0] ?? null;
   }, [state]);
 
   const unassigned = state?.participants.filter(p => !p.builtinCpu && !p.programCatalogId) ?? [];

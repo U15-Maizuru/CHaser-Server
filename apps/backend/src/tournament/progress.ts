@@ -3,6 +3,7 @@ import type {
   TournamentMatch,
   TournamentMatchResult,
 } from '@u15/ws-types';
+import { compareByPlayOrder } from '@u15/ws-types';
 
 // 試合グラフの進行 (slot の解決・bye の自動確定・確定の取り消し) を行う純関数。
 // 入力の配列は破壊せず、常に新しい配列を返す。
@@ -216,9 +217,9 @@ function clearFrom(
   });
 }
 
-/** 次に実施すべき試合 (ready のうち stage/order が最小のもの) */
+/** 次に実施すべき試合 (ready のうち実施順が最も早いもの。3位決定戦は決勝より先) */
 export function nextReadyMatch(matches: TournamentMatch[]): TournamentMatch | null {
   return [...matches]
     .filter(m => m.status === 'ready')
-    .sort((a, b) => a.stage - b.stage || a.order - b.order)[0] ?? null;
+    .sort(compareByPlayOrder)[0] ?? null;
 }

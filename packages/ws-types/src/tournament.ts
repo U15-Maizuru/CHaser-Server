@@ -144,6 +144,34 @@ export interface TournamentMatch {
   rematchMapCatalogId?: string;
 }
 
+/**
+ * 敗者同士の試合 (3位決定戦)。
+ *
+ * 勝者戦 (決勝) と同じ stage に置かれるが、参照するのは前の stage の敗者なので
+ * 依存関係は無く、どちらを先に実施してもよい。実施順は compareByPlayOrder が決める。
+ */
+export function isConsolationMatch(m: TournamentMatch): boolean {
+  return m.slotA.kind === 'loser-of' || m.slotB.kind === 'loser-of';
+}
+
+/**
+ * 実施順の比較。stage → (敗者戦が先) → order の昇順。
+ *
+ * **3位決定戦は決勝より先に実施する。** 決勝を大会の締めくくりにするための運営順で、
+ * 両者に依存関係が無いから選べる順序でもある。
+ *
+ * `order` を入れ替えないのは、それが「同一 stage 内の表示順」だから —
+ * トーナメント表では決勝が上、3位決定戦がその下に来るのが通例で、
+ * 実施順と表示順は別物として扱う。
+ */
+export function compareByPlayOrder(a: TournamentMatch, b: TournamentMatch): number {
+  if (a.stage !== b.stage) return a.stage - b.stage;
+  const ca = isConsolationMatch(a) ? 0 : 1;
+  const cb = isConsolationMatch(b) ? 0 : 1;
+  if (ca !== cb) return ca - cb;
+  return a.order - b.order;
+}
+
 // --- 配信ペイロード ---
 
 export interface ResolvedParticipant {
