@@ -193,8 +193,8 @@ async function waitForGameEnd(page, timeoutMs = 40000) {
   return waitFor(page, 'セットアップに戻る', timeoutMs);
 }
 
-/** ゲーム中 (ボード表示) を確認 — 左右のサイドパネルは1試合制/2試合制のどちらでも
- *  「合計ポイント」を表示する (1試合制は単独の大きい数値、2試合制は TOTAL 欄の1セル) */
+/** ゲーム中 (ボード表示) を確認 — 1試合制のサイドパネルは主役として「合計ポイント」を
+ *  大きく表示する (2試合制は明細 + TOTAL 欄の「合計」なので、この文字列では判定できない) */
 async function waitForGameStart(page, timeoutMs = 15000) {
   const found = await waitFor(page, '合計ポイント', timeoutMs);
   return found;
@@ -439,6 +439,16 @@ async function testDoubleMatch(page) {
     ? pass('試合1のポイントが ScorePanel に表示される')
     : fail('試合1のポイントが ScorePanel に表示される');
 
+  // 2試合制のサイドパネルは1試合ぶんの得点明細 (アイテム/一撃/総取り → 小計) を出す
+  ['アイテム', '一撃', '総取り', '小計'].every(t => r1Text.includes(t))
+    ? pass('2試合制パネルに得点明細 (アイテム/一撃/総取り/小計) が並ぶ')
+    : fail('2試合制パネルに得点明細 (アイテム/一撃/総取り/小計) が並ぶ', r1Text.slice(0, 200));
+
+  // 第2試合は「未対戦」として枠だけ確保しておく (状態が進んでも高さがずれないようにするため)
+  r1Text.includes('未対戦')
+    ? pass('未対戦の第2試合が「未対戦」として表示される')
+    : fail('未対戦の第2試合が「未対戦」として表示される');
+
   await ss(page, '07_round1_result');
 
   // 次戦スタート → セットアップ画面に戻る → 第2試合開始
@@ -486,11 +496,19 @@ async function testDoubleMatch(page) {
     ? pass('最終結果 (合計ポイント) が表示される')
     : fail('最終結果 (合計ポイント) が表示される', `text: ${finalText.slice(0,200)}`);
 
-  // セット全体の勝者 (2試合の合計ポイントで決まる) は、勝者側パネルの TOTAL 欄の 🏆 で示す。
+  // セット全体の勝者 (勝利数 → 同数なら合計ポイント) は、勝者側パネルの TOTAL 欄の 🏆 で示す。
   // フッターは第2試合終了時もそのラウンドの勝敗を表示する。
   finalText.includes('🏆 TOTAL')
     ? pass('セット全体の勝者側パネルの TOTAL に 🏆 が付く')
     : fail('セット全体の勝者側パネルの TOTAL に 🏆 が付く', `text: ${finalText.slice(0,200)}`);
+
+  // 勝者判定の第1基準である勝利数を TOTAL 欄に出す (例: 2勝0敗)。
+  // 左右のパネルの勝敗数を足すと、引き分けが無ければ 2試合ぶんになる
+  const winsTexts = [...finalText.matchAll(/(\d+)勝(\d+)敗/g)].map(m => [+m[1], +m[2]]);
+  winsTexts.length === 2 && winsTexts.every(([w, l]) => w + l <= 2) &&
+  winsTexts[0][0] === winsTexts[1][1] && winsTexts[0][1] === winsTexts[1][0]
+    ? pass(`TOTAL 欄に勝敗数が表示され左右で整合する (${winsTexts.map(([w, l]) => `${w}勝${l}敗`).join(' / ')})`)
+    : fail('TOTAL 欄に勝敗数が表示され左右で整合する', JSON.stringify(winsTexts));
 
   // 「次戦スタート」ではなく「セットアップに戻る」が表示される
   finalText.includes('セットアップに戻る') && !finalText.includes('次戦スタート')

@@ -31,6 +31,10 @@ export const WIN_PALE  = '#f0fbf5';
 export const GOLD_BASE  = '#ddaa22';
 export const GOLD_LIGHT = '#fff3cc';
 
+// 減点 (マイナスの一撃ボーナス)。盤面の自滅演出 (GameBoardCanvas の warn) と同じオレンジ
+export const PENALTY_COLOR = '#ff7a1a';
+export const PENALTY_PALE  = '#fff3ea';
+
 // テキスト
 export const TEXT_PRIMARY   = '#1e1830';
 export const TEXT_SECONDARY = '#6e5e88';

@@ -145,7 +145,10 @@ export function MainWindow({
 
   // ── セルサイズ / サイドパネル幅を安定した mainSize から一意に導出 ──────────
   const MAIN_GAP    = 12; // s.main の gap と一致させる
-  const PANEL_MIN_W = 110; // サイドパネルの可読性のための固定最小幅 (盤面サイズに連動させない)
+  // サイドパネルの可読性のための固定最小幅 (盤面サイズに連動させない)。2試合制は明細行の
+  // ラベルと値が横に並ぶぶん幅を要求するため、この分だけ広く取る。doubleMode はセットアップ中
+  // しか変更できないので、対戦中に盤面サイズが飛ぶことはない。
+  const PANEL_MIN_W = doubleMode ? 130 : 110;
   const mapW = snapshot?.size.x ?? 0;
   const mapH = snapshot?.size.y ?? 0;
 
@@ -214,7 +217,7 @@ export function MainWindow({
             </span>
             <span style={{ ...s.scoreNum, fontSize: scoreDim.numFont, color: leftIdx === 0 ? COOL_COLOR : HOT_COLOR }}>{leftScore}</span>
             <span style={{ ...s.scoreDivider, height: scoreDim.dividerH }} />
-            <span style={{ ...s.itemsPill, fontSize: scoreDim.itemsFont, padding: `${scoreDim.itemsPadV}px ${scoreDim.itemsPadH}px` }}>🎯 {leaveItems}</span>
+            <span style={{ ...s.itemsPill, fontSize: scoreDim.itemsFont, padding: `${scoreDim.itemsPadV}px ${scoreDim.itemsPadH}px` }}>{leaveItems}</span>
             <span style={{ ...s.scoreDivider, height: scoreDim.dividerH }} />
             <span style={{ ...s.scoreNum, fontSize: scoreDim.numFont, color: rightIdx === 0 ? COOL_COLOR : HOT_COLOR }}>{rightScore}</span>
             <span style={{

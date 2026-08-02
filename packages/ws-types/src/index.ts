@@ -102,9 +102,12 @@ export interface RoundResult {
   /** 各チームの取得アイテム数 (COOL, HOT の順) */
   scores:         [number, number];
   remainingTurns: number;
-  /** 「一撃」— 反則負け(自縛/衝突/通信エラー)の場合のみ、敗者に -3×自スコアの罰点 (それ以外は0) */
+  /**
+   * 「一撃」— アタック/閉じ込めで勝った側に +50、自滅(自縛/衝突/通信エラー)で負けた側に
+   * -3×自スコアの罰点。決着理由は排他なので、1ラウンドでどちらか一方だけが入る
+   */
   strikeBonus:    [number, number];
-  /** 「総取り」— 勝者に、決着時点の残アイテム数×7 のボーナス */
+  /** 「総取り」— 勝者に、決着時点の残アイテム数×6 のボーナス */
   sweepBonus:     [number, number];
   /** ラウンド開始時のプレイヤー名 */
   playerNames:    [string, string];

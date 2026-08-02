@@ -9,9 +9,10 @@ import { idxForSide } from '../lib/roundSide';
 import { computeSetResult, roundPointsFor } from '../lib/setResult';
 import {
   BG_CARD,
-  COOL_COLOR, COOL_PALE, COOL_DARK,
-  HOT_COLOR,  HOT_PALE,  HOT_DARK,
-  WIN_BASE, WIN_PALE,
+  COOL_COLOR, COOL_DARK, COOL_PALE,
+  HOT_COLOR,  HOT_DARK,  HOT_PALE,
+  WIN_BASE, WIN_PALE, WIN_LIGHT,
+  PENALTY_COLOR,
   TEXT_MUTED,
   SHADOW_SM, BORDER_COLOR,
   RADIUS_SM, RADIUS_MD,
@@ -22,31 +23,45 @@ function clampNum(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(value, max));
 }
 
-// 各試合のポイント/ボーナス表示エリア (カード幅・文字サイズ・余白) を、盤面の実描画サイズに
-// 連動した scale (MainWindow から渡される、cellSize 基準の倍率) に応じて最大化するための寸法。
+// 各試合のポイント明細 (カード幅・文字サイズ・余白) を、盤面の実描画サイズに連動した
+// スケール (MainWindow から渡される幅) に応じて最大化するための寸法。
 interface PanelDim {
   cardW: number;
   teamBoxGap: number; teamBoxPadB: number;
-  headerPadV: number; headerPadH: number; headerMarginB: number;
-  dotsFont: number; labelFont: number;
-  gridGap: number;
+  headerPadV: number; headerPadH: number; headerGap: number; headerMarginB: number;
+  labelFont: number;
   badgeFont: number; badgePadV: number; badgePadH: number;
+  rowGap: number;
+  ledgerLabelFont: number; ledgerValueFont: number;
+  subLabelFont: number; subValueFont: number;
+  dividerMargin: number;
   totalPadV: number; totalPadH: number;
   totalHeaderFont: number; totalHeaderMarginB: number; totalHeaderPadT: number;
-  statLabelFont: number; statValueFont: number;
-  statValuePadV: number; statValuePadH: number;
+  winsFont: number; winsPadV: number;
   // 1試合制の合計ポイント: パネル唯一の主役なので、他の数値より広いレンジで大きくする
   soloTotalLabelFont: number; soloTotalValueFont: number;
 }
 
 // 文字送りの見積り (em)。correction の二分探索は高さ (scrollHeight) しか見ないため、
 // 横方向は「この幅なら何 px まで1行に収まるか」をここから逆算して上限にする。
-// ラベル「合計ポイント」= 全角6文字 + letterSpacing (0.04〜0.06em) ≒ 6.4em。
+//
+// 明細行はラベルと値が同じ行を左右に分け合うため、両方の幅を同時に満たす必要がある。
+/** 明細行の最長ラベル「アイテム」= 全角4文字 + letterSpacing ≒ 4.3em */
+const LEDGER_LABEL_EM = 4.3;
+/** 明細行の値は FONT_NUM (等幅 = 0.6em/文字)。符号付き4桁「+9999pt」= 7文字 ≒ 4.2em + 余裕 */
+const LEDGER_VALUE_EM = 4.4;
+/** ラベル/値のフォントサイズ比。値の下限を割り込むときだけ MIN まで落として値を優先する */
+const LEDGER_LABEL_RATIO     = 0.8;
+const LEDGER_LABEL_RATIO_MIN = 0.65;
+/** これを下回るなら、ラベルを縮めてでも値のフォントを確保する */
+const LEDGER_VALUE_MIN = 12;
+// TOTAL 欄のラベル「合計ポイント」= 全角6文字 + letterSpacing ≒ 6.4em
 const LABEL_EM = 6.4;
-// ポイント値は FONT_NUM (等幅 = 0.6em/文字)。4桁を基準に「9999pt」= 6文字 ≒ 3.6em、
-// フォント差の余裕を見て 3.7em。桁数で文字サイズが変わらないよう、常に4桁前提で決める。
+// 1試合制の合計ポイントは符号なし「9999pt」= 6文字 ≒ 3.6em、フォント差の余裕を見て 3.7em
 const POINTS_EM = 3.7;
-// s.teamBox の左右パディング (statsGrid の使える幅を求めるのに使う)
+// 勝敗表示「1勝0敗1分」= 漢字3 + 数字3 ≒ 4.7em + 余裕
+const WINS_EM = 5.0;
+// s.teamBox の左右パディング (明細行の使える幅を求めるのに使う)
 const TEAM_BOX_PAD_H = 8;
 
 // width: パネルに割り当てられた実際の幅 (px)。150 は基準幅で、これを 1.0 とした相対スケールを
@@ -59,16 +74,26 @@ function buildDim(width: number, correction: number): PanelDim {
   const scale = (width / 150) * correction;
 
   // 横方向の余白は先に確定させ、文字が使える実幅を出す
-  const gridGap       = clampNum(4 * scale, 3, 19);
-  const totalPadH     = clampNum(8 * scale, 6, 30);
-  const statValuePadH = clampNum(4 * scale, 3, 15);
+  const rowGap    = clampNum(6 * scale, 4, 24);
+  const totalPadH = clampNum(8 * scale, 6, 30);
 
   // 1試合制の合計ポイント欄 (totalSection の内側いっぱいを1要素が使う)
   const totalInnerW = Math.max(20, width - totalPadH * 2);
-  // StatCell 1枚の幅 (2列を gap で分ける)。teamBox 側と totalSection 側で左右余白が
-  // 違うため、狭いほうに合わせる
-  const cellW      = Math.max(16, (Math.min(width - TEAM_BOX_PAD_H * 2, totalInnerW) - gridGap) / 2);
-  const cellInnerW = Math.max(12, cellW - statValuePadH * 2);
+  // 明細行の実幅。teamBox 側と totalSection 側で左右余白が違うため、狭いほうに合わせて
+  // 1種類のフォントサイズを両方で使う
+  const rowsInnerW  = Math.max(20, Math.min(width - TEAM_BOX_PAD_H * 2, totalInnerW));
+  const avail       = Math.max(16, rowsInnerW - rowGap);
+
+  // 値のフォントは幅から逆算する。下限 (LEDGER_VALUE_MIN) を割り込む幅では、ラベル側の
+  // 比率を落として値の可読性を優先する (数字が読めないパネルは意味がないため)。
+  const valueCap = clampNum(16 * scale, 11, 46);
+  let labelRatio = LEDGER_LABEL_RATIO;
+  let ledgerValueFont = Math.min(valueCap, avail / (labelRatio * LEDGER_LABEL_EM + LEDGER_VALUE_EM));
+  if (ledgerValueFont < LEDGER_VALUE_MIN) {
+    labelRatio = LEDGER_LABEL_RATIO_MIN;
+    ledgerValueFont = Math.min(valueCap, avail / (labelRatio * LEDGER_LABEL_EM + LEDGER_VALUE_EM));
+  }
+  const ledgerLabelFont = ledgerValueFont * labelRatio;
 
   return {
     cardW: width,
@@ -76,23 +101,27 @@ function buildDim(width: number, correction: number): PanelDim {
     teamBoxPadB: clampNum(7 * scale, 5, 26),
     headerPadV: clampNum(7 * scale, 5, 30),
     headerPadH: clampNum(9 * scale, 7, 34),
-    headerMarginB: clampNum(3 * scale, 2, 13),
-    dotsFont: clampNum(5 * scale, 4, 19),
+    headerGap: clampNum(5 * scale, 4, 20),
+    headerMarginB: clampNum(4 * scale, 3, 16),
     labelFont: clampNum(14 * scale, 10, 45),
-    gridGap,
     badgeFont: clampNum(9 * scale, 7, 26),
     badgePadV: clampNum(3 * scale, 2, 11),
-    badgePadH: clampNum(8 * scale, 6, 30),
+    badgePadH: clampNum(7 * scale, 5, 26),
+    rowGap,
+    ledgerLabelFont,
+    ledgerValueFont,
+    // 小計は明細の合計なので一段大きく。ラベルが「小計」= 全角2文字と短いぶん幅は足りる
+    subLabelFont: ledgerLabelFont * 1.05,
+    subValueFont: ledgerValueFont * 1.15,
+    dividerMargin: clampNum(3 * scale, 2, 12),
     totalPadV: clampNum(7 * scale, 5, 30),
     totalPadH,
     totalHeaderFont: clampNum(11 * scale, 8, 34),
     totalHeaderMarginB: clampNum(5 * scale, 4, 22),
-    totalHeaderPadT: clampNum(5 * scale, 4, 22),
-    // 2試合制 TOTAL 欄のラベル「合計ポイント」が省略記号に化けない上限で頭打ちにする
-    statLabelFont: Math.min(clampNum(10 * scale, 7, 28), cellW / LABEL_EM),
-    statValueFont: Math.min(clampNum(15 * scale, 10, 49), cellInnerW / POINTS_EM),
-    statValuePadV: clampNum(4 * scale, 2, 19),
-    statValuePadH,
+    totalHeaderPadT: clampNum(4 * scale, 3, 18),
+    // セット勝者を決める第1基準 (勝利数) はこの欄の主役
+    winsFont: Math.min(clampNum(22 * scale, 13, 64), totalInnerW / WINS_EM),
+    winsPadV: clampNum(4 * scale, 3, 18),
     // 1試合制は文字が大きいぶん横にあふれやすい。ラベルは1行に収まる上限、
     // 値は4桁 (9999pt) が収まる上限で頭打ちにする
     soloTotalLabelFont: Math.min(clampNum(13 * scale, 9, 44), totalInnerW / LABEL_EM),
@@ -115,11 +144,11 @@ export function PlayerSidePanel({ side, snapshot, serverStatus, width, maxHeight
   const cardRef = useRef<HTMLDivElement>(null);
   const [correction, setCorrection] = useState(1);
 
-  // 探索の上限。2試合制は行数が多く、幅基準の等倍 (correction=1) でカードがほぼ埋まるため 1 で足りる。
-  // 1試合制は行が「一撃/総取り」と「合計ポイント」だけになり縦に大きく余るので、上限を 1 より上に
-  // 開いて、余った高さを文字サイズに使い切れるようにする (各寸法は buildDim の clampNum の max で
-  // 頭打ちになるため、上限を上げても青天井にはならない)。
-  const maxCorrection = doubleMode ? 1 : 2.2;
+  // 探索の上限。2試合制は行数が多いぶん先に高さが埋まるが、明細行は1行1項目で縦に詰まって
+  // いるため、幅基準の等倍 (correction=1) では縦に余ることがある。1試合制は行が「明細3行」と
+  // 「合計ポイント」だけでさらに大きく余るので、上限をより高く開く。いずれも buildDim の
+  // clampNum の max と幅からの逆算で頭打ちになるため、上限を上げても青天井にはならない。
+  const maxCorrection = doubleMode ? 1.6 : 2.2;
 
   // 実際の内容の高さ (scrollHeight) を実測し、カードの実高さ (maxHeight) に収まる中で
   // 最大のフォントサイズ (correction) を二分探索で求める。フォントサイズ→必要な高さの関係は
@@ -144,7 +173,7 @@ export function PlayerSidePanel({ side, snapshot, serverStatus, width, maxHeight
 
     const fits = el.scrollHeight <= maxHeight + 1;
     let { lo, hi } = boundsRef.current;
-    // 「試合中は2項目・終了後は4項目」のようにコンテンツの形が変わると、width/maxHeight/
+    // 「試合中は空欄・終了後は実値」のようにコンテンツの形が変わると、width/maxHeight/
     // doubleMode/roundResults.length のどれも変化しないまま探索範囲が [lo,hi] に収束済み
     // (lo===hi) の状態で実際の要否だけが反転することがある。この場合に再探索が走るよう、
     // 収まらなかったときは lo を、収まったときは hi を、現在値から確実に離して区間を
@@ -181,18 +210,26 @@ export function PlayerSidePanel({ side, snapshot, serverStatus, width, maxHeight
   );
 }
 
-// ── SingleModeContent (2試合制OFF: 自分側のチームだけを表示) ────────────────────
+// ── 得点の表示 ────────────────────────────────────────────────────────────────
 
-// 競技ルール4 (リーグ方式): 勝利3点・敗北0点・引き分け1点
-function leaguePoints(winner: Winner, team: 0 | 1): number {
-  if (winner === Winner.DRAW) return 1;
-  return winner === (team === 0 ? Winner.COOL : Winner.HOT) ? 3 : 0;
+/** ボーナス値の表示。加点は符号付き (+50pt)、減点はそのまま (-9pt)、未加算は 0pt */
+function bonusText(n: number): string {
+  return n > 0 ? `+${n}pt` : `${n}pt`;
 }
+
+/** ボーナス値の色: 加点=ミント / 減点=オレンジ (盤面の自滅演出と同色) / 0=グレー */
+function bonusColor(n: number): string {
+  if (n > 0) return WIN_BASE;
+  if (n < 0) return PENALTY_COLOR;
+  return TEXT_MUTED;
+}
+
+// ── SingleModeContent (2試合制OFF: 自分側のチームだけを表示) ────────────────────
 
 // 1試合制では idxForSide(side, 0) === side なので、画面側 (side) がそのまま team-index になる。
 // 2試合制の DoubleModeContent と同じく「1パネル = 自分側のプログラム」に揃え、左右で同じ表を
 // 二重に出さない。勝敗はフッターの結果ピル、獲得アイテム数は上部スコアバーが既に大きく出して
-// いるため、このパネルは得点計算の内訳 (アイテム×10 → 一撃 → 総取り → 合計ポイント) に絞る。
+// いるため、このパネルは得点計算の内訳 (アイテム → 一撃 → 総取り → 合計ポイント) に絞る。
 function SingleModeContent({ side, snapshot, roundResults, dim }: {
   side: 0 | 1; snapshot: GameStateSnapshot | null; roundResults: RoundResult[]; dim: PanelDim;
 }) {
@@ -201,13 +238,13 @@ function SingleModeContent({ side, snapshot, roundResults, dim }: {
   const rr       = roundResults.find(r => r.round === 0);
   const finished = rr !== undefined;
 
+  const items = rr ? rr.scores[side] : (snapshot?.teamScore[side] ?? 0);
   // 試合中は確定していない一撃/総取りを除いた アイテム×10 をライブ表示し、
   // 決着後にボーナス込みの確定値へ切り替える
-  const totalPoints = rr ? roundPointsFor(rr, side) : (snapshot?.teamScore[side] ?? 0) * 10;
+  const totalPoints = rr ? roundPointsFor(rr, side) : items * 10;
 
   const base  = side === 0 ? COOL_COLOR : HOT_COLOR;
   const dark  = side === 0 ? COOL_DARK  : HOT_DARK;
-  const pale  = side === 0 ? COOL_PALE  : HOT_PALE;
   const label = side === 0 ? 'COOL' : 'HOT';
 
   return (
@@ -216,27 +253,32 @@ function SingleModeContent({ side, snapshot, roundResults, dim }: {
         {/* グラデヘッダー: 自分側のチーム */}
         <div style={{
           ...s.teamHeader,
+          gap: dim.headerGap,
           padding: `${dim.headerPadV}px ${dim.headerPadH}px`, marginBottom: dim.headerMarginB,
           background: `linear-gradient(135deg, ${base}, ${dark})`,
         }}>
-          <span style={{ ...s.dots, fontSize: dim.dotsFont }}>●●●</span>
           <span style={{ ...s.teamLabel, fontSize: dim.labelFont }}>{label}</span>
         </div>
 
-        {/* 一撃/総取りが確定するのは決着後のみ。試合中も同じ2セルを描いて高さを確保し、
-            終了の瞬間に行が増えて下の合計ポイントがずれないようにする
-            (2試合制の RoundSection と同じ方針)。1試合制はこの行が大きく出るため、
-            2試合制のように中身を空にせず「—」を置いて未確定であることを示す。 */}
-        <div style={{ ...s.statsGrid, gap: dim.gridGap }}>
-          <StatCell
-            label="一撃"
-            value={finished ? `${rr.strikeBonus[side]}pt` : '—'}
-            bg={pale} color={base} dim={dim}
+        {/* 得点の明細。一撃/総取りが確定するのは決着後のみだが、試合中も同じ3行を描いて
+            高さを確保し、終了の瞬間に行が増えて下の合計ポイントがずれないようにする
+            (2試合制の RoundLedger と同じ方針)。未確定は「—」で示す。 */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: dim.rowGap }}>
+          <LedgerRow
+            label="アイテム" value={`${items * 10}pt`} color={base}
+            labelFont={dim.ledgerLabelFont} valueFont={dim.ledgerValueFont} gap={dim.rowGap}
           />
-          <StatCell
+          <LedgerRow
+            label="一撃"
+            value={finished ? bonusText(rr.strikeBonus[side]) : '—'}
+            color={finished ? bonusColor(rr.strikeBonus[side]) : TEXT_MUTED}
+            labelFont={dim.ledgerLabelFont} valueFont={dim.ledgerValueFont} gap={dim.rowGap}
+          />
+          <LedgerRow
             label="総取り"
-            value={finished ? `${rr.sweepBonus[side]}pt` : '—'}
-            bg={pale} color={base} dim={dim}
+            value={finished ? bonusText(rr.sweepBonus[side]) : '—'}
+            color={finished ? bonusColor(rr.sweepBonus[side]) : TEXT_MUTED}
+            labelFont={dim.ledgerLabelFont} valueFont={dim.ledgerValueFont} gap={dim.rowGap}
           />
         </div>
       </div>
@@ -253,7 +295,7 @@ function SingleModeContent({ side, snapshot, roundResults, dim }: {
   );
 }
 
-// ── DoubleModeContent (2試合制ON: 試合ごとに行を分け、自分側だけの合計を出す) ──────
+// ── DoubleModeContent (2試合制ON: 試合ごとに明細を分け、自分側だけの成績を出す) ──────
 
 type RoundRowStatus = 'finished' | 'live' | 'pending';
 type RoundOutcome   = 'WIN' | 'LOSE' | 'DRAW';
@@ -272,8 +314,8 @@ interface RoundRowData {
   strikeBonus: number;
   sweepBonus:  number;
   outcome:     RoundOutcome | null;
-  points:      number;
-  totalPoints: number;
+  /** アイテム + 一撃 + 総取り。2試合分を足すと TOTAL の合計ポイントになる */
+  subtotal:    number;
 }
 
 // 画面側 (side) ×試合番号 (round) から、確定済み/進行中/未対戦のいずれかを判定してスコア行を組み立てる。
@@ -292,25 +334,24 @@ function computeRoundRow(
   const rr    = roundResults.find(r => r.round === round);
 
   if (rr) {
-    const items        = rr.scores[idx];
-    const strikeBonus  = rr.strikeBonus[idx];
-    const sweepBonus   = rr.sweepBonus[idx];
+    const items       = rr.scores[idx];
+    const strikeBonus = rr.strikeBonus[idx];
+    const sweepBonus  = rr.sweepBonus[idx];
     return {
       round, idx, label, status: 'finished',
       items, strikeBonus, sweepBonus,
       outcome: roundOutcome(rr.winner, idx),
-      points: leaguePoints(rr.winner, idx),
-      totalPoints: items * 10 + strikeBonus + sweepBonus,
+      subtotal: items * 10 + strikeBonus + sweepBonus,
     };
   }
 
   const isLive = serverStatus?.currentRound === round && serverStatus?.phase === 'playing';
   if (isLive) {
     const items = snapshot?.teamScore[idx] ?? 0;
-    return { round, idx, label, status: 'live', items, strikeBonus: 0, sweepBonus: 0, outcome: null, points: 0, totalPoints: items * 10 };
+    return { round, idx, label, status: 'live', items, strikeBonus: 0, sweepBonus: 0, outcome: null, subtotal: items * 10 };
   }
 
-  return { round, idx, label, status: 'pending', items: 0, strikeBonus: 0, sweepBonus: 0, outcome: null, points: 0, totalPoints: 0 };
+  return { round, idx, label, status: 'pending', items: 0, strikeBonus: 0, sweepBonus: 0, outcome: null, subtotal: 0 };
 }
 
 function DoubleModeContent({ side, snapshot, serverStatus, roundResults, dim }: {
@@ -321,23 +362,30 @@ function DoubleModeContent({ side, snapshot, serverStatus, roundResults, dim }: 
     computeRoundRow(side, 0, roundResults, serverStatus, snapshot),
     computeRoundRow(side, 1, roundResults, serverStatus, snapshot),
   ];
-  const sidePoints      = rows[0].points + rows[1].points;
   // 進行中ラウンドの分 (アイテム×10) も含めてライブ更新したいので、確定分だけを扱う
-  // computeSetResult ではなく行データから合算する。2試合とも確定した時点では
-  // computeSetResult の totals と一致するため、下の勝者判定と食い違うことはない。
-  const sideTotalPoints = rows[0].totalPoints + rows[1].totalPoints;
+  // computeSetResult の totals ではなく行データから合算する。2試合とも確定した時点では
+  // totals と一致するため、下の勝者判定と食い違うことはない。
+  const sideTotalPoints = rows[0].subtotal + rows[1].subtotal;
 
-  // 2試合とも終わった時点で、合計ポイントの上回った側にセット勝者のマークを出す。
-  // 同じ判定をフッター (MainWindow) も computeSetResult で行うため、両者は必ず一致する。
+  // 競技ルール: 勝利数が多い方が勝者、同数なら合計ポイント。勝利数は確定したラウンドだけを数える。
+  const setResult = computeSetResult(roundResults);
+  const wins   = setResult.wins[side];
+  const draws  = setResult.draws;
+  const losses = roundResults.length - wins - draws;
+  const winsText = `${wins}勝${losses}敗${draws > 0 ? `${draws}分` : ''}`;
+
+  // 2試合とも終わってから、セット勝者のマークと「何で決まったか」の強調を出す
   const setComplete = serverStatus?.phase === 'finished' && roundResults.length >= 2;
-  const isSetWinner = setComplete && computeSetResult(roundResults).winnerSide === side;
+  const isSetWinner = setComplete && setResult.winnerSide === side;
+  const wonByWins   = isSetWinner && setResult.decidedBy === 'wins';
+  const wonByPoints = isSetWinner && setResult.decidedBy === 'points';
 
   return (
     <>
-      <RoundSection row={rows[0]} dim={dim} />
-      <RoundSection row={rows[1]} dim={dim} />
+      <RoundLedger row={rows[0]} dim={dim} />
+      <RoundLedger row={rows[1]} dim={dim} />
 
-      {/* ── TOTAL (この画面側=このプログラム自身の2試合合計) ── */}
+      {/* ── TOTAL (この画面側=このプログラム自身の2試合の成績) ── */}
       <div style={{
         ...s.totalSection,
         padding: `${dim.totalPadV}px ${dim.totalPadH}px`,
@@ -349,81 +397,105 @@ function DoubleModeContent({ side, snapshot, serverStatus, roundResults, dim }: 
           ...s.totalHeader,
           fontSize: dim.totalHeaderFont, marginBottom: dim.totalHeaderMarginB, paddingTop: dim.totalHeaderPadT,
         }}>{isSetWinner ? '🏆 TOTAL' : '⭐ TOTAL'}</div>
-        <div style={{ ...s.totalGrid, gap: dim.gridGap }}>
-          <StatCell label="勝ち点"      value={`${sidePoints}pt`}      bg={WIN_PALE} color={WIN_BASE} dim={dim} />
-          <StatCell label="合計ポイント" value={`${sideTotalPoints}pt`} bg={WIN_PALE} color={WIN_BASE} dim={dim} />
+
+        {/* 勝敗数 = 勝者を決める第1基準。決め手になったときは枠で示す */}
+        <div style={{
+          ...s.winsBox,
+          padding: `${dim.winsPadV}px 0`, marginBottom: dim.rowGap,
+          ...(wonByWins ? { background: WIN_LIGHT, boxShadow: `inset 0 0 0 2px ${WIN_BASE}` } : null),
+        }}>
+          <span style={{ ...s.winsValue, fontSize: dim.winsFont }}>{winsText}</span>
+        </div>
+
+        {/* 合計ポイント = 勝利数が並んだときの第2基準 */}
+        <div style={{
+          ...s.totalPointsBox,
+          padding: `${dim.winsPadV}px ${dim.rowGap}px`,
+          ...(wonByPoints ? { background: WIN_LIGHT, boxShadow: `inset 0 0 0 2px ${WIN_BASE}` } : null),
+        }}>
+          <LedgerRow
+            label="合計" value={`${sideTotalPoints}pt`} color={WIN_BASE}
+            labelFont={dim.subLabelFont} valueFont={dim.subValueFont} gap={dim.rowGap}
+          />
         </div>
       </div>
     </>
   );
 }
 
-function RoundSection({ row, dim }: { row: RoundRowData; dim: PanelDim }) {
+function RoundLedger({ row, dim }: { row: RoundRowData; dim: PanelDim }) {
   const base = row.idx === 0 ? COOL_COLOR : HOT_COLOR;
   const dark = row.idx === 0 ? COOL_DARK  : HOT_DARK;
   const pale = row.idx === 0 ? COOL_PALE  : HOT_PALE;
 
+  const blank    = row.status === 'pending';
+  const finished = row.status === 'finished';
+  // 一撃/総取りが確定するのは決着後だけ。試合中は「—」で未確定を示す
+  const bonusPlaceholder = blank ? '' : '—';
+
   return (
     <div style={{ ...s.teamBox, gap: dim.teamBoxGap, paddingBottom: dim.teamBoxPadB }}>
-      {/* グラデヘッダー: ラベル (COOL/HOT) + 第何試合か */}
+      {/* グラデヘッダー: 第何試合か + そのラウンドのチーム (COOL/HOT) + 勝敗 */}
       <div style={{
         ...s.teamHeader,
+        gap: dim.headerGap,
         padding: `${dim.headerPadV}px ${dim.headerPadH}px`, marginBottom: dim.headerMarginB,
         background: `linear-gradient(135deg, ${base}, ${dark})`,
       }}>
-        <span style={{ ...s.dots, fontSize: dim.dotsFont }}>●●●</span>
+        <span style={{ ...s.roundNum, fontSize: dim.badgeFont }}>第{row.round + 1}試合</span>
         <span style={{ ...s.teamLabel, fontSize: dim.labelFont }}>{row.label}</span>
-        <span style={{
-          ...s.roundBadge,
-          fontSize: dim.badgeFont, padding: `${dim.badgePadV}px ${dim.badgePadH}px`,
-          background: 'rgba(255,255,255,0.25)', color: '#fff', marginLeft: 'auto',
-        }}>
-          第{row.round + 1}試合
-        </span>
+        {row.outcome && (
+          <span style={{
+            ...s.outcomeBadge,
+            fontSize: dim.badgeFont, padding: `${dim.badgePadV}px ${dim.badgePadH}px`,
+            // 勝ったラウンドだけ白ベタで強く出し、勝利数の数え上げが目で追えるようにする
+            background: row.outcome === 'WIN' ? '#fff' : 'rgba(255,255,255,0.25)',
+            color:      row.outcome === 'WIN' ? base   : '#fff',
+          }}>{row.outcome}</span>
+        )}
       </div>
 
-      {/* 統計エリアは pending/live/finished のどの状態でも同じ2段構成を描画し、高さを
-          試合開始前から確保しておく。そうしないと 未対戦→試合中→終了 と状態が進むたびに
-          この行の高さが変わり、下に続く行やTOTAL欄の表示位置がズレてしまう。
-          pending時は中身を空にし、「未対戦」バッジを中央に重ねて表示する。 */}
+      {/* 明細は pending/live/finished のどの状態でも同じ行数を描画し、高さを試合開始前から
+          確保しておく。そうしないと 未対戦→試合中→終了 と状態が進むたびにこの行の高さが
+          変わり、下に続く行や TOTAL 欄の表示位置がズレてしまう。
+          pending 時は中身を空にし、「未対戦」バッジを中央に重ねて表示する。 */}
       <div style={{ position: 'relative' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: dim.gridGap }}>
-          <div style={{ ...s.statsGrid, gap: dim.gridGap }}>
-            <StatCell
-              label={row.status === 'pending' ? '' : '勝敗'}
-              value={row.status === 'pending' ? '' : (row.outcome ?? '-')}
-              bg={pale} color={base} dim={dim}
-            />
-            {/* アイテムは個数ではなくポイント (獲得数×10) で出す。下段の一撃/総取りと単位が
-                そろい、アイテム + 一撃 + 総取り = TOTAL の合計ポイント と足し算で読める。
-                獲得数そのものは上部スコアバーが大きく表示している。 */}
-            <StatCell
-              label={row.status === 'pending' ? '' : 'アイテム'}
-              value={row.status === 'pending' ? '' : `${row.items * 10}pt`}
-              bg={pale} color={base} dim={dim}
-            />
-          </div>
-          {/* 一撃/総取りは2段目。実値が出るのは finished のみで、pending/live は箱だけ確保して空にする */}
-          <div style={{ ...s.statsGrid, gap: dim.gridGap }}>
-            <StatCell
-              label={row.status === 'finished' ? '一撃' : ''}
-              value={row.status === 'finished' ? `${row.strikeBonus}pt` : ''}
-              bg={pale} color={base} dim={dim}
-            />
-            <StatCell
-              label={row.status === 'finished' ? '総取り' : ''}
-              value={row.status === 'finished' ? `${row.sweepBonus}pt` : ''}
-              bg={pale} color={base} dim={dim}
-            />
-          </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: dim.rowGap }}>
+          {/* アイテムは個数ではなくポイント (獲得数×10) で出す。下の一撃/総取りと単位がそろい、
+              アイテム + 一撃 + 総取り = 小計 と足し算で読める。獲得数そのものは上部スコアバーが
+              大きく表示している。 */}
+          <LedgerRow
+            label={blank ? '' : 'アイテム'} value={blank ? '' : `${row.items * 10}pt`} color={base}
+            labelFont={dim.ledgerLabelFont} valueFont={dim.ledgerValueFont} gap={dim.rowGap}
+          />
+          <LedgerRow
+            label={blank ? '' : '一撃'}
+            value={finished ? bonusText(row.strikeBonus) : bonusPlaceholder}
+            color={finished ? bonusColor(row.strikeBonus) : TEXT_MUTED}
+            labelFont={dim.ledgerLabelFont} valueFont={dim.ledgerValueFont} gap={dim.rowGap}
+          />
+          <LedgerRow
+            label={blank ? '' : '総取り'}
+            value={finished ? bonusText(row.sweepBonus) : bonusPlaceholder}
+            color={finished ? bonusColor(row.sweepBonus) : TEXT_MUTED}
+            labelFont={dim.ledgerLabelFont} valueFont={dim.ledgerValueFont} gap={dim.rowGap}
+          />
+
+          <div style={{ ...s.ledgerDivider, margin: `${dim.dividerMargin}px 0` }} />
+
+          <LedgerRow
+            label={blank ? '' : '小計'} value={blank ? '' : `${row.subtotal}pt`} color={base}
+            labelFont={dim.subLabelFont} valueFont={dim.subValueFont} gap={dim.rowGap}
+          />
         </div>
-        {row.status === 'pending' && (
+        {blank && (
           <div style={{
             position: 'absolute', inset: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             <span style={{
-              ...s.roundBadge, fontSize: dim.badgeFont, padding: `${dim.badgePadV}px ${dim.badgePadH}px`,
+              ...s.outcomeBadge, fontSize: dim.badgeFont,
+              padding: `${dim.badgePadV}px ${dim.badgePadH}px`,
               background: pale, color: base,
             }}>未対戦</span>
           </div>
@@ -433,44 +505,38 @@ function RoundSection({ row, dim }: { row: RoundRowData; dim: PanelDim }) {
   );
 }
 
-// ── StatCell ─────────────────────────────────────────────────────────────────
+// ── LedgerRow (ラベル左・値右の明細1行) ────────────────────────────────────────
 
-function StatCell({ label, value, bg, color, dim }: {
-  label: string; value: string; bg: string; color: string; dim: PanelDim;
+function LedgerRow({ label, value, color, labelFont, valueFont, gap }: {
+  label: string; value: string; color: string;
+  labelFont: number; valueFont: number; gap: number;
 }) {
   return (
-    <div style={{ ...cellS.wrap, flex: 1 }}>
+    <div style={{ ...rowS.wrap, gap }}>
       {/* 空文字だと行送りが発生せず高さが潰れるため、非改行スペースで行の高さを確保する */}
-      <div style={{ ...cellS.label, fontSize: dim.statLabelFont }}>{label || ' '}</div>
-      <div style={{
-        ...cellS.value,
-        background: bg,
-        color,
-        fontSize: dim.statValueFont,
-        padding: `${dim.statValuePadV}px ${dim.statValuePadH}px`,
-      }}>
-        {value || ' '}
-      </div>
+      <span style={{ ...rowS.label, fontSize: labelFont }}>{label || ' '}</span>
+      <span style={{ ...rowS.value, fontSize: valueFont, color }}>{value || ' '}</span>
     </div>
   );
 }
 
-const cellS: Record<string, React.CSSProperties> = {
-  wrap:  { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, minWidth: 0, width: '100%' },
-  // fontSize/padding はレンダー時に dim (盤面サイズ連動) で上書きされる
+const rowS: Record<string, React.CSSProperties> = {
+  // fontSize/gap はレンダー時に dim (パネル幅連動) で上書きされる
+  wrap: {
+    display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
+    minWidth: 0, width: '100%', lineHeight: 1.25,
+  },
   label: {
-    color: TEXT_MUTED, letterSpacing: '0.04em', width: '100%', textAlign: 'center',
-    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+    color: TEXT_MUTED, letterSpacing: '0.04em',
+    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0,
   },
   value: {
-    fontFamily: FONT_NUM, fontWeight: 700, textAlign: 'center',
-    borderRadius: RADIUS_SM, width: '100%',
-    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+    fontFamily: FONT_NUM, fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0,
   },
 };
 
 // ── Styles ───────────────────────────────────────────────────────────────────
-// width/padding/gap/fontSize の多くはレンダー時に dim (盤面サイズ連動) で上書きされる
+// width/padding/gap/fontSize の多くはレンダー時に dim (パネル幅連動) で上書きされる
 
 const s: Record<string, React.CSSProperties> = {
   card: {
@@ -484,21 +550,21 @@ const s: Record<string, React.CSSProperties> = {
   },
   teamBox: {
     display: 'flex', flexDirection: 'column',
-    padding: '0 8px',
+    padding: `0 ${TEAM_BOX_PAD_H}px`,
     borderBottom: `1px solid ${BORDER_COLOR}`,
   },
   teamHeader: {
-    display: 'flex', alignItems: 'center', gap: 6,
-    margin: '0 -8px',
+    display: 'flex', alignItems: 'center',
+    margin: `0 -${TEAM_BOX_PAD_H}px`,
     color: '#fff',
   },
-  dots: { opacity: 0.7, letterSpacing: 2, whiteSpace: 'nowrap' },
+  roundNum: { fontWeight: 600, opacity: 0.85, whiteSpace: 'nowrap' },
   teamLabel: { fontWeight: 700, letterSpacing: '0.08em', whiteSpace: 'nowrap' },
-  statsGrid: { display: 'flex' },
-  roundBadge: {
-    fontWeight: 600, whiteSpace: 'nowrap',
-    borderRadius: 99, alignSelf: 'flex-start',
+  outcomeBadge: {
+    fontWeight: 700, whiteSpace: 'nowrap', letterSpacing: '0.04em',
+    borderRadius: 99, marginLeft: 'auto',
   },
+  ledgerDivider: { height: 1, background: BORDER_COLOR },
   totalSection: {
     background: WIN_PALE,
   },
@@ -508,8 +574,16 @@ const s: Record<string, React.CSSProperties> = {
     // フォント差で見積り (LABEL_EM) をわずかに超えても「合計ポイント」を折り返させない
     whiteSpace: 'nowrap',
   },
-  totalGrid: { display: 'flex' },
-  // 1試合制の合計ポイント (StatCell を介さない単独の大きい数値)
+  winsBox: {
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    borderRadius: RADIUS_SM,
+  },
+  winsValue: {
+    fontWeight: 700, color: WIN_BASE, letterSpacing: '0.02em',
+    whiteSpace: 'nowrap', lineHeight: 1.15,
+  },
+  totalPointsBox: { borderRadius: RADIUS_SM },
+  // 1試合制の合計ポイント (明細行を介さない単独の大きい数値)
   soloTotalValue: {
     fontFamily: FONT_NUM, fontWeight: 700, color: WIN_BASE,
     textAlign: 'center', lineHeight: 1.05,

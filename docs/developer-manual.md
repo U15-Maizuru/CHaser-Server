@@ -144,8 +144,8 @@ U15-server-maizuru/
 │   │       │   └── ...
 │   │       ├── lib/
 │   │       │   ├── roundSide.ts        2試合制のラウンド番号から画面左右の team-index を算出
-│   │       │   ├── setResult.ts        画面側 (side) ごとの合計ポイントとセット全体の勝者を算出
-│   │       │   │                        (フッターの勝者宣言とサイドパネルの TOTAL 欄で共有)
+│   │       │   ├── setResult.ts        画面側 (side) ごとの勝利数・合計ポイントとセット勝者を算出
+│   │       │   │                        (勝利数優先 → 同数なら合計ポイント。サイドパネルの TOTAL 欄で使用)
 │   │       │   └── ...
 │   │       └── ...
 │   │
@@ -538,27 +538,40 @@ if (turnDelayMs > 0) await sleep(ms);
 
 ### ラウンド別ボーナス (`calculateBonusBreakdown`)
 
-決着理由が `SCORE` (ターン切れによるアイテム数判定) の場合はボーナスなし。それ以外の決着では:
+決着理由が `SCORE` (ターン切れによるアイテム数判定) の場合、および勝者が COOL/HOT に定まらない
+場合はボーナスなし。それ以外の決着では:
 
 ```typescript
-// 「一撃」— 反則負け (自縛/衝突/通信エラー) の場合のみ、敗者に -3×自スコアの罰点
-strikeBonus[loserIdx] = isBlunder(status) ? -3 * scores[loserIdx] : 0;
-// 「総取り」— 勝者に、決着時点の残アイテム数×7 のボーナス
-sweepBonus[winnerIdx] = 7 * leaveItems;
+if (isBlunder(status)) {
+  // 「一撃」(ペナルティ) — 自滅 (自縛/衝突/通信エラー) した敗者に -3×自スコア
+  strikeBonus[loserIdx] = -BLUNDER_PENALTY_PER_ITEM * scores[loserIdx];
+} else {
+  // 「一撃」(ボーナス) — 相手を仕留めた決着 (アタック/閉じ込め) の勝者に定額 +50
+  strikeBonus[winnerIdx] = STRIKE_WIN_BONUS;
+}
+// 「総取り」— 勝者に、決着時点の残アイテム数×6 のボーナス
+sweepBonus[winnerIdx] = SWEEP_POINT_PER_ITEM * leaveItems;
 ```
 
-ボーナスは1試合制でも発生する（決着理由が `SCORE` 以外なら常に計算される）。合計ポイントは
-`scores × 10 + strikeBonus + sweepBonus` で、1試合制ではその1試合分、2試合制では両ラウンドの
-合算が最終順位を決める。
+係数は競技ルールの「ポイント」に対応する (アイテム×10 / アタック・閉じ込め【勝】+50 /
+衝突・自縛【敗】−獲得数×3 / 総取り【勝】+残り×6)。`strikeBonus` は勝者側の加点と敗者側の
+減点の両方を取りうる (決着理由が排他なので、1ラウンドでどちらか一方だけが入る) 点に注意。
 
-この合算はフロントの `lib/setResult.ts` (`roundPointsFor` / `computeSetResult`) に集約している。
-集計の単位が team-index ではなく画面側 (`side`) である点に注意 — 2試合制ではラウンドごとに
-先攻/後攻が入れ替わるため、`idxForSide(side, round)` で team-index を引き直さないと同じ
-プログラムを追いかけられない。
+ボーナスは1試合制でも発生する（決着理由が `SCORE` 以外なら常に計算される）。1ラウンドの
+ポイントは `scores × 10 + strikeBonus + sweepBonus`。
+
+セット全体の集計はフロントの `lib/setResult.ts` (`roundPointsFor` / `roundWonBy` /
+`computeSetResult`) に集約している。集計の単位が team-index ではなく画面側 (`side`) である点に
+注意 — 2試合制ではラウンドごとに先攻/後攻が入れ替わるため、`idxForSide(side, round)` で
+team-index を引き直さないと同じプログラムを追いかけられない。
+
+セット勝者の判定順は競技ルールどおり **① 勝利数 → ② 合計ポイント**。`computeSetResult()` は
+どちらで決まったかを `decidedBy: 'wins' | 'points'` で返し、`PlayerSidePanel` の TOTAL 欄が
+決め手になった側の行を枠で強調するのに使う。
 
 表示の役割分担: `MainWindow` のフッター結果ピルは `gameEnd` (直前ラウンドの結果) をそのまま
-表示し、2試合制の第2試合終了時も切り替えない。2試合の合計ポイントで決まるセット全体の勝者は
-`PlayerSidePanel` の TOTAL 欄に付く 🏆 (`computeSetResult().winnerSide`) だけが示す。
+表示し、2試合制の第2試合終了時も切り替えない。セット全体の勝者は `PlayerSidePanel` の
+TOTAL 欄に付く 🏆 (`computeSetResult().winnerSide`) だけが示す。
 
 ### 判定優先順位 (`judgeGame`)
 

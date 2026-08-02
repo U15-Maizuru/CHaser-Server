@@ -210,10 +210,24 @@ export function isBlunder(status: GameStatus): boolean {
   );
 }
 
+// 競技ルールの得点係数
+/** アタック・閉じ込めで勝った側への「一撃」加点 */
+const STRIKE_WIN_BONUS = 50;
+/** 衝突・自縛・通信エラーで負けた側への「一撃」減点 (×自分の獲得アイテム数) */
+const BLUNDER_PENALTY_PER_ITEM = 3;
+/** 「総取り」ボーナス (×決着時点の残アイテム数) */
+const SWEEP_POINT_PER_ITEM = 6;
+
 /**
- * 2試合制のラウンド別ボーナス内訳: 「一撃」(反則負け(自縛/衝突/通信エラー)時の減点) と
- * 「総取り」(競技ルール3.②: 規定ターン数前に決着した場合の残アイテムボーナス)。
+ * ラウンド別のボーナス内訳。競技ルールの「ポイント」より:
+ *
+ *   一撃ボーナス (ペナルティ)
+ *     アタック・閉じ込め【勝】: 50点を加点
+ *     衝突・自縛【敗】       : 獲得したアイテム数×3点を減点 (通信エラーも同扱い)
+ *   総取り【勝】             : 残りのアイテム数×6点を加点
+ *
  * reason===SCORE (ターン切れによるアイテム数判定) の場合はどちらも 0。
+ * 勝者が定まらない決着 (引き分け等) でも 0。
  */
 export function calculateBonusBreakdown(
   status:     GameStatus,
@@ -224,14 +238,23 @@ export function calculateBonusBreakdown(
   const sweepBonus:  [number, number] = [0, 0];
 
   if (status.reason === Reason.SCORE) return { strikeBonus, sweepBonus };
+  // 勝者が COOL/HOT に定まらない場合 (DRAW/CONTINUE/NONE) は加点対象が無い。
+  // 勝者側への加点 (+50・総取り) が入るため、ここで明示的に弾く
+  if (status.winner !== Winner.COOL && status.winner !== Winner.HOT) {
+    return { strikeBonus, sweepBonus };
+  }
 
   const winnerIdx = status.winner === Winner.COOL ? 0 : 1;
   const loserIdx  = winnerIdx === 0 ? 1 : 0;
 
   if (isBlunder(status)) {
-    strikeBonus[loserIdx] = -3 * scores[loserIdx];
+    // 自滅による決着: 敗者に減点。勝者は「一撃」の加点対象ではない
+    strikeBonus[loserIdx] = -BLUNDER_PENALTY_PER_ITEM * scores[loserIdx];
+  } else {
+    // 相手を仕留めた決着 (アタック / 閉じ込め): 勝者に定額加点
+    strikeBonus[winnerIdx] = STRIKE_WIN_BONUS;
   }
-  sweepBonus[winnerIdx] = 7 * leaveItems;
+  sweepBonus[winnerIdx] = SWEEP_POINT_PER_ITEM * leaveItems;
 
   return { strikeBonus, sweepBonus };
 }
