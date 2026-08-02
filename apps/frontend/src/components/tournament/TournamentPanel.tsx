@@ -5,6 +5,7 @@ import type {
 import type { TournamentCommands } from '../../hooks/useGameState';
 import { MatchCard } from './MatchCard';
 import { ResultConfirmDialog } from './ResultConfirmDialog';
+import { TournamentEditorDialog } from './TournamentEditorDialog';
 import {
   BG_CARD, BG_ROOT, BORDER_COLOR, COOL_COLOR, FONT_UI, GOLD_BASE, HOT_COLOR,
   RADIUS_MD, RADIUS_SM, SHADOW_MD, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE,
@@ -30,6 +31,8 @@ export function TournamentPanel({
   const [scanErrors, setScanErrors] = useState<{ id: string; message: string }[]>([]);
   const [programs, setPrograms]   = useState<CatalogEntry[]>([]);
   const [busy, setBusy]           = useState(false);
+  /** 大会データ作成/編集ダイアログ。'new' なら新規、大会 id なら編集 */
+  const [editing, setEditing]     = useState<string | null>(null);
 
   const refresh = async () => {
     try {
@@ -89,7 +92,8 @@ export function TournamentPanel({
         <section style={card}>
           <div style={sectionHead}>
             <span style={sectionTitle}>大会データ</span>
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <button style={btnSmall} onClick={() => setEditing('new')}>+ 新規作成</button>
               <button style={btnSmall} onClick={() => { commands.rescan(); void refresh(); }}>
                 再スキャン
               </button>
@@ -125,6 +129,23 @@ export function TournamentPanel({
                     {s.participants}人 ・ {s.progress[0]}/{s.progress[1]} 試合完了
                   </div>
                 </div>
+                <button
+                  style={{ ...btnGhostSmall, ...(s.boundRoomId ? btnMuted : null) }}
+                  disabled={!!s.boundRoomId}
+                  title={s.boundRoomId ? '運営中の大会は編集できません' : '内容を編集する'}
+                  onClick={() => {
+                    // 上書き保存すると進行状態を作り直すので、実施済みの試合があれば断りを入れる
+                    if (s.progress[0] > 0
+                      && !window.confirm(
+                        `「${s.name}」は ${s.progress[0]} 試合が確定済みです。\n`
+                        + '編集して上書き保存すると、進行状態は最初からやり直しになります。続けますか？')) {
+                      return;
+                    }
+                    setEditing(s.id);
+                  }}
+                >
+                  編集
+                </button>
                 {active
                   ? <button style={btnDanger} onClick={commands.unbind}>運営を終了</button>
                   : <button style={btnPrimary} disabled={!!s.boundRoomId}
@@ -201,6 +222,16 @@ export function TournamentPanel({
             )}
           </section>
         </>
+      )}
+
+      {/* 大会データ作成 / 編集 */}
+      {editing && (
+        <TournamentEditorDialog
+          httpBase={httpBase}
+          editId={editing === 'new' ? null : editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); commands.rescan(); void refresh(); }}
+        />
       )}
 
       {/* 結果確定ダイアログ */}
@@ -301,6 +332,15 @@ const btnDanger: React.CSSProperties = {
 const btnGhost: React.CSSProperties = {
   ...btnBase, background: 'transparent', color: TEXT_SECONDARY,
   fontSize: 12, padding: '6px 12px',
+};
+
+const btnGhostSmall: React.CSSProperties = {
+  ...btnBase, background: 'transparent', color: TEXT_SECONDARY,
+  border: `1px solid ${BORDER_COLOR}`, fontSize: 11, padding: '5px 10px', flexShrink: 0,
+};
+
+const btnMuted: React.CSSProperties = {
+  color: TEXT_MUTED, cursor: 'not-allowed',
 };
 
 const errorBar: React.CSSProperties = {

@@ -1,7 +1,13 @@
 import type { MatchSlotRef, ParticipantDef, TournamentMatch } from '@u15/ws-types';
+import { bracketSizeFor, seedOrder } from '@u15/ws-types';
 
 // トーナメント (勝ち上がり) の試合グラフを組み立てる純関数。
 // 結果の反映・slot の解決は progress.ts が行う。ここは構造だけを作る。
+//
+// 1回戦の並べ方 (seedOrder / bracketSizeFor) は大会データ作成 UI と共有するため
+// @u15/ws-types にある。ここからも従来どおり import できるよう re-export しておく。
+
+export { bracketSizeFor, seedOrder };
 
 /**
  * 参加者を「選手番号」順に並べる。
@@ -19,28 +25,6 @@ export function orderBySeed(participants: ParticipantDef[]): ParticipantDef[] {
       return sa !== sb ? sa - sb : a.i - b.i;
     })
     .map(x => x.p);
-}
-
-/**
- * 標準シード順の位置並び。order(1)=[1], order(2n)=interleave(order(n), 2n+1-order(n))。
- * size=8 なら [1,8,4,5,2,7,3,6] — 第1シードと第2シードが決勝まで当たらない配置になる。
- */
-export function seedOrder(size: number): number[] {
-  let order = [1];
-  while (order.length < size) {
-    const n = order.length * 2;
-    const next: number[] = [];
-    for (const s of order) next.push(s, n + 1 - s);
-    order = next;
-  }
-  return order;
-}
-
-/** 参加者数を収める最小の2の冪。これにより bye 同士のカードが構造的に発生しない */
-export function bracketSizeFor(n: number): number {
-  let size = 1;
-  while (size < n) size *= 2;
-  return Math.max(size, 1);
 }
 
 function stageLabel(stage: number, totalStages: number): string {

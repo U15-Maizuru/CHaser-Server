@@ -63,6 +63,35 @@ export interface TournamentDefinition {
   schedule?:     { pairs: [string, string][] };
 }
 
+// --- 組み合わせの配置 (純関数) ---
+//
+// 試合グラフの組み立て本体は apps/backend/src/tournament/bracket.ts にあるが、
+// 「1回戦をどう並べるか」の規則だけはここに置いて frontend と共有する。
+// 大会データ作成 UI の組み合わせ編集が、サーバーが自動生成するのと寸分違わぬ並びを
+// 初期値として見せる必要があるため (二重定義するとズレて必ず事故になる)。
+
+/**
+ * 標準シード順の位置並び。order(1)=[1], order(2n)=interleave(order(n), 2n+1-order(n))。
+ * size=8 なら [1,8,4,5,2,7,3,6] — 第1シードと第2シードが決勝まで当たらない配置になる。
+ */
+export function seedOrder(size: number): number[] {
+  let order = [1];
+  while (order.length < size) {
+    const n = order.length * 2;
+    const next: number[] = [];
+    for (const s of order) next.push(s, n + 1 - s);
+    order = next;
+  }
+  return order;
+}
+
+/** 参加者数を収める最小の2の冪。これにより bye 同士のカードが構造的に発生しない */
+export function bracketSizeFor(n: number): number {
+  let size = 1;
+  while (size < n) size *= 2;
+  return Math.max(size, 1);
+}
+
 // --- 試合グラフ ---
 
 export type MatchSlotRef =

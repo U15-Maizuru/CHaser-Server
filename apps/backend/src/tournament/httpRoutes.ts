@@ -7,6 +7,7 @@ import { DefinitionError } from './definition.js';
 import { ZipError } from './zip.js';
 import { matchesCsv, resultJson, standingsCsv } from './exporter.js';
 import {
+  assignProgram,
   buildStatePayload,
   deleteTournament,
   ensureTournamentDir,
@@ -52,12 +53,30 @@ export function handleTournamentRequest(
     return true;
   }
 
-  // POST /api/tournament/import → tournament.json の取り込み (body に定義そのもの)
+  // POST /api/tournament/import[?reset=1] → tournament.json の取り込み (body に定義そのもの)
+  //
+  // reset=1 は「作成 UI からの上書き保存」用。同じ id へ書き戻すとき、参加者が変わって
+  // いなければ古い進行状態がそのまま残ってしまう (loadTournament の噛み合わせ判定は
+  // participant id しか見ないので、形式やルールだけ変えた場合を検知できない)。
   if (req.method === 'POST' && url.pathname === '/api/tournament/import') {
     readJsonBody(req)
       .then((body) => {
         try {
-          json(res, 200, importFromJson(body));
+          const wantId = (body as { id?: unknown }).id;
+          if (typeof wantId === 'string' && deps.boundRoomOf(wantId)) {
+            json(res, 409, { error: '運営中の大会は上書きできません。先に運営を終了してください' });
+            return;
+          }
+
+          const result = importFromJson(body);
+          if (url.searchParams.get('reset') === '1') {
+            const after = resetTournamentState(result.id);
+            if (after) {
+              json(res, 200, { id: result.id, summary: toSummary(after, null) });
+              return;
+            }
+          }
+          json(res, 200, result);
         } catch (e) {
           badRequest(res, e instanceof DefinitionError ? e.message : (e as Error).message);
         }
@@ -100,6 +119,50 @@ export function handleTournamentRequest(
     return true;
   }
 
+  // POST /api/tournament/:id/assign → プログラムライブラリのエントリをまとめて紐付ける
+  //
+  // catalogId はこの PC のライブラリだけで通用する ID なので、配布物である tournament.json
+  // ではなく state.json 側に置く。作成 UI で選んだプログラムはここを通って保存される。
+  const assignMatch = url.pathname.match(/^\/api\/tournament\/([^/]+)\/assign$/);
+  if (req.method === 'POST' && assignMatch) {
+    const id = decodeURIComponent(assignMatch[1]!);
+    // 運営中はオーケストレータがメモリ上に進行状態を握っているため、裏から state.json を
+    // 書き換えると食い違う。運営パネル (tournament_assign_program) 経由に誘導する
+    if (deps.boundRoomOf(id)) {
+      json(res, 409, { error: '運営中の大会はここから変更できません。運営パネルで割り当ててください' });
+      return true;
+    }
+
+    readJsonBody(req)
+      .then((body) => {
+        withDefinition(res, () => {
+          const raw = (body as { assignments?: unknown }).assignments;
+          if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+            badRequest(res, 'assignments は { 参加者id: プログラムid|null } のオブジェクトです');
+            return;
+          }
+
+          let loaded = loadTournament(id);
+          if (!loaded) { json(res, 404, { error: '大会が見つかりません' }); return; }
+
+          const failed: string[] = [];
+          for (const [participantId, catalogId] of Object.entries(raw as Record<string, unknown>)) {
+            if (catalogId !== null && typeof catalogId !== 'string') {
+              failed.push(participantId);
+              continue;
+            }
+            const next = assignProgram(id, participantId, catalogId);
+            if (next) loaded = next;
+            else failed.push(participantId);
+          }
+
+          json(res, 200, { summary: toSummary(loaded, null), failed });
+        });
+      })
+      .catch(() => badRequest(res, '不正なリクエストボディです'));
+    return true;
+  }
+
   // GET /api/tournament/:id/export?format=json|matches.csv|standings.csv
   const exportMatch = url.pathname.match(/^\/api\/tournament\/([^/]+)\/export$/);
   if (req.method === 'GET' && exportMatch) {
@@ -138,8 +201,13 @@ export function handleTournamentRequest(
       withDefinition(res, () => {
         const loaded = loadTournament(id);
         if (!loaded) { json(res, 404, { error: '大会が見つかりません' }); return; }
-        // bind 前のプレビュー用。boundRoomId は「まだどこにも紐付いていない」ことを示す空文字
-        json(res, 200, { state: buildStatePayload(loaded, deps.boundRoomOf(id) ?? '', null) });
+        // bind 前のプレビュー用。boundRoomId は「まだどこにも紐付いていない」ことを示す空文字。
+        // definition は作成 UI の編集元 — state 側には出ない bracket.slots や
+        // program.file の指定を復元するために必要
+        json(res, 200, {
+          state:      buildStatePayload(loaded, deps.boundRoomOf(id) ?? '', null),
+          definition: loaded.def,
+        });
       });
       return true;
     }

@@ -77,7 +77,10 @@ const WEB_PREFS = {
 
 function loadUrl(win: BrowserWindow, search: string): void {
   if (isDev) {
-    void win.loadURL(`http://localhost:5173/${search}`);
+    // 'localhost' ではなく 127.0.0.1 を使う。Chromium 側の名前解決が詰まると
+    // (Docker Desktop 等が DNS に割り込むと起きる) 画面が真っ白のまま返らなくなるため、
+    // 自分で起動した dev サーバーには名前解決を介さず直接つなぐ
+    void win.loadURL(`http://127.0.0.1:5173/${search}`);
   } else {
     void win.loadFile(
       path.join(process.resourcesPath, 'frontend/dist/index.html'),

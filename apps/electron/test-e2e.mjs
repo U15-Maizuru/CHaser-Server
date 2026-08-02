@@ -824,6 +824,36 @@ function writeE2ECup() {
   }, null, 2));
 }
 
+/**
+ * aria-label で入力欄を特定して値を入れる。
+ * React の制御コンポーネントは value を直接代入しても onChange が走らないので、
+ * ネイティブの setter を呼んでからイベントを明示的に投げる。
+ */
+async function setByLabel(page, label, value, tag = 'input') {
+  return page.evaluate(({ label, value, tag }) => {
+    const el = document.querySelector(`${tag}[aria-label="${label}"]`);
+    if (!el) return 'NOT_FOUND: ' + label;
+    const proto = tag === 'select'   ? HTMLSelectElement.prototype
+                : tag === 'textarea' ? HTMLTextAreaElement.prototype
+                : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value);
+    el.dispatchEvent(new Event(tag === 'select' ? 'change' : 'input', { bubbles: true }));
+    return 'OK';
+  }, { label, value, tag });
+}
+
+/** 要素が現れるまで待つ */
+async function waitForLabel(page, label, timeoutMs = 10000) {
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) {
+    const found = await page.evaluate(
+      l => document.querySelector(`[aria-label="${l}"]`) !== null, label);
+    if (found) return 'OK';
+    await wait(200);
+  }
+  return 'TIMEOUT';
+}
+
 /** 非同期に描画される要素を待ってからクリックする */
 async function clickWhenReady(page, text, timeoutMs = 15000) {
   const end = Date.now() + timeoutMs;
@@ -832,6 +862,114 @@ async function clickWhenReady(page, text, timeoutMs = 15000) {
     await wait(300);
   }
   return 'TIMEOUT';
+}
+
+const UI_CUP_ID  = 'e2e-ui-cup';
+const UI_CUP_DIR = path.join(PROJECT_ROOT, 'server/tournament', UI_CUP_ID);
+
+/** 大会運営ウィンドウを開いて取得する (既に開いていれば focus されるだけ) */
+async function openTournamentWindow(app, page) {
+  await clickWhenReady(page, '大会運営');
+  const deadline = Date.now() + 25000;
+  while (Date.now() < deadline) {
+    const tw = app.windows().find(w => w.url().includes('mode=tournament'));
+    if (tw) {
+      await tw.waitForSelector('button', { timeout: 15000 }).catch(() => {});
+      return tw;
+    }
+    await wait(300);
+  }
+  return null;
+}
+
+/** 大会データを画面のフォームだけで作り、そのまま運営できるところまで確認する */
+async function testTournamentEditor(app, page) {
+  section('大会データの作成 (画面から)');
+
+  fs.rmSync(UI_CUP_DIR, { recursive: true, force: true });
+
+  const tw = await openTournamentWindow(app, page);
+  if (!tw) { fail('大会運営ウィンドウが開く (作成)'); return null; }
+  await wait(1200);
+
+  await clickWhenReady(tw, '新規作成');
+  await waitForLabel(tw, '大会名') === 'OK'
+    ? pass('大会データ作成ダイアログが開く')
+    : fail('大会データ作成ダイアログが開く');
+
+  await setByLabel(tw, '大会名', 'UI作成杯');
+  await setByLabel(tw, '大会ID', UI_CUP_ID);
+
+  // 参加者をまとめて4人追加
+  await clickWhenReady(tw, 'まとめて追加');
+  await setByLabel(tw, '参加者をまとめて追加', 'UI-A\nUI-B\nUI-C\nUI-D', 'textarea');
+  await clickWhenReady(tw, 'この内容で追加');
+  await wait(400);
+
+  const rows = await tw.evaluate(() =>
+    document.querySelectorAll('[data-testid="participant-row"]').length);
+  rows === 4 ? pass('参加者をまとめて追加できる') : fail('参加者をまとめて追加できる', `rows=${rows}`);
+
+  // Python 不要で回せるよう全員 内蔵CPU にする
+  for (let i = 1; i <= 4; i++) await setByLabel(tw, `参加者${i} のプログラム`, 'cpu', 'select');
+
+  const preview = await tw.evaluate(() =>
+    document.querySelector('[data-testid="editor-preview"]')?.textContent ?? '');
+  preview.includes('全 3 試合')
+    ? pass('生成される試合数がプレビューされる')
+    : fail('生成される試合数がプレビューされる', preview);
+
+  await ss(tw, 'tournament-editor');
+
+  await clickWhenReady(tw, 'この内容で作成');
+  await wait(2500);
+
+  // tournament.json が書き出されている (手書き・zip 取り込みと同じ成果物)
+  const defFile = path.join(UI_CUP_DIR, 'tournament.json');
+  if (fs.existsSync(defFile)) {
+    const def = JSON.parse(fs.readFileSync(defFile, 'utf-8'));
+    def.name === 'UI作成杯'
+      && def.participants.length === 4
+      && def.participants.every(p => p.program?.builtin === 'cpu')
+      && def.participants.map(p => p.seed).join(',') === '1,2,3,4'
+      ? pass('tournament.json が書き出される')
+      : fail('tournament.json が書き出される', JSON.stringify(def).slice(0, 200));
+  } else {
+    fail('tournament.json が書き出される', '生成されていない');
+  }
+
+  (await bodyText(tw)).includes('UI作成杯')
+    ? pass('作った大会が一覧に出る')
+    : fail('作った大会が一覧に出る');
+
+  // 作ったデータでそのまま運営を始められる
+  await clickWhenReady(tw, 'この大会を運営');
+  await wait(2000);
+  const paths = await tw.evaluate(() => document.querySelectorAll('svg path').length);
+  paths >= 2 ? pass('作った大会のトーナメント表が描画される')
+             : fail('作った大会のトーナメント表が描画される', `paths=${paths}`);
+
+  await clickWhenReady(tw, 'この試合を準備');
+  await wait(2500);
+  (await bodyText(page)).match(/準備完了/g)?.length >= 2
+    ? pass('作った大会で試合を準備できる')
+    : fail('作った大会で試合を準備できる');
+  await ss(tw, 'tournament-editor-armed');
+
+  // 運営中は編集・削除ができないこと (誤操作の防止)
+  const guarded = await tw.evaluate(() =>
+    [...document.querySelectorAll('button')].filter(b => b.textContent === '編集')
+      .every(b => b.disabled));
+  guarded ? pass('運営中の大会は編集ボタンが無効になる')
+          : fail('運営中の大会は編集ボタンが無効になる');
+
+  await clickWhenReady(tw, '運営を終了', 5000);
+  await wait(1000);
+  // ウィンドウを閉じてから片付ける。開いたままだと後続の節が
+  // 「開いた時点の一覧」を検証できなくなる (一覧はウィンドウを開いたときに取りに行くため)
+  await tw.close().catch(() => {});
+  await wait(500);
+  fs.rmSync(UI_CUP_DIR, { recursive: true, force: true });
 }
 
 async function testTournament(app, page) {
@@ -903,7 +1041,8 @@ async function testTournament(app, page) {
 
   // エクスポート
   const exported = await tw.evaluate(async (id) => {
-    const res = await fetch(`http://localhost:8765/api/tournament/${id}/export?format=matches.csv`);
+    // 描画側からの fetch は Chromium の名前解決を通るので、ホスト名ではなく IP を直接使う
+    const res = await fetch(`http://127.0.0.1:8765/api/tournament/${id}/export?format=matches.csv`);
     const txt = await res.text();
     return { status: res.status, head: txt.split(String.fromCharCode(13, 10))[0] ?? '' };
   }, E2E_CUP_ID);
@@ -926,6 +1065,7 @@ async function testTournament(app, page) {
     await testCpuVsCpu(page);
     await testDoubleMatch(page);
     await testManualMode(app, page);
+    await testTournamentEditor(app, page);
     await testTournament(app, page);
 
   } catch (err) {

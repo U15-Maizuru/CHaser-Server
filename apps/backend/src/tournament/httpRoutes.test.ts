@@ -1,11 +1,13 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import type { TournamentDefinition } from '@u15/ws-types';
 import { handleHttpRequest } from '../network/HttpServer.js';
-import { catalogDir, ensureCatalogDir } from '../programCatalog.js';
-import { ensureTournamentDir, tournamentRootDir } from './TournamentStore.js';
+import { addCatalogEntry, catalogDir, ensureCatalogDir } from '../programCatalog.js';
+import { ensureTournamentDir, loadTournament, tournamentRootDir } from './TournamentStore.js';
 
 const DEF = {
   name: 'HTTPテスト杯',
@@ -84,6 +86,37 @@ describe('/api/tournament', () => {
     expect(fs.existsSync(path.join(tournamentRootDir(), 'imported', 'tournament.json'))).toBe(true);
   });
 
+  it('import?reset=1 は上書き時に進行状態を作り直す', async () => {
+    // 参加者を変えずに形式だけ変えるケース。loadTournament の噛み合わせ判定は
+    // participant id しか見ないので、reset が無いと古い試合グラフが残ってしまう
+    writeTournament('cup-a', DEF);
+    expect(loadTournament('cup-a')!.state.matches).toHaveLength(1); // 決勝のみ
+
+    const res = await fetch(`${baseUrl}/api/tournament/import?reset=1`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ ...DEF, id: 'cup-a', format: 'league' }),
+    });
+
+    expect(res.status).toBe(200);
+    const after = loadTournament('cup-a')!;
+    expect(after.def.format).toBe('league');
+    expect(after.state.matches[0]!.id).toMatch(/^L-/); // リーグの試合グラフに作り直された
+  });
+
+  it('運営中の大会は import で上書きできない (409)', async () => {
+    writeTournament('cup-a', DEF);
+    bound = 'cup-a';
+    const res = await fetch(`${baseUrl}/api/tournament/import`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ ...DEF, id: 'cup-a', name: '書き換え後' }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(loadTournament('cup-a')!.def.name).toBe('HTTPテスト杯');
+  });
+
   it('不正な定義の import は 400 と理由を返す', async () => {
     const res = await fetch(`${baseUrl}/api/tournament/import`, {
       method:  'POST',
@@ -102,6 +135,18 @@ describe('/api/tournament', () => {
     expect(res.status).toBe(200);
     expect(body.state.matches).toHaveLength(1); // 2人 → 決勝のみ
     expect(body.state.participants).toHaveLength(2);
+  });
+
+  it('GET /api/tournament/:id は編集元になる定義も返す', async () => {
+    // state 側には出ない bracket.slots まで含めて返らないと、作成 UI が編集を復元できない
+    writeTournament('cup-a', { ...DEF, bracket: { size: 2, slots: ['p2', 'p1'] } });
+    const res  = await fetch(`${baseUrl}/api/tournament/cup-a`);
+    const body = await res.json() as { definition: TournamentDefinition };
+
+    expect(res.status).toBe(200);
+    expect(body.definition.name).toBe('HTTPテスト杯');
+    expect(body.definition.participants).toHaveLength(2);
+    expect(body.definition.bracket?.slots).toEqual(['p2', 'p1']);
   });
 
   it('存在しない大会は 404', async () => {
@@ -136,6 +181,70 @@ describe('/api/tournament', () => {
     const res = await fetch(`${baseUrl}/api/tournament/cup-a`, { method: 'DELETE' });
     expect(res.status).toBe(409);
     expect(fs.existsSync(path.join(tournamentRootDir(), 'cup-a'))).toBe(true);
+  });
+
+  describe('POST /api/tournament/:id/assign', () => {
+    function makeCatalogEntry(displayName: string): string {
+      const tmp = path.join(os.tmpdir(), `u15-assign-${Date.now()}-${Math.random()}.py`);
+      fs.writeFileSync(tmp, '# test');
+      return addCatalogEntry(displayName, tmp).id; // tempPath は rename されて消える
+    }
+
+    async function assign(id: string, assignments: Record<string, string | null>) {
+      return fetch(`${baseUrl}/api/tournament/${id}/assign`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ assignments }),
+      });
+    }
+
+    it('ライブラリのプログラムをまとめて紐付ける', async () => {
+      writeTournament('cup-a', DEF);
+      const catalogId = makeCatalogEntry('提出プログラム');
+
+      const res  = await assign('cup-a', { p1: catalogId });
+      const body = await res.json() as { failed: string[] };
+
+      expect(res.status).toBe(200);
+      expect(body.failed).toEqual([]);
+      expect(loadTournament('cup-a')!.state.programs['p1']?.catalogId).toBe(catalogId);
+    });
+
+    it('null を渡すと割り当てを外す', async () => {
+      writeTournament('cup-a', DEF);
+      await assign('cup-a', { p1: makeCatalogEntry('提出プログラム') });
+
+      const res = await assign('cup-a', { p1: null });
+      expect(res.status).toBe(200);
+      expect(loadTournament('cup-a')!.state.programs['p1']).toBeUndefined();
+    });
+
+    it('存在しない参加者やプログラムは failed で返る', async () => {
+      writeTournament('cup-a', DEF);
+      const body = await (await assign('cup-a', { nobody: null, p1: 'no-such-program' }))
+        .json() as { failed: string[] };
+      expect(body.failed.sort()).toEqual(['nobody', 'p1']);
+    });
+
+    it('運営中の大会は 409', async () => {
+      writeTournament('cup-a', DEF);
+      bound = 'cup-a';
+      expect((await assign('cup-a', { p1: null })).status).toBe(409);
+    });
+
+    it('存在しない大会は 404', async () => {
+      expect((await assign('nope', { p1: null })).status).toBe(404);
+    });
+
+    it('assignments が無ければ 400', async () => {
+      writeTournament('cup-a', DEF);
+      const res = await fetch(`${baseUrl}/api/tournament/cup-a/assign`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({}),
+      });
+      expect(res.status).toBe(400);
+    });
   });
 
   describe('GET /api/tournament/:id/export', () => {
