@@ -5,8 +5,8 @@ import { Reason, Winner } from '@u15/ws-types';
 import { PlayerSidePanel } from './PlayerSidePanel';
 import { PENALTY_COLOR, WIN_BASE } from '../styles/tokens';
 
-// 2試合制パネルの明細表示の検証。ボーナスの符号と色 (加点=ミント / 減点=オレンジ) は
-// 決着理由に依存するため、CPU 対戦では狙って再現しづらい。ここでラウンド結果を直接
+// 2ゲーム制パネルの明細表示の検証。ボーナスの符号と色 (加点=ミント / 減点=オレンジ) は
+// 決着理由に依存するため、CPU 対戦では狙って再現しづらい。ここでゲーム結果を直接
 // 与えて、アイテム + 一撃 + 総取り = 小計 の足し算と、勝敗数の表示を固定する。
 
 function makeRound(round: 0 | 1, over: Partial<RoundResult> = {}): RoundResult {
@@ -70,9 +70,9 @@ function renderPanel(side: 0 | 1, roundResults: RoundResult[], over: Partial<Ser
   );
 }
 
-describe('PlayerSidePanel (2試合制)', () => {
-  it('アタック勝ちのラウンドは 一撃 +50pt をミント色で出し、小計に足し込む', () => {
-    // 第1試合を COOL (= side 0) がアタックで勝利。残アイテム 8 → 総取り 48
+describe('PlayerSidePanel (2ゲーム制)', () => {
+  it('アタック勝ちのゲームは 一撃 +50pt をミント色で出し、小計に足し込む', () => {
+    // 第1ゲームを COOL (= side 0) がアタックで勝利。残アイテム 8 → 総取り 48
     const rr = makeRound(0, {
       winner: Winner.COOL, reason: Reason.ATTACK,
       scores: [7, 4], strikeBonus: [50, 0], sweepBonus: [48, 0],
@@ -87,8 +87,8 @@ describe('PlayerSidePanel (2試合制)', () => {
     ]);
   });
 
-  it('自滅で負けたラウンドは 一撃 の減点をオレンジで出す', () => {
-    // 第1試合を COOL が勝ち、HOT (= side 1) が衝突負け → -3×4 = -12
+  it('自滅で負けたゲームは 一撃 の減点をオレンジで出す', () => {
+    // 第1ゲームを COOL が勝ち、HOT (= side 1) が衝突負け → -3×4 = -12
     const rr = makeRound(0, {
       winner: Winner.COOL, reason: Reason.COLLISION,
       scores: [7, 4], strikeBonus: [0, -12], sweepBonus: [48, 0],
@@ -103,20 +103,20 @@ describe('PlayerSidePanel (2試合制)', () => {
     ]);
   });
 
-  it('未確定 (試合中) の一撃・総取りは — で出す', () => {
+  it('未確定 (ゲーム中) の一撃・総取りは — で出す', () => {
     const live = renderPanel(0, [], { phase: 'playing', currentRound: 0 });
     const liveRows = rowsOf(live.container);
     expect(liveRows.find(r => r.label === '一撃')?.value).toBe('—');
     expect(liveRows.find(r => r.label === '総取り')?.value).toBe('—');
   });
 
-  it('TOTAL は勝敗数と2試合の合計 (小計の和) を出す', () => {
+  it('TOTAL は勝敗数と2ゲームの合計 (小計の和) を出す', () => {
     // side 0 から見て 2勝0敗。合計 = 168 + 100 = 268
     const round1 = makeRound(0, {
       winner: Winner.COOL, reason: Reason.ATTACK,
       scores: [7, 4], strikeBonus: [50, 0], sweepBonus: [48, 0],
     });
-    // 第2試合は先後が入れ替わるので side 0 = HOT
+    // 第2ゲームは先後が入れ替わるので side 0 = HOT
     const round2 = makeRound(1, { winner: Winner.HOT, reason: Reason.SCORE, scores: [3, 10] });
 
     const { container } = renderPanel(0, [round1, round2]);
@@ -139,7 +139,7 @@ describe('PlayerSidePanel (2試合制)', () => {
     expect(right.container.textContent).toContain('⭐ TOTAL');
   });
 
-  it('引き分けたラウンドは勝敗数に入らず「分」で示す', () => {
+  it('引き分けたゲームは勝敗数に入らず「分」で示す', () => {
     const round1 = makeRound(0, { winner: Winner.DRAW, scores: [5, 5] });
     const round2 = makeRound(1, { winner: Winner.COOL, scores: [7, 4] }); // COOL = side 1
     expect(renderPanel(0, [round1, round2]).container.textContent).toContain('0勝1敗1分');
@@ -147,7 +147,7 @@ describe('PlayerSidePanel (2試合制)', () => {
   });
 });
 
-describe('PlayerSidePanel (1試合制)', () => {
+describe('PlayerSidePanel (1ゲーム制)', () => {
   it('明細3行と合計ポイントを出し、勝敗数は出さない', () => {
     const rr = makeRound(0, {
       winner: Winner.COOL, reason: Reason.TRAPPED,

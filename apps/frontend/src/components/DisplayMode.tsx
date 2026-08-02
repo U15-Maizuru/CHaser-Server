@@ -88,13 +88,13 @@ function SetupWaiting({ serverStatus, displayTitle }: { serverStatus: ServerStat
   const currentRound = serverStatus?.currentRound ?? 0;
   const roundResults = serverStatus?.roundResults ?? [];
 
-  // 2試合制の第1試合と第2試合の間 (プログラム再接続待ち)。この間 snapshot は破棄されるが
-  // roundResults は ServerStatusPayload に残るので、ここから第1試合の結果を再構成できる。
+  // 2ゲーム制の第1ゲームと第2ゲームの間 (プログラム再接続待ち)。この間 snapshot は破棄されるが
+  // roundResults は ServerStatusPayload に残るので、ここから第1ゲームの結果を再構成できる。
   const intermission = doubleMode && roundResults.length === 1 ? roundResults[0] : null;
 
   // カードの左右は MainWindow と同じく idxForSide で決める。そうしないと swapSlotConfigs 後の
-  // 待機画面だけプログラムの左右が入れ替わって見え、第2試合が始まるとまた元に戻ってしまう。
-  // 第1試合前 (currentRound=0) は恒等写像なので、従来どおり COOL が左・HOT が右になる。
+  // 待機画面だけプログラムの左右が入れ替わって見え、第2ゲームが始まるとまた元に戻ってしまう。
+  // 第1ゲーム前 (currentRound=0) は恒等写像なので、従来どおり COOL が左・HOT が右になる。
   const leftIdx  = idxForSide(0, currentRound);
   const rightIdx = idxForSide(1, currentRound);
 
@@ -104,14 +104,14 @@ function SetupWaiting({ serverStatus, displayTitle }: { serverStatus: ServerStat
       <div style={sw.titleWrap}>
         <div style={sw.title}>{displayTitle}</div>
         <div style={sw.sub}>
-          {doubleMode ? `第${currentRound + 1}試合 — ` : ''}対戦開始をお待ちください
+          {doubleMode ? `第${currentRound + 1}ゲーム — ` : ''}対戦開始をお待ちください
         </div>
       </div>
 
-      {/* 第1試合の結果 (2試合制のインターミッション中のみ) */}
+      {/* 第1ゲームの結果 (2ゲーム制のインターミッション中のみ) */}
       {intermission && (
         <div style={sw.recap}>
-          <div style={sw.recapTitle}>第1試合の結果</div>
+          <div style={sw.recapTitle}>第1ゲームの結果</div>
           <div style={sw.recapRow}>
             <span style={sw.recapName}>{intermission.playerNames[idxForSide(0, intermission.round)]}</span>
             <span style={sw.recapScore}>{roundPointsFor(intermission, 0)}</span>
@@ -119,7 +119,7 @@ function SetupWaiting({ serverStatus, displayTitle }: { serverStatus: ServerStat
             <span style={sw.recapScore}>{roundPointsFor(intermission, 1)}</span>
             <span style={sw.recapName}>{intermission.playerNames[idxForSide(1, intermission.round)]}</span>
           </div>
-          <div style={sw.recapNote}>↳ 先攻・後攻を入れ替えて第2試合を行います</div>
+          <div style={sw.recapNote}>↳ 先攻・後攻を入れ替えて第2ゲームを行います</div>
         </div>
       )}
 
@@ -176,7 +176,7 @@ const sw: Record<string, React.CSSProperties> = {
     fontFamily: FONT_NUM, letterSpacing: '0.1em',
   },
 
-  // 第1試合の結果 (2試合制のインターミッション)。左右の並びは下のチームカードと揃える
+  // 第1ゲームの結果 (2ゲーム制のインターミッション)。左右の並びは下のチームカードと揃える
   recap: {
     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
     padding: '18px 32px',

@@ -106,7 +106,7 @@ describe('useGamePhaseSound', () => {
     expect(playMock).not.toHaveBeenCalledWith('win');
   });
 
-  it('包囲/アタックによる決着では win のみ再生する', () => {
+  it('閉じ込め/アタックによる決着では win のみ再生する', () => {
     const { rerender } = renderHook(
       ({ s, ge }: { s: ServerStatusPayload; ge: GameEndPayload | null }) =>
         useGamePhaseSound(null, s, ge, null, false, true),

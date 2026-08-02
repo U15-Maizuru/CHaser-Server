@@ -69,7 +69,7 @@ function ControlApp({ roomId }: { roomId: string }) {
   // マップを差し替えてよいか (バックエンドの RoundController.canEditMap と同じ条件)
   const canEditMap   = phase === 'setup' && roundResults.length === 0;
 
-  // 2試合制/リピート/デモは ServerStatusPayload で返ってくるサーバー側の状態なので、
+  // 2ゲーム制/リピート/デモは ServerStatusPayload で返ってくるサーバー側の状態なので、
   // クライアントにキャッシュを持たず、そのまま表示してそのまま送る。
   // (以前はローカル設定を setup フェーズのたびに再送していたため、コントロール窓を
   //  複数開くと互いの古い値で上書きし合う競合があった)
@@ -112,7 +112,7 @@ function ControlApp({ roomId }: { roomId: string }) {
     if (!isConnected) { didCommitMapParams.current = false; return; }
     if (didCommitMapParams.current) return;
     if (!serverStatus) return;
-    // 対戦中・2試合制のセット中は canEditMap ゲートで黙って捨てられるので、
+    // 対戦中・2ゲーム制で試合の途中のときは canEditMap ゲートで黙って捨てられるので、
     // 送れる状態になるまで待ってから一度だけ送る
     if (!canEditMap) return;
     if (serverStatus.mapSource.kind !== 'random') return;

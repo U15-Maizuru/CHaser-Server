@@ -55,7 +55,7 @@ describe('decisiveEffectFrom — 敗者の導出', () => {
   });
 });
 
-// 対になる決着理由 (アタック↔衝突、包囲↔自縛) が必ず見分けられることを担保する。
+// 対になる決着理由 (アタック↔衝突、閉じ込め↔自縛) が必ず見分けられることを担保する。
 // 片方だけ確認すると「両方とも同じ見た目になっていた」という退行を見逃すため、必ず対で検証する。
 describe('decisiveEffectFrom — アタックと衝突の区別', () => {
   const attack    = markOf(makeEnd({ winner: Winner.COOL, reason: Reason.ATTACK }),    'loser');
@@ -76,7 +76,7 @@ describe('decisiveEffectFrom — アタックと衝突の区別', () => {
   });
 });
 
-describe('decisiveEffectFrom — 包囲と自縛の区別', () => {
+describe('decisiveEffectFrom — 閉じ込めと自縛の区別', () => {
   const trapped  = markOf(makeEnd({ winner: Winner.HOT, reason: Reason.TRAPPED }),  'loser');
   const confined = markOf(makeEnd({ winner: Winner.HOT, reason: Reason.CONFINED }), 'loser');
 
@@ -85,7 +85,7 @@ describe('decisiveEffectFrom — 包囲と自縛の区別', () => {
     expect(confined.shape).toBe('surround');
   });
 
-  it('包囲は相手のせい、自縛は自滅として色分けされる', () => {
+  it('閉じ込めは相手のせい、自縛は自滅として色分けされる', () => {
     expect(trapped.accent).toBe('opponent');
     expect(confined.accent).toBe('warn');
   });

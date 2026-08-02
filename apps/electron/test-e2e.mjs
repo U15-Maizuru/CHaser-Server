@@ -145,13 +145,13 @@ async function closeSettingDialog(page) {
   await wait(400);
 }
 
-/** 「対戦」タブの対戦ルールチップ (2試合制 / リピート / デモ) を読み取る */
+/** 「対戦」タブの対戦ルールチップ (2ゲーム制 / リピート / デモ) を読み取る */
 async function readMatchRuleChips(page) {
   return page.evaluate(() => {
     const out = {};
     for (const b of document.querySelectorAll('button')) {
       const label = (b.textContent ?? '').replace('✓', '').trim();
-      if (!['2試合制', 'リピート', 'デモ'].includes(label)) continue;
+      if (!['2ゲーム制', 'リピート', 'デモ'].includes(label)) continue;
       out[label] = { active: (b.textContent ?? '').includes('✓'), disabled: b.disabled };
     }
     return out;
@@ -193,8 +193,8 @@ async function waitForGameEnd(page, timeoutMs = 40000) {
   return waitFor(page, 'セットアップに戻る', timeoutMs);
 }
 
-/** ゲーム中 (ボード表示) を確認 — 1試合制のサイドパネルは主役として「合計ポイント」を
- *  大きく表示する (2試合制は明細 + TOTAL 欄の「合計」なので、この文字列では判定できない) */
+/** ゲーム中 (ボード表示) を確認 — 1ゲーム制のサイドパネルは主役として「合計ポイント」を
+ *  大きく表示する (2ゲーム制は明細 + TOTAL 欄の「合計」なので、この文字列では判定できない) */
 async function waitForGameStart(page, timeoutMs = 15000) {
   const found = await waitFor(page, '合計ポイント', timeoutMs);
   return found;
@@ -277,7 +277,7 @@ async function testSetupUI(page) {
     : fail('マッププレビュー列がセットアップ画面の中央に表示される', `canvas=${hasPreviewCanvas}`);
 
   // 対戦ルール・進行は設定ダイアログへ移したので、セットアップ画面には無いのが正
-  !text.includes('2試合制') && !text.includes('TCPタイムアウト')
+  !text.includes('2ゲーム制') && !text.includes('TCPタイムアウト')
     ? pass('対戦ルール/進行の操作はセットアップ画面に残っていない')
     : fail('対戦ルール/進行の操作はセットアップ画面に残っていない');
 
@@ -325,7 +325,7 @@ async function testSettingsDialog(page) {
   await clickText(page, '対戦');
   await wait(400);
   const matchText = await bodyText(page);
-  matchText.includes('2試合制') && matchText.includes('リピート') && matchText.includes('デモ')
+  matchText.includes('2ゲーム制') && matchText.includes('リピート') && matchText.includes('デモ')
     ? pass('「対戦」タブに対戦ルールのチップが揃う')
     : fail('「対戦」タブに対戦ルールのチップが揃う');
 
@@ -343,7 +343,7 @@ async function testSettingsDialog(page) {
   await closeSettingDialog(page);
 }
 
-/** テスト 3: CPU vs CPU 通常1試合 */
+/** テスト 3: CPU vs CPU 通常1ゲーム */
 async function testCpuVsCpu(page) {
   section('CPU vs CPU 通常対戦');
 
@@ -382,11 +382,11 @@ async function testCpuVsCpu(page) {
     ? pass('勝敗結果 (WIN / DRAW) が表示される')
     : fail('勝敗結果 (WIN / DRAW) が表示される');
 
-  // 1試合制のサイドパネルは自チームだけを表示し、内訳 (一撃/総取り) と合計ポイントに絞る。
+  // 1ゲーム制のサイドパネルは自チームだけを表示し、内訳 (一撃/総取り) と合計ポイントに絞る。
   // 勝ち点・アイテム数はここには出ない (勝敗はフッター、アイテム数は上部スコアバーが担当)
   resultText.includes('合計ポイント') && resultText.includes('一撃') && resultText.includes('総取り')
-    ? pass('1試合制のスコアパネル (一撃/総取り/合計ポイント) が表示される')
-    : fail('1試合制のスコアパネル (一撃/総取り/合計ポイント) が表示される');
+    ? pass('1ゲーム制のスコアパネル (一撃/総取り/合計ポイント) が表示される')
+    : fail('1ゲーム制のスコアパネル (一撃/総取り/合計ポイント) が表示される');
 
   await ss(page, '05_game_result');
 
@@ -400,23 +400,23 @@ async function testCpuVsCpu(page) {
   await wait(500);
 }
 
-/** テスト 4: 2試合制モード */
+/** テスト 4: 2ゲーム制モード */
 async function testDoubleMatch(page) {
-  section('2試合制モード');
+  section('2ゲーム制モード');
 
-  // 設定ダイアログ「対戦」タブで 2試合制 を ON (即時反映・保存ボタン不要)
-  const toggled = await setMatchRuleChip(page, '2試合制', true);
+  // 設定ダイアログ「対戦」タブで 2ゲーム制 を ON (即時反映・保存ボタン不要)
+  const toggled = await setMatchRuleChip(page, '2ゲーム制', true);
   toggled === 'OK'
-    ? pass('"2試合制" チップを ON にできる')
-    : fail('"2試合制" チップを ON にできる', toggled);
+    ? pass('"2ゲーム制" チップを ON にできる')
+    : fail('"2ゲーム制" チップを ON にできる', toggled);
 
   await wait(600);
 
-  // ラウンドバッジ確認
+  // ゲームバッジ確認
   const setupText = await bodyText(page);
-  setupText.includes('第1試合')
-    ? pass('"第1試合" バッジがセットアップ画面に表示される')
-    : fail('"第1試合" バッジがセットアップ画面に表示される');
+  setupText.includes('第1ゲーム')
+    ? pass('"第1ゲーム" バッジがセットアップ画面に表示される')
+    : fail('"第1ゲーム" バッジがセットアップ画面に表示される');
 
   await ss(page, '06_double_setup_round1');
 
@@ -427,67 +427,67 @@ async function testDoubleMatch(page) {
   await wait(800);
   await clickText(page, 'ゲームスタート');
 
-  // 試合 1 終了 → 「次戦スタート」
-  const round1Done = await waitFor(page, '次戦スタート', 30000);
+  // ゲーム 1 終了 → 「第2ゲームへ」
+  const round1Done = await waitFor(page, '第2ゲームへ', 30000);
   round1Done
-    ? pass('試合1終了後に「次戦スタート」ボタンが表示される')
-    : fail('試合1終了後に「次戦スタート」ボタンが表示される', 'タイムアウト');
+    ? pass('ゲーム1終了後に「第2ゲームへ」ボタンが表示される')
+    : fail('ゲーム1終了後に「第2ゲームへ」ボタンが表示される', 'タイムアウト');
 
-  // 新UIでは TOTAL 合計ボックスと 次戦スタートボタンが表示される
+  // 新UIでは TOTAL 合計ボックスと 第2ゲームへボタンが表示される
   const r1Text = await bodyText(page);
-  r1Text.includes('次戦スタート') && r1Text.includes('TOTAL')
-    ? pass('試合1のポイントが ScorePanel に表示される')
-    : fail('試合1のポイントが ScorePanel に表示される');
+  r1Text.includes('第2ゲームへ') && r1Text.includes('TOTAL')
+    ? pass('ゲーム1のポイントが ScorePanel に表示される')
+    : fail('ゲーム1のポイントが ScorePanel に表示される');
 
-  // 2試合制のサイドパネルは1試合ぶんの得点明細 (アイテム/一撃/総取り → 小計) を出す
+  // 2ゲーム制のサイドパネルは1ゲームぶんの得点明細 (アイテム/一撃/総取り → 小計) を出す
   ['アイテム', '一撃', '総取り', '小計'].every(t => r1Text.includes(t))
-    ? pass('2試合制パネルに得点明細 (アイテム/一撃/総取り/小計) が並ぶ')
-    : fail('2試合制パネルに得点明細 (アイテム/一撃/総取り/小計) が並ぶ', r1Text.slice(0, 200));
+    ? pass('2ゲーム制パネルに得点明細 (アイテム/一撃/総取り/小計) が並ぶ')
+    : fail('2ゲーム制パネルに得点明細 (アイテム/一撃/総取り/小計) が並ぶ', r1Text.slice(0, 200));
 
-  // 第2試合は「未対戦」として枠だけ確保しておく (状態が進んでも高さがずれないようにするため)
+  // 第2ゲームは「未対戦」として枠だけ確保しておく (状態が進んでも高さがずれないようにするため)
   r1Text.includes('未対戦')
-    ? pass('未対戦の第2試合が「未対戦」として表示される')
-    : fail('未対戦の第2試合が「未対戦」として表示される');
+    ? pass('未対戦の第2ゲームが「未対戦」として表示される')
+    : fail('未対戦の第2ゲームが「未対戦」として表示される');
 
   await ss(page, '07_round1_result');
 
-  // 次戦スタート → セットアップ画面に戻る → 第2試合開始
-  await clickText(page, '次戦スタート');
+  // 第2ゲームへ → セットアップ画面に戻る → 第2ゲーム開始
+  await clickText(page, '第2ゲームへ');
   const round2Setup = await waitFor(page, 'ゲームスタート', 8000);
   round2Setup
-    ? pass('次戦スタート後にセットアップ画面 (第2試合) に遷移する')
-    : fail('次戦スタート後にセットアップ画面 (第2試合) に遷移する', 'タイムアウト');
+    ? pass('第2ゲームへ後にセットアップ画面 (第2ゲーム) に遷移する')
+    : fail('第2ゲームへ後にセットアップ画面 (第2ゲーム) に遷移する', 'タイムアウト');
 
-  // 第2試合バッジ
+  // 第2ゲームバッジ
   const r2SetupText = await bodyText(page);
-  r2SetupText.includes('第2試合')
-    ? pass('"第2試合" バッジが表示される')
-    : fail('"第2試合" バッジが表示される');
+  r2SetupText.includes('第2ゲーム')
+    ? pass('"第2ゲーム" バッジが表示される')
+    : fail('"第2ゲーム" バッジが表示される');
 
-  // セット中はマップ・ルールを変更させない (押せるのに無反応、を防ぐ)。
+  // 試合の途中はマップ・ルールを変更させない (押せるのに無反応、を防ぐ)。
   // マップは入口ボタン自体を消し、対戦ルールは「対戦」タブのチップを disabled にする。
   const hasMapBtn = await page.evaluate(() =>
     [...document.querySelectorAll('button')].some(b => b.textContent?.trim() === 'マップ設定...')
   );
   !hasMapBtn
-    ? pass('第2試合待機中はフッターの「マップ設定...」が出ない')
-    : fail('第2試合待機中はフッターの「マップ設定...」が出ない');
+    ? pass('第2ゲーム待機中はフッターの「マップ設定...」が出ない')
+    : fail('第2ゲーム待機中はフッターの「マップ設定...」が出ない');
 
   await openMatchTab(page);
-  const midSetChips = await readMatchRuleChips(page);
-  Object.values(midSetChips).length === 3 && Object.values(midSetChips).every(c => c.disabled)
-    ? pass('第2試合待機中は対戦ルールのチップが無効になる')
-    : fail('第2試合待機中は対戦ルールのチップが無効になる', JSON.stringify(midSetChips));
+  const midMatchChips = await readMatchRuleChips(page);
+  Object.values(midMatchChips).length === 3 && Object.values(midMatchChips).every(c => c.disabled)
+    ? pass('第2ゲーム待機中は対戦ルールのチップが無効になる')
+    : fail('第2ゲーム待機中は対戦ルールのチップが無効になる', JSON.stringify(midMatchChips));
   await closeSettingDialog(page);
 
   await ss(page, '08_double_setup_round2');
 
-  // 第2試合スタート (CPU スロットは既に準備完了)
+  // 第2ゲームスタート (CPU スロットは既に準備完了)
   await clickText(page, 'ゲームスタート');
   const round2Done = await waitForGameEnd(page, 30000);
   round2Done
-    ? pass('試合2が正常に終了する')
-    : fail('試合2が正常に終了する', 'タイムアウト');
+    ? pass('ゲーム2が正常に終了する')
+    : fail('ゲーム2が正常に終了する', 'タイムアウト');
 
   // 合計ポイント / 最終勝者
   // 新UIでは TOTAL 合計ボックスに pt サフィックス付きで両スコアが表示される
@@ -497,31 +497,31 @@ async function testDoubleMatch(page) {
     : fail('最終結果 (合計ポイント) が表示される', `text: ${finalText.slice(0,200)}`);
 
   // セット全体の勝者 (勝利数 → 同数なら合計ポイント) は、勝者側パネルの TOTAL 欄の 🏆 で示す。
-  // フッターは第2試合終了時もそのラウンドの勝敗を表示する。
+  // フッターは第2ゲーム終了時もそのゲームの勝敗を表示する。
   finalText.includes('🏆 TOTAL')
     ? pass('セット全体の勝者側パネルの TOTAL に 🏆 が付く')
     : fail('セット全体の勝者側パネルの TOTAL に 🏆 が付く', `text: ${finalText.slice(0,200)}`);
 
   // 勝者判定の第1基準である勝利数を TOTAL 欄に出す (例: 2勝0敗)。
-  // 左右のパネルの勝敗数を足すと、引き分けが無ければ 2試合ぶんになる
+  // 左右のパネルの勝敗数を足すと、引き分けが無ければ 2ゲームぶんになる
   const winsTexts = [...finalText.matchAll(/(\d+)勝(\d+)敗/g)].map(m => [+m[1], +m[2]]);
   winsTexts.length === 2 && winsTexts.every(([w, l]) => w + l <= 2) &&
   winsTexts[0][0] === winsTexts[1][1] && winsTexts[0][1] === winsTexts[1][0]
     ? pass(`TOTAL 欄に勝敗数が表示され左右で整合する (${winsTexts.map(([w, l]) => `${w}勝${l}敗`).join(' / ')})`)
     : fail('TOTAL 欄に勝敗数が表示され左右で整合する', JSON.stringify(winsTexts));
 
-  // 「次戦スタート」ではなく「セットアップに戻る」が表示される
-  finalText.includes('セットアップに戻る') && !finalText.includes('次戦スタート')
-    ? pass('2試合終了後は「セットアップに戻る」のみが表示される')
-    : fail('2試合終了後は「セットアップに戻る」のみが表示される');
+  // 「第2ゲームへ」ではなく「セットアップに戻る」が表示される
+  finalText.includes('セットアップに戻る') && !finalText.includes('第2ゲームへ')
+    ? pass('2ゲーム終了後は「セットアップに戻る」のみが表示される')
+    : fail('2ゲーム終了後は「セットアップに戻る」のみが表示される');
 
   await ss(page, '09_double_match_final');
 
-  // リセットして 2試合制 を OFF に戻す
+  // リセットして 2ゲーム制 を OFF に戻す
   await clickText(page, 'セットアップに戻る');
   await wait(800);
 
-  await setMatchRuleChip(page, '2試合制', false);
+  await setMatchRuleChip(page, '2ゲーム制', false);
   await wait(500);
 }
 

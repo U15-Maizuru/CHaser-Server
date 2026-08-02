@@ -46,7 +46,7 @@ export function BottomBar({
     const message = phase === 'playing'
       ? '対戦を中断してセットアップに戻ります。よろしいですか？'
       : '対戦の設定をリセットしてセットアップに戻ります。よろしいですか？';
-    // 進行中、または途中結果がある (2試合制のセット放棄) 場合のみ確認する
+    // 進行中、または途中結果がある (2ゲーム制の試合放棄) 場合のみ確認する
     if (phase === 'playing' || roundResults.length > 0) {
       if (!window.confirm(message)) return;
     }
@@ -83,7 +83,7 @@ export function BottomBar({
           </>
         )}
         {showNextRound && (
-          <button style={s.btnStart} onClick={onNextRound}>次戦スタート ▶</button>
+          <button style={s.btnStart} onClick={onNextRound}>第2ゲームへ ▶</button>
         )}
         {showRepeat && (
           <button style={s.btnStart} onClick={onRepeat}>もう一度対戦 ▶</button>

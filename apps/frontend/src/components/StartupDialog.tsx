@@ -46,10 +46,10 @@ export function StartupDialog({
   onApplyMapEntry, onApplyMapParams, onOpenMapEditor,
   onSaveCurrentMap, onDownloadCurrentMap, onOpenMapLibrary,
 }: Props) {
-  // 2試合制の第2試合待機中も phase は 'setup' に戻るが、マップもルールもセット内で
+  // 2ゲーム制の第2ゲーム待機中も phase は 'setup' に戻るが、マップもルールも試合内で
   // 固定されており変更できない。マップの選択 (マップ列の「変更」) と対戦ルール
   // (SettingDialog の「対戦」タブ) がどちらも塞がるため、その理由をここで伝える。
-  const isMidSet = status.roundResults.length > 0;
+  const isMidMatch = status.roundResults.length > 0;
 
   // ── 3カラム行の実サイズを計測 ──────────────────────────────────────────────
   // 測定するのは行コンテナ「だけ」。この幅・高さはウィンドウサイズだけで決まり、
@@ -81,15 +81,15 @@ export function StartupDialog({
         {status.doubleMode && (
           <div style={s.roundBadge}>
             {status.roundResults.length === 0
-              ? '第1試合'
-              : `第${(status.currentRound ?? 0) + 1}試合`}
+              ? '第1ゲーム'
+              : `第${(status.currentRound ?? 0) + 1}ゲーム`}
           </div>
         )}
       </div>
 
-      {isMidSet && (
+      {isMidMatch && (
         <div style={s.midSetStrip}>
-          第{(status.currentRound ?? 0) + 1}試合 — マップと対戦ルールは第1試合と共通です。
+          第{(status.currentRound ?? 0) + 1}ゲーム — マップと対戦ルールは第1ゲームと共通です。
           両チームの再接続を待って「ゲームスタート」を押してください。
         </div>
       )}

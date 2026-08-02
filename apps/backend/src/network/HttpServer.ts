@@ -2,8 +2,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { type IncomingMessage, type ServerResponse } from 'node:http';
-import type { Readable } from 'node:stream';
-import busboy from 'busboy';
+import {
+  badRequest,
+  handleUpload,
+  json,
+  readJsonBody,
+  sanitizeFilename,
+  sendFileDownload,
+} from './httpUtil.js';
 import type { InlineMapData, MapParams } from '@u15/ws-types';
 import { MapObject } from '@u15/ws-types';
 import type { RoomManager } from '../RoomManager.js';
@@ -346,120 +352,4 @@ function serveStatic(req: IncomingMessage, res: ServerResponse, distDir: string)
   const contentType = MIME[ext] ?? 'application/octet-stream';
   res.writeHead(200, { 'Content-Type': contentType });
   fs.createReadStream(filePath).pipe(res);
-}
-
-/** アップロードを中断し、残りのリクエストボディを読み捨てる (busboy への書き込みを止めて未捕捉例外を防ぐ) */
-function abortUpload(req: IncomingMessage, bb: ReturnType<typeof busboy>, stream: Readable): void {
-  stream.resume();
-  req.unpipe(bb);
-  req.resume();
-}
-
-function handleUpload(
-  req:      IncomingMessage,
-  res:      ServerResponse,
-  dir:      string,
-  allowed:  string[],
-  maxBytes: number,
-  onSaved?: (outPath: string, originalFilename: string) => Record<string, unknown> | void,
-): void {
-  let bb: ReturnType<typeof busboy>;
-  try {
-    bb = busboy({ headers: req.headers, limits: { fileSize: maxBytes } });
-  } catch {
-    badRequest(res, 'Content-Type が multipart/form-data ではありません');
-    return;
-  }
-
-  let fileSeen   = false; // multipart に file パートが存在したか (同期的に確定)
-  let serverPath = '';
-
-  bb.on('file', (_field, stream, info) => {
-    fileSeen = true;
-    const ext = path.extname(info.filename).toLowerCase();
-    if (!allowed.includes(ext)) {
-      abortUpload(req, bb, stream);
-      badRequest(res, `許可されていない拡張子です (${allowed.join(', ')} のみ)`);
-      return;
-    }
-
-    const safe    = sanitizeFilename(info.filename);
-    const outPath = path.join(dir, safe);
-    serverPath    = outPath;
-
-    const out = fs.createWriteStream(outPath);
-    out.on('error', () => {}); // limit到達によるdestroy()後の書き込み完了コールバックが
-                                // 'error' を発火した際に未捕捉例外化するのを防ぐ
-    stream.pipe(out);
-    stream.on('limit', () => {
-      stream.unpipe(out);
-      out.destroy();
-      fs.unlink(outPath, () => {});
-      abortUpload(req, bb, stream);
-      json(res, 413, { error: `ファイルサイズが上限 (${maxBytes / 1024}KB) を超えています` });
-    });
-    out.on('close', () => {
-      // ディスク書き込み完了を待ってから成功レスポンスを返す
-      // (bb の close は out の close より先に発火しうるため、bb 側では返さない)
-      if (!res.headersSent) {
-        const extra = onSaved?.(outPath, info.filename);
-        json(res, 200, { serverPath, ...(extra ?? {}) });
-      }
-    });
-  });
-
-  bb.on('close', () => {
-    if (!fileSeen && !res.headersSent) {
-      badRequest(res, 'ファイルが含まれていません');
-    }
-  });
-
-  bb.on('error', () => {
-    if (!res.headersSent) {
-      res.writeHead(500);
-      res.end(JSON.stringify({ error: 'アップロード処理中にエラーが発生しました' }));
-    }
-  });
-
-  req.pipe(bb);
-}
-
-function readJsonBody(req: IncomingMessage): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on('data', (chunk: Buffer) => chunks.push(chunk));
-    req.on('end', () => {
-      try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString('utf-8') || '{}'));
-      } catch (e) {
-        reject(e as Error);
-      }
-    });
-    req.on('error', reject);
-  });
-}
-
-function sanitizeFilename(name: string): string {
-  return path.basename(name).replace(/\s+/g, '_').replace(/[^a-zA-Z0-9._\-　-鿿]/g, '_');
-}
-
-/** ファイルをダウンロード用に配信する (日本語ファイル名対応の Content-Disposition 付き)。onSent は送信完了後に呼ぶ (一時ファイル削除用)。 */
-function sendFileDownload(res: ServerResponse, filePath: string, downloadName: string, onSent?: () => void): void {
-  const encoded = encodeURIComponent(downloadName);
-  res.writeHead(200, {
-    'Content-Type': 'application/octet-stream',
-    'Content-Disposition': `attachment; filename="map.map"; filename*=UTF-8''${encoded}`,
-  });
-  const stream = fs.createReadStream(filePath);
-  stream.pipe(res);
-  if (onSent) stream.on('close', onSent);
-}
-
-function json(res: ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(body));
-}
-
-function badRequest(res: ServerResponse, message: string): void {
-  json(res, 400, { error: message });
 }

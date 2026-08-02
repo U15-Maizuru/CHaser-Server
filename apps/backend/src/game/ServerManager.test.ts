@@ -73,7 +73,7 @@ describe('ServerManager', () => {
     expect(sm.getStatus().phase).toBe('setup');
   });
 
-  it('CPU vs CPU で1試合を最後まで実行し finished になる', async () => {
+  it('CPU vs CPU で1ゲームを最後まで実行し finished になる', async () => {
     sm = makeServerManager([39408, 39409], 0);
     sm.setTurnDelay(0);
     await sm.setClientType(0, 'cpu');
@@ -124,14 +124,14 @@ describe('ServerManager', () => {
       expect(status.clients[1].type).toBe('process');
     });
 
-    it('requestNextRound は doubleMode でラウンド1・finished のときのみ次戦を準備する', async () => {
+    it('requestNextRound は doubleMode で第1ゲーム・finished のときのみ第2ゲームを準備する', async () => {
       sm = makeServerManager([39414, 39415], 0);
       sm.setTurnDelay(0);
       sm.setDoubleMode(true);
       await sm.setClientType(0, 'cpu');
       await sm.setClientType(1, 'cpu');
 
-      await sm.requestStart(); // 1試合目
+      await sm.requestStart(); // 第1ゲーム
       const afterRound1 = sm.getStatus();
       expect(afterRound1.phase).toBe('finished');
       expect(afterRound1.currentRound).toBe(1);
@@ -145,7 +145,7 @@ describe('ServerManager', () => {
       expect(afterNextRound.clients[0].state).toBe('ready');
       expect(afterNextRound.clients[1].state).toBe('ready');
 
-      await sm.requestStart(); // 2試合目
+      await sm.requestStart(); // 第2ゲーム
       const afterRound2 = sm.getStatus();
       expect(afterRound2.phase).toBe('finished');
       expect(afterRound2.roundResults).toHaveLength(2);
@@ -159,7 +159,7 @@ describe('ServerManager', () => {
     });
   });
 
-  describe('マップ設定変更のガード (2試合制で第1試合・第2試合のマップが変わらないようにする)', () => {
+  describe('マップ設定変更のガード (2ゲーム制で第1ゲーム・第2ゲームのマップが変わらないようにする)', () => {
     it('通常の初回セットアップ中 (setup, roundResults=[]) は setMapParams が反映される', () => {
       sm = makeServerManager([39440, 39441], 0);
       const regenerateSpy = vi.spyOn(MapManager.prototype, 'regenerate');
@@ -168,14 +168,14 @@ describe('ServerManager', () => {
       regenerateSpy.mockRestore();
     });
 
-    it('doubleMode で第1試合終了後・第2試合待機中の setup では setMapParams が無視される', async () => {
+    it('doubleMode で第1ゲーム終了後・第2ゲーム待機中の setup では setMapParams が無視される', async () => {
       sm = makeServerManager([39442, 39443], 0);
       sm.setTurnDelay(0);
       sm.setDoubleMode(true);
       await sm.setClientType(0, 'cpu');
       await sm.setClientType(1, 'cpu');
 
-      await sm.requestStart(); // 1試合目
+      await sm.requestStart(); // 第1ゲーム
       await sm.requestNextRound(); // phase は 'setup' に戻るが roundResults は残る
       expect(sm.getStatus().phase).toBe('setup');
       expect(sm.getStatus().roundResults).toHaveLength(1);
@@ -282,7 +282,7 @@ describe('ServerManager', () => {
       sm.setDemoMode(true);
       sm.setRepeatMode(true);
 
-      // roundResults.length だけでは「1試合目終了」と「リピート後の新しい1試合目終了」を
+      // roundResults.length だけでは「第1ゲーム終了」と「リピート後の新しい第1ゲーム終了」を
       // 区別できない (どちらも length===1) ため、finished への遷移回数をイベントで数える
       let finishedCount = 0;
       sm.on('status', (status) => {
@@ -292,7 +292,7 @@ describe('ServerManager', () => {
       await sm.setClientType(0, 'cpu');
       await sm.setClientType(1, 'cpu');
 
-      await waitFor(() => finishedCount >= 2); // 1試合目 + リピート後の2試合目
+      await waitFor(() => finishedCount >= 2); // 第1ゲーム + リピート後の第2ゲーム
       expect(sm.getStatus().phase).toBe('finished');
       expect(sm.getStatus().roundResults).toHaveLength(1); // リピートで集計がリセットされている
     });

@@ -179,6 +179,9 @@ export function MapSourceSection({
               </label>
               <button style={s.btnPrimary} onClick={onApplyParams}>生成して使用</button>
               <span style={s.hint}>
+                公式ルールのマップは 15×17・100〜240ターンです。
+              </span>
+              <span style={s.hint}>
                 ランダム生成のマップは、リセット・リピートのたびにこの設定で引き直されます。
               </span>
             </>

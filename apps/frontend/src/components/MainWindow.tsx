@@ -33,20 +33,23 @@ interface Props {
   displayTitle:    string;
 }
 
-// 勝因 (原本の ResultLabel 相当): 決着理由を必ず表示する
+// 勝因 (原本の ResultLabel 相当): 決着理由を必ず表示する。
+// 表記は競技ルールの勝利条件に合わせる (TRAPPED = 閉じ込め)。FOULED は競技ルールでは
+// 「中断」だが、フッターのリセットボタン (対戦中は「中断」) と紛れるため画面上は
+// 「通信エラー」と表示する。
 function reasonLabel(reason: Reason): string {
   switch (reason) {
     case Reason.SCORE:     return 'アイテム数';
-    case Reason.TRAPPED:   return '包囲';
+    case Reason.TRAPPED:   return '閉じ込め';
     case Reason.CONFINED:  return '自縛';
     case Reason.ATTACK:    return 'アタック';
     case Reason.COLLISION: return '衝突';
-    case Reason.FOULED:    return 'エラー';
+    case Reason.FOULED:    return '通信エラー';
     default:                return '';
   }
 }
 
-// 反則 (自縛/衝突/エラー) による決着かどうか — 原本の isBlunder() と同じ定義
+// 反則 (自縛/衝突/通信エラー) による決着かどうか — 原本の isBlunder() と同じ定義
 function isBlunder(reason: Reason): boolean {
   return reason === Reason.CONFINED || reason === Reason.COLLISION || reason === Reason.FOULED;
 }
@@ -55,7 +58,7 @@ function clampNum(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(value, max));
 }
 
-// 勝者側にのみ表示する「勝ち」テキスト。反則決着 (自縛/衝突/エラー) でも敗者視点の
+// 勝者側にのみ表示する「勝ち」テキスト。反則決着 (自縛/衝突/通信エラー) でも敗者視点の
 // LOSE 表記にはせず、常に勝者視点の文言 (相手の反則で勝った、という言い回し) にする。
 function winnerText(gameEnd: GameEndPayload, winnerName: string): string {
   const reason = reasonLabel(gameEnd.reason);
@@ -78,8 +81,8 @@ export function MainWindow({
   const leaveItems = snapshot?.leaveItems    ?? 0;
   const names      = snapshot?.playerNames   ?? ['COOL', 'HOT'];
 
-  // ステップ数ゲージの最大値 (原本の map.turn 相当): turnCount は試合中は単調減少するのみなので、
-  // 新しい試合/ラウンドの開始で値が増加した瞬間を検知して満タン値を更新する
+  // ステップ数ゲージの最大値 (原本の map.turn 相当): turnCount はゲーム中は単調減少するのみなので、
+  // 新しいゲームの開始で値が増加した瞬間を検知して満タン値を更新する
   const maxTurnRef = useRef(0);
   if (snapshot && snapshot.turnCount > maxTurnRef.current) {
     maxTurnRef.current = snapshot.turnCount;
@@ -96,10 +99,10 @@ export function MainWindow({
   const doubleMode   = serverStatus?.doubleMode   ?? false;
   const currentRound  = serverStatus?.currentRound ?? 0;
 
-  // 盤面反転・左右スコア表示に使う「表示中のラウンド番号」は、今表示している snapshot が
-  // 属するラウンドに固定する。snapshot の参照が変わった (= 新しいラウンドの対局が実際に
-  // 始まった) タイミングでのみ更新することで、結果表示中は currentRound が次ラウンドへ
-  // 先行して進んでいても表示は現在のラウンドのまま保たれる。
+  // 盤面反転・左右スコア表示に使う「表示中のゲーム番号」は、今表示している snapshot が
+  // 属するゲームに固定する。snapshot の参照が変わった (= 新しいゲームの対局が実際に
+  // 始まった) タイミングでのみ更新することで、結果表示中は currentRound が次ゲームへ
+  // 先行して進んでいても表示は現在のゲームのまま保たれる。
   const displayRoundRef = useRef(currentRound);
   const prevSnapshotForRoundRef = useRef(snapshot);
   if (snapshot !== prevSnapshotForRoundRef.current) {
@@ -109,7 +112,7 @@ export function MainWindow({
   const displayRound = displayRoundRef.current;
   const flip = doubleMode && displayRound === 1;
 
-  // 画面左右のスコア表示: 2試合目は先攻/後攻(COOL/HOT)が入れ替わるため、
+  // 画面左右のスコア表示: 第2ゲームは先攻/後攻(COOL/HOT)が入れ替わるため、
   // 画面の左右は固定したまま中身の team-index を round に応じて入れ替える
   const leftIdx    = idxForSide(0, displayRound);
   const rightIdx   = idxForSide(1, displayRound);
@@ -118,8 +121,8 @@ export function MainWindow({
 
   // ボトムバーの勝者側ピルをどちらの列 (画面左/右) に出すか — 画面左右は固定、
   // 中身の team-index は displayRound に応じて入れ替わる leftIdx/rightIdx で判定する
-  // フッターは常に「直前のラウンドの」勝敗を表示する (2試合制の第2試合終了時も同様)。
-  // 2試合の合計ポイントで決まるセット全体の勝者は、サイドパネルの TOTAL 欄に付く 🏆 で示す。
+  // フッターは常に「直前のゲームの」勝敗を表示する (2ゲーム制の第2ゲーム終了時も同様)。
+  // 2ゲームの合計ポイントで決まる試合全体の勝者は、サイドパネルの TOTAL 欄に付く 🏆 で示す。
   const leftIsWinner  = winnerTeamIdx !== null && winnerTeamIdx === leftIdx;
   const rightIsWinner = winnerTeamIdx !== null && winnerTeamIdx === rightIdx;
 
@@ -145,7 +148,7 @@ export function MainWindow({
 
   // ── セルサイズ / サイドパネル幅を安定した mainSize から一意に導出 ──────────
   const MAIN_GAP    = 12; // s.main の gap と一致させる
-  // サイドパネルの可読性のための固定最小幅 (盤面サイズに連動させない)。2試合制は明細行の
+  // サイドパネルの可読性のための固定最小幅 (盤面サイズに連動させない)。2ゲーム制は明細行の
   // ラベルと値が横に並ぶぶん幅を要求するため、この分だけ広く取る。doubleMode はセットアップ中
   // しか変更できないので、対戦中に盤面サイズが飛ぶことはない。
   const PANEL_MIN_W = doubleMode ? 130 : 110;
@@ -280,7 +283,7 @@ export function MainWindow({
               </span>
             )}
 
-            {/* 列2 (中央): 試合中はターンゲージ、引き分け時のみ引き分けピル */}
+            {/* 列2 (中央): ゲーム中はターンゲージ、引き分け時のみ引き分けピル */}
             {!gameEnd && maxTurn > 0 && (
               <div style={{ ...s.turnGaugeGroup, width: boardW > 0 ? boardW : undefined }}>
                 <span style={s.gaugeBarTrack}>
@@ -415,7 +418,7 @@ const s: Record<string, React.CSSProperties> = {
   // ステップ数ゲージ (原本の TimeBar_A/B 相当): 画面中央に数値を置き、その左右を
   // 独立した2本のゲージバーで挟む。残ターン数が減ると各バーが中央側から先に埋まった
   // ぶんだけ外側から縮んでいき、中央に向かって縮む見た目になる。
-  // 試合終了時は非表示にして結果ピルに切り替わる。
+  // ゲーム終了時は非表示にして結果ピルに切り替わる。
   // 幅は盤面の実描画幅 (boardW) にインラインで合わせる。boardW が未計測の間だけ、
   // このフォールバック幅を使う。
   turnGaugeGroup: {

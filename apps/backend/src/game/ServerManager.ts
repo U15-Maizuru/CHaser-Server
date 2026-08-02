@@ -9,12 +9,12 @@ import type { GameStatus } from './types.js';
 import { SlotManager } from './SlotManager.js';
 import { MapManager } from './MapManager.js';
 import { RoundController } from './RoundController.js';
+import { buildProcessConfig } from './processConfig.js';
 import { START_COUNTDOWN_SECONDS, Winner } from '@u15/ws-types';
 import type { ManualClient } from '../clients/ManualClient.js';
 import { pickRandomPair } from '../programCatalog.js';
 import { getMapCatalogEntry } from '../mapCatalog.js';
 import type {
-  CatalogEntry,
   ClientType,
   DisplayPrefs,
   InlineMapData,
@@ -29,8 +29,8 @@ import { DEFAULT_DISPLAY_PREFS } from '@u15/ws-types';
 // デモモード (無人自動進行) で、各フェーズ完了から次の操作を自動実行するまでの待機時間
 export interface DemoDelaysMs {
   start:     number; // setup 完了 → 自動 requestStart
-  nextRound: number; // 2試合制: 1試合目終了 → 自動 requestNextRound
-  repeat:    number; // 最終戦終了 (repeatMode 併用時) → 自動 requestRepeat
+  nextRound: number; // 2ゲーム制: 第1ゲーム終了 → 自動 requestNextRound
+  repeat:    number; // 最終ゲーム終了 (repeatMode 併用時) → 自動 requestRepeat
 }
 const DEFAULT_DEMO_DELAYS_MS: DemoDelaysMs = { start: 3_000, nextRound: 5_000, repeat: 10_000 };
 
@@ -189,7 +189,7 @@ export class ServerManager extends EventEmitter {
     const result = await session.run(clients, this.mapManager.map, log, this.round.turnDelayMs, this.startDelayMs);
     console.log('Game finished:', result.status);
 
-    // ラウンド結果を記録
+    // ゲーム結果を記録
     const roundResult = buildRoundResult(
       this.round.currentRound,
       result.status,
@@ -289,7 +289,7 @@ export class ServerManager extends EventEmitter {
     }, this.demoDelaysMs.start);
   }
 
-  /** デモモード: 対戦終了後、次戦 (2試合制) またはリピートへ自動的に進める */
+  /** デモモード: ゲーム終了後、第2ゲーム (2ゲーム制) またはリピートへ自動的に進める */
   private maybeAutoAdvanceDemo(): void {
     if (!this.round.demoMode) return;
     if (this.demoTimer) return; // 既に予約済み
@@ -312,18 +312,11 @@ export class ServerManager extends EventEmitter {
     const pair = pickRandomPair();
     if (!pair) return;
 
-    const buildConfig = (entry: CatalogEntry, slot: 0 | 1): ProcessConfig => ({
-      programType:    entry.programType,
-      programPath:    entry.programPath,
-      runtimeCommand: entry.runtimeCommand,
-      libPath:        `server/rooms/${this.roomId}/libs/${slot === 0 ? 'cool' : 'hot'}`,
-    });
-
-    await this.slots.setClientType(0, 'process', buildConfig(pair[0], 0));
-    await this.slots.setClientType(1, 'process', buildConfig(pair[1], 1));
+    await this.slots.setClientType(0, 'process', buildProcessConfig(pair[0], 0, this.roomId));
+    await this.slots.setClientType(1, 'process', buildProcessConfig(pair[1], 1, this.roomId));
   }
 
-  /** 試合ごとに一意なログファイルパスを組み立てる (日時+ラウンド番号)。保存先ディレクトリも用意する。 */
+  /** ゲームごとに一意なログファイルパスを組み立てる (日時+ゲーム番号)。保存先ディレクトリも用意する。 */
   private buildLogFilePath(): string {
     fs.mkdirSync(this.logDir, { recursive: true });
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');

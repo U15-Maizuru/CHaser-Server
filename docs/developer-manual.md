@@ -6,6 +6,7 @@
 
 ## 目次
 
+0. [用語と識別子の対応](#0-用語と識別子の対応-先に読むこと)
 1. [アーキテクチャ概要](#1-アーキテクチャ概要)
 2. [ディレクトリ構成](#2-ディレクトリ構成)
 3. [開発環境のセットアップ](#3-開発環境のセットアップ)
@@ -18,6 +19,36 @@
 10. [マルチルーム / Web サービスモード](#10-マルチルーム--web-サービスモード)
 11. [テスト](#11-テスト)
 12. [拡張ガイド](#12-拡張ガイド)
+
+---
+
+## 0. 用語と識別子の対応 (先に読むこと)
+
+日本語のドキュメント・UI 文言・コードコメントは、**[公式競技ルール](official/競技ルール.pdf)の
+用語**に統一している。一方、**コード中の英語識別子は歴史的に `round` / `set` を使っており、
+公式用語とは1段ずれている**。両者の対応は次のとおり:
+
+| 公式用語 | 意味 | コード上の識別子 |
+|---|---|---|
+| **ゲーム** | 1回の対戦 (盤面用意 → 決着 / ターン切れ) | `round` — `currentRound` / `roundResults` / `RoundResult` / `RoundController` / `idxForSide(side, round)` / `roundPointsFor` |
+| **試合** | 同じマップで先後を入れ替えた2ゲームのまとまり | `set` — `computeSetResult` / `SetResult` / `setResult.ts`、および `doubleMode` (= 2ゲーム制) |
+
+識別子をリネームすると `ServerStatusPayload` などのプロトコル型まで波及するため、**識別子は
+据え置き、日本語表記だけを公式用語に合わせる**方針を採っている。新しいコードを書くときも
+この対応表に従うこと (英語識別子は `round`/`set`、日本語コメントは「ゲーム」「試合」)。
+
+決着理由の表記も公式ルールに合わせている。唯一の例外は `Reason.FOULED` で、公式の呼称は
+「中断」だが、フッターのリセットボタン (対戦中は「中断」と表示) と紛れるため、UI・ドキュメント
+では **「通信エラー」** と表記する (得点上の扱いは公式の「中断【敗】」と同じ)。
+
+| `Reason` | 公式ルールの呼称 | UI 表記 |
+|---|---|---|
+| `SCORE` | 規定ターン終了時のアイテム数 | アイテム数 |
+| `COLLISION` | 衝突 | 衝突 |
+| `ATTACK` | アタック | アタック |
+| `TRAPPED` | 閉じ込め | 閉じ込め |
+| `CONFINED` | 自縛 | 自縛 |
+| `FOULED` | 中断 | 通信エラー |
 
 ---
 
@@ -94,11 +125,13 @@ U15-server-maizuru/
 │   │       ├── RoomManager.ts      部屋ライフサイクル管理
 │   │       ├── programCatalog.ts   対戦用プログラムライブラリ (CRUD カタログ、全ルーム共通)
 │   │       ├── mapCatalog.ts       マップライブラリ (CRUD カタログ、全ルーム共通)
+│   │       ├── libTemplates.ts     既定ライブラリ (pyCHaser 等) を各ルームの libs/ に配置
+│   │       ├── assets/
+│   │       │   └── lib-templates/  配置元テンプレート (ビルド時に dist へコピー)
 │   │       ├── clients/
-│   │       │   ├── BaseClient.ts
-│   │       │   ├── ComClient.ts
-│   │       │   ├── ManualClient.ts
-│   │       │   └── ProcessClient.ts
+│   │       │   ├── ComClient.ts        内蔵 CPU
+│   │       │   ├── ManualClient.ts     手動操作
+│   │       │   └── ProcessClient.ts    アップロードされたプログラムの子プロセス実行
 │   │       ├── game/
 │   │       │   ├── types.ts
 │   │       │   ├── GameLogic.ts
@@ -107,11 +140,12 @@ U15-server-maizuru/
 │   │       │   ├── ServerManager.ts    1ゲームを管理するコーディネーター (コンストラクタでポート番号ペアを受け取る)
 │   │       │   ├── SlotManager.ts      クライアント接続・スロット管理
 │   │       │   ├── MapManager.ts       マップ状態管理
-│   │       │   └── RoundController.ts  フェーズ・ラウンド制御
+│   │       │   └── RoundController.ts  フェーズ・ゲーム制御
 │   │       ├── log/
 │   │       │   └── StableLog.ts
 │   │       └── network/
 │   │           ├── PortPool.ts             TCP ポートプール
+│   │           ├── BaseClient.ts           全クライアント種別の基底 (Process/Tcp/Manual/Com)
 │   │           ├── TcpClient.ts
 │   │           ├── WsServer.ts             WebSocket サーバー。setRoomManager でルームマネージャを注入し、ソケット⇔ルームの紐付けを管理する薄いコーディネーター
 │   │           ├── LobbyRouter.ts          ロビー系メッセージ (create/join/list/destroy_room) を処理
@@ -130,6 +164,9 @@ U15-server-maizuru/
 │   │       │   ├── MapEditorDialog.tsx      Canvas ベースのマップ編集 (現在のマップを起点に編集し、適用/ライブラリ保存/ダウンロードを分離)
 │   │       │   ├── MapThumbnail.tsx         マップの縮小プレビュー (マップ列で使用)
 │   │       │   ├── MainWindow.tsx      盤面・スコア・進行状況の表示 (対戦表示/コントロール共用)
+│   │       │   ├── GameBoardCanvas.tsx 盤面描画 (テクスチャ・探索範囲・決着演出・ダーク幕)
+│   │       │   ├── PlayerSidePanel.tsx 左右のスコアパネル (ゲームごとの明細と TOTAL)
+│   │       │   ├── BottomBar.tsx       フッター (ライブラリ管理 / 次の一手 / 設定・リセット)
 │   │       │   ├── ManualMode.tsx      手動操作ウィンドウのルート
 │   │       │   ├── ManualControls.tsx  手動操作の入力パネル (矢印キー/ボタン)
 │   │       │   ├── ErrorBoundary.tsx   描画エラーを捕捉して各ウィンドウの落ちを防ぐ
@@ -140,12 +177,13 @@ U15-server-maizuru/
 │   │       │   ├── useGamePhaseSound.ts  ControlApp/DisplayMode 共用のフェーズ遷移 SE
 │   │       │   ├── useTextures.ts        GameBoardCanvas/MapEditorDialog/MapThumbnail 共用のテクスチャ読込
 │   │       │   ├── useBgm.ts             フェーズに応じた BGM 再生
-│   │       │   ├── useStartCountdown.ts  試合開始カウントダウンの表示制御
+│   │       │   ├── useStartCountdown.ts  ゲーム開始カウントダウンの表示制御
 │   │       │   └── ...
 │   │       ├── lib/
-│   │       │   ├── roundSide.ts        2試合制のラウンド番号から画面左右の team-index を算出
-│   │       │   ├── setResult.ts        画面側 (side) ごとの勝利数・合計ポイントとセット勝者を算出
+│   │       │   ├── roundSide.ts        2ゲーム制のゲーム番号から画面左右の team-index を算出
+│   │       │   ├── setResult.ts        画面側 (side) ごとの勝利数・合計ポイントと試合勝者を算出
 │   │       │   │                        (勝利数優先 → 同数なら合計ポイント。サイドパネルの TOTAL 欄で使用)
+│   │       │   ├── decisiveEffect.ts   決着理由 → 盤面演出 (勝者の 👑・敗者の暗転・敗因バッジ/リング) の変換
 │   │       │   └── ...
 │   │       └── ...
 │   │
@@ -161,10 +199,11 @@ U15-server-maizuru/
 ├── server/
 │   ├── program-catalog/            プログラムライブラリ (CRUD カタログ、全ルーム共通)
 │   ├── map-catalog/                マップライブラリ (CRUD カタログ、全ルーム共通)
+│   ├── music/                      BGM ファイル (全ルーム共通)
 │   └── rooms/<roomId>/
 │       ├── programs/cool/          COOL チームのアップロードプログラム
 │       ├── programs/hot/
-│       ├── libs/cool/
+│       ├── libs/cool/              pyCHaser 等の既定ライブラリ + カスタムライブラリ
 │       └── libs/hot/
 │
 └── docs/
@@ -224,6 +263,8 @@ interface CatalogEntry { id, displayName, programPath, programType, runtimeComma
 interface MapCatalogEntry { id, displayName, mapPath, uploadedAt, size, turn, blockCount, itemCount }
 interface MapParams { itemNum, blockNum, turnNum, mirror, size? }
 interface InlineMapData { field, size, turn, teamFirstPoint }
+type MapSourceKind = 'random' | 'catalog' | 'editor'
+interface MapSourceInfo { kind, catalogId?, displayName? }   // ServerStatusPayload.mapSource
 
 // ルーム / ロビーを表す型
 interface RoomSummary { id, phase, ports, createdAt }
@@ -293,7 +334,7 @@ class RoomManager {
 |---|---|
 | `SlotManager` | スロットごとのクライアント接続 (Process/Tcp/Manual/Com) のライフサイクル管理。`setClientType` / `deleteProgram` / `startListening` など |
 | `MapManager` | マップ状態と**選択中のソース** (`random` / `catalog` / `editor`) の保持。`loadFromCatalog` / `setMapParams` / `loadInlineData` / `refreshForNewGame` / `getCurrentMapData` |
-| `RoundController` | フェーズ (`setup`/`playing`/`finished`)・2試合制のラウンド進行・デモ/リピートモード・ターン表示待機時間 |
+| `RoundController` | フェーズ (`setup`/`playing`/`finished`)・2ゲーム制のゲーム進行・デモ/リピートモード・ターン表示待機時間 |
 
 ```typescript
 // ポートはコンストラクタで指定する (省略時は [12031, 12032])
@@ -304,7 +345,7 @@ shutdown(): void
 ```
 
 デモモード (`setDemoMode`) は、全スロットが ready になった時点で自動的に `requestStart` を、
-2試合制の1試合目終了時に自動的に `requestNextRound` を、リピートモード併用時は最終戦終了時に
+2ゲーム制の第1ゲーム終了時に自動的に `requestNextRound` を、リピートモード併用時は最終ゲーム終了時に
 自動的に `requestRepeat` を発行する (`DemoDelaysMs` で各ステップの待機時間を調整可能)。
 ログ保存先 (`setLogDir`) と Python 実行コマンド (`setPythonCommand`) の上書きは、
 `U15_MODE=local` のときのみ有効になる。Web モードではリモートのクライアントがサーバー上の
@@ -384,8 +425,8 @@ ws.onopen = () => {
 | `delete_program` | `{slot}` | プログラム削除 |
 | `request_start` | — | ゲーム開始 |
 | `request_reset` | — | リセット |
-| `request_next_round` | — | 次試合開始 |
-| `set_double_mode` | `{enabled}` | 2試合制 ON/OFF |
+| `request_next_round` | — | 次ゲーム開始 |
+| `set_double_mode` | `{enabled}` | 2ゲーム制 ON/OFF |
 | `set_repeat_mode` | `{enabled}` | リピートモード ON/OFF (setup フェーズのみ変更可) |
 | `set_demo_mode` | `{enabled}` | デモモード (無人自動進行) ON/OFF (setup フェーズのみ変更可) |
 | `set_dark_mode` | `{enabled}` | 対戦表示のダークモード ON/OFF |
@@ -393,8 +434,8 @@ ws.onopen = () => {
 | `set_tcp_timeout` | `{ms}` | TCP クライアントの応答タイムアウト |
 | `set_log_dir` | `{dir}` | ログ保存先 (ローカルモードのみ有効) |
 | `set_python_command` | `{command}` | Python 実行コマンドの上書き (ローカルモードのみ有効) |
-| `request_next_round` | — | 2試合制: 次ラウンドの準備 (先後を入れ替えて再接続待ちにする) |
-| `request_repeat` | — | 最終戦終了後、接続 (type) を維持したまま先後を入れ替えて再戦準備する |
+| `request_next_round` | — | 2ゲーム制: 次ゲームの準備 (先後を入れ替えて再接続待ちにする) |
+| `request_repeat` | — | 最終ゲーム終了後、接続 (type) を維持したまま先後を入れ替えて再戦準備する |
 | `manual_action` | `{slot, action, rote}` | 手動操作 |
 | `load_map` | `{catalogId}` | マップライブラリのエントリを選択 (パスの解決はサーバー側) |
 | `set_map_params` | `{...}` | ランダム生成に切り替え、パラメータを記憶して生成 |
@@ -429,7 +470,11 @@ ws.onopen = () => {
 | エンドポイント | メソッド | 説明 |
 |---|---|---|
 | `/api/default-room` | GET | ローカルモード用: `{roomId: "local", ports: [12031, 12032]}` を返す |
-| `/api/upload/program?slot=0\|1&room=<id>` | POST | AI プログラム (.py/.exe) アップロード |
+| `/api/upload/program?slot=0\|1&room=<id>` | POST | AI プログラム (.py/.exe) をルームのスロットへ直接アップロード |
+| `/api/programs` | POST | プログラムライブラリへの新規アップロード (.py/.exe) — 全ルーム共通、`programCatalog.ts` |
+| `/api/programs` | GET | プログラムライブラリの一覧 (`CatalogEntry[]`) |
+| `/api/programs/:id` | PATCH | デモ対象フラグの更新 (`{demoEnabled: boolean}`) |
+| `/api/programs/:id` | DELETE | プログラムライブラリからの削除 |
 | `/api/upload/library?slot=0\|1&room=<id>` | POST | カスタムライブラリ (.py) アップロード |
 | `/api/libs?slot=0\|1&room=<id>` | GET | アップロード済みライブラリ一覧 |
 | `/api/libs/:filename?slot=0\|1&room=<id>` | DELETE | ライブラリ削除 |
@@ -441,8 +486,11 @@ ws.onopen = () => {
 | `/api/maps/random` | POST | ステートレスなランダムマップ生成 (`MapParams` → `InlineMapData`)。`GameSystem.createRandomMap` を直接呼ぶだけでどの部屋にも影響しない |
 | `/api/maps/save-inline` | POST | 今出ているマップ (`InlineMapData`) をライブラリへ保存。ランダム生成・エディタのどちらからも使う |
 | `/api/maps/export` | POST | 今出ているマップをライブラリに残さずそのままダウンロード |
+| `/api/upload/music` | POST | BGM (.mp3/.wav) アップロード — 全ルーム共通 (`server/music/`) |
+| `/api/music` | GET | 利用可能な BGM ファイル名の一覧 |
+| `/api/music/:filename` | GET | BGM の再生用ストリーム |
 
-アップロードされたファイルは `server/rooms/<roomId>/programs/cool/` 等にルーム別に保存されます。プログラム・マップの各ライブラリは `server/program-catalog/` / `server/map-catalog/` にルームを跨いで共通保存されます。
+アップロードされたファイルは `server/rooms/<roomId>/programs/cool/` 等にルーム別に保存されます。プログラム・マップ・BGM は `server/program-catalog/` / `server/map-catalog/` / `server/music/` にルームを跨いで共通保存されます。
 
 ---
 
@@ -536,7 +584,7 @@ if (turnDelayMs > 0) await sleep(ms);
 // 次フェーズへ
 ```
 
-### ラウンド別ボーナス (`calculateBonusBreakdown`)
+### ゲーム別ボーナス (`calculateBonusBreakdown`)
 
 決着理由が `SCORE` (ターン切れによるアイテム数判定) の場合、および勝者が COOL/HOT に定まらない
 場合はボーナスなし。それ以外の決着では:
@@ -555,22 +603,27 @@ sweepBonus[winnerIdx] = SWEEP_POINT_PER_ITEM * leaveItems;
 
 係数は競技ルールの「ポイント」に対応する (アイテム×10 / アタック・閉じ込め【勝】+50 /
 衝突・自縛【敗】−獲得数×3 / 総取り【勝】+残り×6)。`strikeBonus` は勝者側の加点と敗者側の
-減点の両方を取りうる (決着理由が排他なので、1ラウンドでどちらか一方だけが入る) 点に注意。
+減点の両方を取りうる (決着理由が排他なので、1ゲームでどちらか一方だけが入る) 点に注意。
 
-ボーナスは1試合制でも発生する（決着理由が `SCORE` 以外なら常に計算される）。1ラウンドの
+ボーナスは1ゲーム制でも発生する（決着理由が `SCORE` 以外なら常に計算される）。1ゲームの
 ポイントは `scores × 10 + strikeBonus + sweepBonus`。
 
-セット全体の集計はフロントの `lib/setResult.ts` (`roundPointsFor` / `roundWonBy` /
+試合全体の集計はフロントの `lib/setResult.ts` (`roundPointsFor` / `roundWonBy` /
 `computeSetResult`) に集約している。集計の単位が team-index ではなく画面側 (`side`) である点に
-注意 — 2試合制ではラウンドごとに先攻/後攻が入れ替わるため、`idxForSide(side, round)` で
+注意 — 2ゲーム制ではゲームごとに先攻/後攻が入れ替わるため、`idxForSide(side, round)` で
 team-index を引き直さないと同じプログラムを追いかけられない。
 
-セット勝者の判定順は競技ルールどおり **① 勝利数 → ② 合計ポイント**。`computeSetResult()` は
+試合勝者の判定順は競技ルールどおり **① 勝利数 → ② 合計ポイント**。`computeSetResult()` は
 どちらで決まったかを `decidedBy: 'wins' | 'points'` で返し、`PlayerSidePanel` の TOTAL 欄が
 決め手になった側の行を枠で強調するのに使う。
 
-表示の役割分担: `MainWindow` のフッター結果ピルは `gameEnd` (直前ラウンドの結果) をそのまま
-表示し、2試合制の第2試合終了時も切り替えない。セット全体の勝者は `PlayerSidePanel` の
+**勝利数・合計ポイントとも並んだ場合、競技ルールでは「マップを変更して再試合」** となる。
+アプリはこの再試合を自動化していない: `computeSetResult()` は `winnerSide: null` /
+`decidedBy: null` を返し、どちらのパネルにも 🏆 を付けずに終わる (運営がリセットして
+マップを選び直す運用)。自動化するならこの戻り値が分岐点になる。
+
+表示の役割分担: `MainWindow` のフッター結果ピルは `gameEnd` (直前ゲームの結果) をそのまま
+表示し、2ゲーム制の第2ゲーム終了時も切り替えない。試合全体の勝者は `PlayerSidePanel` の
 TOTAL 欄に付く 🏆 (`computeSetResult().winnerSide`) だけが示す。
 
 ### 判定優先順位 (`judgeGame`)
@@ -579,6 +632,14 @@ TOTAL 欄に付く 🏆 (`computeSetResult().winnerSide`) だけが示す。
 2. 4方向囲まれ (CONFINED / TRAPPED)
 3. 切断 (FOULED)
 4. ターン0 → スコア比較 (SCORE / DRAW)
+
+### 競技ルールが定める盤面の値
+
+| 項目 | 競技ルール | 実装 |
+|---|---|---|
+| マップサイズ | 横 15・縦 17 | `GameSystem.createRandomMap` の既定サイズが 15×17。フロントの `MAP_SIZES` は「決戦 (15×17)」= 公式、「広域 (21×17)」= 公式外の練習用 |
+| ターン数 | 1ゲーム 100〜240 | 既定 100 (`MapManager.params.turnNum`)。入力欄 (`MapSourceSection`) の許容範囲は 10〜500 と公式より広く、`.map` の `T:` 行にも上限チェックが無いため、**公式範囲外の値も通る** (練習・デモ用途のため意図的) |
+| プレイヤー初期位置 | 中央より左に先攻・右に後攻 | ランダム生成は `mirror` で左右対称に配置。`.map` は `C:` / `H:` 行の座標をそのまま使う |
 
 ### マップ形式 (.map ファイル)
 
@@ -604,6 +665,8 @@ App.tsx (ErrorBoundary でラップ)
 ├── DisplayMode.tsx         (?room=xxx&mode=display)
 │   ├── SetupWaiting        (setup フェーズの待機画面, ポートを動的表示)
 │   └── MainWindow.tsx      (playing/finished フェーズ)
+│       ├── PlayerSidePanel.tsx × 2   左右のスコアパネル (1ゲーム制/2ゲーム制で明細が変わる)
+│       └── GameBoardCanvas.tsx       盤面描画 (探索範囲・決着演出・ダーク幕)
 │
 ├── ControlApp              (?room=xxx&mode=control)
 │   ├── SettingDialog.tsx        表示/対戦/BGM/環境 (全フェーズ)。設定の集約先
@@ -615,6 +678,7 @@ App.tsx (ErrorBoundary でラップ)
 │   │   │   └── ProgramLibrarySection.tsx  使うプログラムの「選択」専用
 │   │   └── MapPreviewColumn (StartupDialog 内)
 │   │       └── MapSourceSection.tsx       使うマップの「選択」専用 (ライブラリ/ランダム/エディタ)
+│   ├── BottomBar.tsx            フッター (ライブラリ管理 / 次の一手 / 設定・全画面・リセット)
 │   └── MainWindow.tsx
 │
 └── ManualMode.tsx           (?room=xxx&mode=manual&slot=0|1 — 手動操作ウィンドウ)
@@ -622,8 +686,8 @@ App.tsx (ErrorBoundary でラップ)
 ```
 
 盤面反転・左右スコア表示・差分アニメーションのリセット判定 (`MainWindow.tsx` /
-`GameBoardCanvas.tsx`) は、バックエンドから明示的な「新ラウンド開始」通知が来ないため、
-`turnCount` が前回より増加したことを検知してラウンド境界とみなす設計になっている。
+`GameBoardCanvas.tsx`) は、バックエンドから明示的な「新ゲーム開始」通知が来ないため、
+`turnCount` が前回より増加したことを検知してゲーム境界とみなす設計になっている。
 
 ### 主要フック
 
@@ -635,11 +699,12 @@ App.tsx (ErrorBoundary でラップ)
 | `useClientPrefs()` | 表示・音の好み (muted/bgmMuted/bgmTrack/theme/displayTitle)。`u15_client_prefs` |
 | `useMatchConfig()` | timeout / turnDelay。`ServerStatusPayload` に無いためクライアント側でキャッシュ。`u15_match_config` |
 | `useEnvConfig()` | logDir / pythonCommand (Electron ローカル限定)。`u15_env_config` |
+| `useMapGenParams()` | ランダム生成のパラメータ (sizeIdx/blockNum/itemNum/turnNum/mirror)。`u15_map_gen_params` |
 | `useSound()` | SE 再生 |
 | `useGamePhaseSound(snapshot, serverStatus, gameEnd, muted)` | フェーズ遷移 (go/finish/win) とスコア変化の SE 再生。ControlApp と DisplayMode で共用 |
 | `useTextures(theme)` | テーマ別テクスチャ読込。GameBoardCanvas / MapEditorDialog / MapThumbnail で共用 |
 | `useBgm(phase, muted)` | フェーズに応じた BGM 再生・停止 |
-| `useStartCountdown(phase, turnInfo)` | 試合開始カウントダウンの表示制御 |
+| `useStartCountdown(phase, turnInfo)` | ゲーム開始カウントダウンの表示制御 |
 | `useFileUpload()` | XHR multipart アップロード |
 
 ### 設定の分類と置き場所 (重要)
@@ -697,9 +762,9 @@ UI が受け付けると「押せるのに何も起きない」状態になる�
 | ゲート (`RoundController`) | 対象コマンド | UI 側の扱い |
 |---|---|---|
 | `canStart()` = `phase==='setup'` | `set_client` / `request_start` | セットアップ画面自体が setup のときだけ描画される |
-| `canStart()` = `phase==='setup'` | `set_*_mode` | `SettingDialog` は全フェーズで開けるため、「対戦」タブのチップを `disabled` にし理由を表示する。**UI 側は `setup && roundResults.length===0` とサーバーより厳しく塞ぐ** (セット内でルールが変わるのを防ぐため) |
+| `canStart()` = `phase==='setup'` | `set_*_mode` | `SettingDialog` は全フェーズで開けるため、「対戦」タブのチップを `disabled` にし理由を表示する。**UI 側は `setup && roundResults.length===0` とサーバーより厳しく塞ぐ** (試合内でルールが変わるのを防ぐため) |
 | `canEditMap()` = `setup && roundResults.length===0` | `load_map` / `set_map_params` / `load_map_data` | `MapSourceSection` の「変更」トリガを `disabled` にする (理由は `StartupDialog` の帯で説明)。プレビューと `MapLibraryDialog` (管理のみ) は選択を伴わないので setup 中は常に出す |
-| ゲートなし | `request_reset` / `set_dark_mode` / `set_turn_delay` / `set_tcp_timeout` | `request_reset` は BottomBar に常設 (デモ/リピート/対戦中からの唯一の出口)。`darkMode` と進行パラメータは全フェーズで編集可 (`turnDelay` は `requestStart` 時に値渡しで消費されるため、効くのは次の試合から) |
+| ゲートなし | `request_reset` / `set_dark_mode` / `set_turn_delay` / `set_tcp_timeout` | `request_reset` は BottomBar に常設 (デモ/リピート/対戦中からの唯一の出口)。`darkMode` と進行パラメータは全フェーズで編集可 (`turnDelay` は `requestStart` 時に値渡しで消費されるため、効くのは次のゲームから) |
 
 ### WS URL の自動検出
 
@@ -837,7 +902,15 @@ server/map-catalog/                    ← マップライブラリ (全ルー�
 pnpm --filter @u15/backend test
 ```
 
-テストファイル: `GameLogic.test.ts`, `GameSystem.test.ts`, `ServerManager.test.ts`, `TcpClient.test.ts`, `WsServer.test.ts`, `RoomManager.test.ts`, `HttpServer.test.ts`
+テストファイル:
+
+| 範囲 | ファイル |
+|---|---|
+| ゲーム進行・判定 | `game/GameLogic.test.ts`, `game/GameSystem.test.ts`, `game/Game.test.ts` |
+| ServerManager の分割クラス | `game/ServerManager.test.ts`, `game/MapManager.test.ts`, `game/SlotManager.test.ts` |
+| ネットワーク | `network/TcpClient.test.ts`, `network/WsServer.test.ts`, `network/HttpServer.test.ts` |
+| ルーム・カタログ | `RoomManager.test.ts`, `programCatalog.test.ts`, `mapCatalog.test.ts`, `libTemplates.test.ts` |
+| クライアント | `clients/ProcessClient.test.ts` |
 
 `WsServer.test.ts` は `RoomManager` を使ってルーム対応の統合テストを行います。メッセージ受信はバッファ付き `connectWs()` で競合状態を回避しています。
 
@@ -847,9 +920,15 @@ pnpm --filter @u15/backend test
 pnpm --filter @u15/frontend test
 ```
 
-`vite.config.ts` の `test` ブロック (environment: jsdom) で設定。テストファイル: `hooks/useTextures.test.ts`, `hooks/useGamePhaseSound.test.ts`。
+`vite.config.ts` の `test` ブロック (environment: jsdom) で設定。テストファイル:
 
-canvas を多用するコンポーネント (`MapEditorDialog` など) は E2E で既にカバーされているため、まず新規抽出したフック単位のテストを優先しています。
+| 範囲 | ファイル |
+|---|---|
+| フック | `hooks/useTextures.test.ts`, `hooks/useGamePhaseSound.test.ts`, `hooks/usePersistedState.test.ts` |
+| 得点・演出のロジック | `lib/setResult.test.ts`, `lib/roundSide.test.ts`, `lib/decisiveEffect.test.ts` |
+| コンポーネント | `components/PlayerSidePanel.test.tsx` |
+
+canvas を多用するコンポーネント (`MapEditorDialog` / `GameBoardCanvas` など) は E2E で既にカバーされているため、フックと純粋ロジック (`lib/`) を切り出した単位でのテストを優先しています。得点表示のようにルールを直接反映する箇所は `PlayerSidePanel.test.tsx` でレンダリング結果まで確認しています。
 
 ### E2E テスト (Playwright)
 

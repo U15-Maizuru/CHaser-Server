@@ -124,7 +124,7 @@ export class SlotManager extends EventEmitter {
     }
   }
 
-  /** 両スロットの type と processConfig を入れ替える (2試合制の先後入れ替え用) */
+  /** 両スロットの type と processConfig を入れ替える (2ゲーム制の先後入れ替え用) */
   swapSlotConfigs(): void {
     [this.slots[0].type, this.slots[1].type] =
       [this.slots[1].type, this.slots[0].type];

@@ -2,8 +2,8 @@ import { useEffect, useRef } from 'react';
 import type { ServerPhase } from '@u15/ws-types';
 
 /**
- * 試合中の BGM ループ再生。原本 (U15-server) は ./Music フォルダの mp3/wav を
- * 試合開始前に選択し、試合中ループ再生、終了時に停止して SE (finish/win/lose) に
+ * ゲーム中の BGM ループ再生。原本 (U15-server) は ./Music フォルダの mp3/wav を
+ * ゲーム開始前に選択し、ゲーム中ループ再生、終了時に停止して SE (finish/win/lose) に
  * 差し替える。ここでは phase==='playing' の間だけループ再生し、それ以外では停止する。
  *
  * 観戦画面 (DisplayMode) のみで有効にする — コントロール窓と両方で鳴らすと

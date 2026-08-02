@@ -5,7 +5,7 @@ import { usePersistedState } from './usePersistedState';
  * クライアント側でキャッシュして明示的に送信する必要がある。
  *
  * バックエンドの setTurnDelay / setTcpTimeout にフェーズゲートは無いが、turnDelay は
- * requestStart 時に値渡しで消費されるため、進行中の試合には影響せず「次の試合から」効く。
+ * requestStart 時に値渡しで消費されるため、進行中のゲームには影響せず「次のゲームから」効く。
  */
 export interface MatchConfig {
   timeout:   number;  // TCP タイムアウト (秒)

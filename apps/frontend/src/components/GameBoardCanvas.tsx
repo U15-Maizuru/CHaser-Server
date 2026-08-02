@@ -27,7 +27,7 @@ const SAFETY_FACTOR = 0.8; // 実測間隔に掛ける係数 (次のターン更
 const MIN_WALK_MS   = 60;
 const MAX_WALK_MS   = 260;
 
-const VEIL_WIPE_MS = 800; // ラウンド終了時にダーク幕が上から消えていくワイプ演出の所要時間
+const VEIL_WIPE_MS = 800; // ゲーム終了時にダーク幕が上から消えていくワイプ演出の所要時間
 
 // 決着演出 (敗者の上にブロック / 周囲4マスの強調) のインパクト部分の長さ。
 // これが終わったあとも、演出そのものは静止した状態で結果表示中ずっと残り続ける。
@@ -58,7 +58,7 @@ interface Props {
   theme?:   string;
   cellSize?: number;   // 外部からセルサイズを指定 (省略時は DEFAULT_CELL)
   darkMode?: boolean;  // true: 各チームの現在地周辺 (3x3) のみ明るく表示し、他は暗く覆う
-  roundEnded?: boolean; // true: ラウンドが終了した瞬間にダーク幕を上からワイプで解除する
+  roundEnded?: boolean; // true: ゲームが終了した瞬間にダーク幕を上からワイプで解除する
   /** 決着演出 (全決着理由。勝者の 👑 と敗者の暗転を含む)。null なら何も描かない */
   decisive?: DecisiveEffect | null;
 }
@@ -121,9 +121,9 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
   const animRef             = useRef<[WalkAnim | null, WalkAnim | null]>([null, null]);
   const rafRef              = useRef<number | null>(null);
 
-  // ダーク幕のワイプ解除: ラウンド終了時に幕を上から徐々に消す演出用の状態
+  // ダーク幕のワイプ解除: ゲーム終了時に幕を上から徐々に消す演出用の状態
   const wipeRef            = useRef<{ start: number; duration: number } | null>(null);
-  const veilLiftedRef      = useRef(false); // ワイプ完了後、次ラウンド開始まで幕を描かない
+  const veilLiftedRef      = useRef(false); // ワイプ完了後、次ゲーム開始まで幕を描かない
   const prevRoundEndedRef  = useRef(false);
 
   // ブロック設置アニメーション: 前回の field との差分で NOTHING→BLOCK を検知する
@@ -320,7 +320,7 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
           if (!drawImg('Block', cx(pos.x), cy(pos.y))) drawBlock(ctx, cx(pos.x), cy(pos.y), CELL);
           ctx.restore();
         } else if (mark.shape === 'surround') {
-          // 包囲・自縛: 敗者の上下左右のブロックを強調する。歩行補間の途中でも
+          // 閉じ込め・自縛: 敗者の上下左右のブロックを強調する。歩行補間の途中でも
           // 隣接マスはセル境界に合わせる必要があるため、整数マスに丸めて使う
           const bx = Math.round(pos.x);
           const by = Math.round(pos.y);
@@ -336,7 +336,7 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
           ctx.globalAlpha = 1;
         }
 
-        // 敗北の暗転。キャラ自身のマスだけを覆う (包囲の周囲4マスは暗転させない)
+        // 敗北の暗転。キャラ自身のマスだけを覆う (閉じ込めの周囲4マスは暗転させない)
         if (mark.dim) {
           ctx.globalAlpha = 0.45 * eased;
           ctx.fillStyle   = '#000000';
@@ -527,7 +527,7 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
   };
 
   // アニメ対象 (歩行・ブロック出現・アイテム消滅・ダーク幕ワイプ・決着演出) が残っていれば
-  // rAF ループを開始する。複数のトリガー (snapshot 受信、ラウンド終了、決着) から呼ばれるため、
+  // rAF ループを開始する。複数のトリガー (snapshot 受信、ゲーム終了、決着) から呼ばれるため、
   // 既に回っている場合は何もしない。
   const startLoopIfNeeded = () => {
     if (rafRef.current !== null) return;
@@ -593,7 +593,7 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
 
   // snapshot (= 新しい game_state) を受信するたびに実行する。
   // 隣接1マス移動ならウォーキングアニメーションを開始し、それ以外 (初回配置・リセット・
-  // ラウンド開始等のワープ) は即時配置する。アニメーション時間は直前の game_state 受信間隔の
+  // ゲーム開始等のワープ) は即時配置する。アニメーション時間は直前の game_state 受信間隔の
   // 実測値を基準にする (turnDelay 設定や CPU/プロセス側の思考時間に関わらず、次のターン更新
   // より前に確実に歩行を完了させるため)。
   useEffect(() => {
@@ -629,9 +629,9 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
     }
     prevTargetRef.current = newTargets;
 
-    // ブロック設置検知: turnCount が増加した (= 新しい試合/ラウンドが始まってマップが
+    // ブロック設置検知: turnCount が増加した (= 新しいゲームが始まってマップが
     // 総入れ替えされた) 場合や初回・サイズ変更時は、差分アニメーションの対象にはせず
-    // 基準となるフィールドを更新するだけにする (MainWindow.tsx のラウンド切り替え検知と同じ考え方)
+    // 基準となるフィールドを更新するだけにする (MainWindow.tsx のゲーム切り替え検知と同じ考え方)
     const prevField = prevFieldRef.current;
     const isReset =
       prevField === null ||
@@ -652,7 +652,7 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
       }
     }
     // 探索範囲演出: LOOK/SEARCH が行われたターンだけ lastScan が載る。
-    // ラウンド/試合の切り替え時 (isReset) は他のアニメ状態と同じく破棄する。
+    // ゲームの切り替え時 (isReset) は他のアニメ状態と同じく破棄する。
     if (isReset) {
       scanFxRef.current = [];
     } else if (snapshot.lastScan) {
@@ -675,8 +675,8 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [snapshot]);
 
-  // ラウンド終了 (roundEnded: false→true) の瞬間、表示中のダーク幕を上からワイプで解除する。
-  // 次のラウンドが始まる (roundEnded: true→false) と通常のダーク幕表示に戻す。
+  // ゲーム終了 (roundEnded: false→true) の瞬間、表示中のダーク幕を上からワイプで解除する。
+  // 次のゲームが始まる (roundEnded: true→false) と通常のダーク幕表示に戻す。
   useEffect(() => {
     const wasEnded = prevRoundEndedRef.current;
     prevRoundEndedRef.current = roundEnded;
@@ -695,7 +695,7 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
   }, [roundEnded]);
 
   // 決着した瞬間 (decisive: null→非null) にインパクト演出を開始する。演出が終わっても
-  // decisive が残っている限り盤面には表示され続け、次のラウンド開始/リセットで decisive が
+  // decisive が残っている限り盤面には表示され続け、次のゲーム開始/リセットで decisive が
   // null に戻ると消える (= フッターの結果ピルとまったく同じライフサイクル)。
   useEffect(() => {
     decisiveAnimRef.current = decisive ? { start: performance.now(), duration: DECISIVE_MS } : null;

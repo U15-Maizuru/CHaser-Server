@@ -34,8 +34,8 @@ export class RoundController {
   }
 
   /** マップ設定 (ターン数/アイテム数/ブロック数/対称/読み込み) を変更してよいか。
-   *  setup フェーズであっても、2試合制の第1試合後・第2試合待機中の setup
-   *  (roundResults に既に結果がある) では、セット内でマップが変わってしまうため許可しない。 */
+   *  setup フェーズであっても、2ゲーム制の第1ゲーム後・第2ゲーム待機中の setup
+   *  (roundResults に既に結果がある) では、試合内でマップが変わってしまうため許可しない。 */
   canEditMap(): boolean {
     return this.phase === 'setup' && this.roundResults.length === 0;
   }
@@ -47,14 +47,14 @@ export class RoundController {
     return true;
   }
 
-  /** 対戦 (doubleMode なら2試合) が最後まで終わっており、リピート可能かどうか */
+  /** 対戦 (doubleMode なら2ゲーム) が最後まで終わっており、リピート可能かどうか */
   canRepeat(): boolean {
     if (!this.repeatMode) return false;
     if (this.phase !== 'finished') return false;
     return !this.doubleMode || this.roundResults.length >= 2;
   }
 
-  /** requestStart で1試合終わった直後の遷移。doubleMode の1試合目なら試合2待機へ */
+  /** requestStart で1ゲーム終わった直後の遷移。doubleMode の第1ゲームなら第2ゲーム待機へ */
   advanceAfterRound(): void {
     if (this.doubleMode && this.currentRound === 0) {
       this.currentRound = 1;

@@ -31,7 +31,7 @@ interface Props {
 
 const THEMES = ['Jewel', 'Light', 'Heavy', 'RPG'] as const;
 
-// 設定の集約先。表示/音/環境に加えて、対戦のルール (2試合制/リピート/デモ) と
+// 設定の集約先。表示/音/環境に加えて、対戦のルール (2ゲーム制/リピート/デモ) と
 // 進行パラメータ (ターン表示時間/TCPタイムアウト) も「対戦」タブで扱う。
 //
 // 「環境」タブだけが下書き + [保存] 方式。表示・BGM・対戦ルールはサーバーが真実を持つ状態
@@ -67,12 +67,12 @@ export function SettingDialog({
   };
 
   // 対戦ルールを変更してよいか。バックエンドのゲート (ServerManager.set*Mode の canStart())
-  // は setup フェーズのみを見るが、2試合制のセット中 (roundResults が既にある setup) に
-  // ルールが変わるとセット内で条件が食い違うため、UI 側はサーバーより厳しく塞ぐ。
+  // は setup フェーズのみを見るが、試合の途中 (2ゲーム制で roundResults が既にある setup) に
+  // ルールが変わると同じ試合の2ゲームで条件が食い違うため、UI 側はサーバーより厳しく塞ぐ。
   const canEditRules  = status.phase === 'setup' && status.roundResults.length === 0;
   const rulesLockNote = status.phase !== 'setup'
     ? '対戦中は対戦ルールを変更できません。セットアップ画面に戻ると変更できます。'
-    : '2試合制のセット中は対戦ルールを変更できません（両試合で同じルールを使うため）。';
+    : '試合の途中（第2ゲーム待ち）は対戦ルールを変更できません（同じ試合の2ゲームで同じルールを使うため）。';
 
   const handleDemoToggle = (enabled: boolean) => {
     // setDemoMode(true) はサーバー側で randomizeFromCatalog() を呼び、両スロットの
@@ -163,15 +163,15 @@ export function SettingDialog({
                     active={status.doubleMode}
                     disabled={!canEditRules}
                     onClick={() => onSetDoubleMode(!status.doubleMode)}
-                    title="先攻・後攻を入れ替えた2試合を行い、合計得点で勝者を決める"
+                    title="公式ルールの試合形式。同じマップで先攻・後攻を入れ替えた2ゲームを行い、勝利数（同数なら合計ポイント）で試合の勝者を決める"
                   >
-                    2試合制
+                    2ゲーム制
                   </ToggleChip>
                   <ToggleChip
                     active={status.repeatMode}
                     disabled={!canEditRules}
                     onClick={() => onSetRepeatMode(!status.repeatMode)}
-                    title="対戦終了後、接続を保ったまま先後を入れ替えて再戦できるようにする"
+                    title="最終ゲーム終了後、接続を保ったまま先後を入れ替えて再戦できるようにする"
                   >
                     リピート
                   </ToggleChip>
@@ -190,7 +190,7 @@ export function SettingDialog({
               </section>
 
               {/* 進行パラメータ。サーバー側にフェーズゲートが無く、turnDelay は requestStart 時に
-                  値渡しで消費されるため、対戦中でも安全に編集できる (効くのは次の試合から) */}
+                  値渡しで消費されるため、対戦中でも安全に編集できる (効くのは次のゲームから) */}
               <section style={s.section}>
                 <div style={s.sectionLabel}>進行</div>
                 <div style={s.numRow}>
@@ -217,7 +217,7 @@ export function SettingDialog({
                     <span style={s.unit}>秒</span>
                   </label>
                 </div>
-                <span style={s.hint}>進行中の試合には影響せず、次の試合から反映されます。</span>
+                <span style={s.hint}>進行中のゲームには影響せず、次のゲームから反映されます。</span>
               </section>
             </div>
           )}

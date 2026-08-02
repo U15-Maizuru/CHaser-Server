@@ -38,7 +38,7 @@ interface PanelDim {
   totalPadV: number; totalPadH: number;
   totalHeaderFont: number; totalHeaderMarginB: number; totalHeaderPadT: number;
   winsFont: number; winsPadV: number;
-  // 1試合制の合計ポイント: パネル唯一の主役なので、他の数値より広いレンジで大きくする
+  // 1ゲーム制の合計ポイント: パネル唯一の主役なので、他の数値より広いレンジで大きくする
   soloTotalLabelFont: number; soloTotalValueFont: number;
 }
 
@@ -57,7 +57,7 @@ const LEDGER_LABEL_RATIO_MIN = 0.65;
 const LEDGER_VALUE_MIN = 12;
 // TOTAL 欄のラベル「合計ポイント」= 全角6文字 + letterSpacing ≒ 6.4em
 const LABEL_EM = 6.4;
-// 1試合制の合計ポイントは符号なし「9999pt」= 6文字 ≒ 3.6em、フォント差の余裕を見て 3.7em
+// 1ゲーム制の合計ポイントは符号なし「9999pt」= 6文字 ≒ 3.6em、フォント差の余裕を見て 3.7em
 const POINTS_EM = 3.7;
 // 勝敗表示「1勝0敗1分」= 漢字3 + 数字3 ≒ 4.7em + 余裕
 const WINS_EM = 5.0;
@@ -77,7 +77,7 @@ function buildDim(width: number, correction: number): PanelDim {
   const rowGap    = clampNum(6 * scale, 4, 24);
   const totalPadH = clampNum(8 * scale, 6, 30);
 
-  // 1試合制の合計ポイント欄 (totalSection の内側いっぱいを1要素が使う)
+  // 1ゲーム制の合計ポイント欄 (totalSection の内側いっぱいを1要素が使う)
   const totalInnerW = Math.max(20, width - totalPadH * 2);
   // 明細行の実幅。teamBox 側と totalSection 側で左右余白が違うため、狭いほうに合わせて
   // 1種類のフォントサイズを両方で使う
@@ -119,10 +119,10 @@ function buildDim(width: number, correction: number): PanelDim {
     totalHeaderFont: clampNum(11 * scale, 8, 34),
     totalHeaderMarginB: clampNum(5 * scale, 4, 22),
     totalHeaderPadT: clampNum(4 * scale, 3, 18),
-    // セット勝者を決める第1基準 (勝利数) はこの欄の主役
+    // 試合勝者を決める第1基準 (勝利数) はこの欄の主役
     winsFont: Math.min(clampNum(22 * scale, 13, 64), totalInnerW / WINS_EM),
     winsPadV: clampNum(4 * scale, 3, 18),
-    // 1試合制は文字が大きいぶん横にあふれやすい。ラベルは1行に収まる上限、
+    // 1ゲーム制は文字が大きいぶん横にあふれやすい。ラベルは1行に収まる上限、
     // 値は4桁 (9999pt) が収まる上限で頭打ちにする
     soloTotalLabelFont: Math.min(clampNum(13 * scale, 9, 44), totalInnerW / LABEL_EM),
     soloTotalValueFont: Math.min(clampNum(30 * scale, 18, 140), totalInnerW / POINTS_EM),
@@ -144,8 +144,8 @@ export function PlayerSidePanel({ side, snapshot, serverStatus, width, maxHeight
   const cardRef = useRef<HTMLDivElement>(null);
   const [correction, setCorrection] = useState(1);
 
-  // 探索の上限。2試合制は行数が多いぶん先に高さが埋まるが、明細行は1行1項目で縦に詰まって
-  // いるため、幅基準の等倍 (correction=1) では縦に余ることがある。1試合制は行が「明細3行」と
+  // 探索の上限。2ゲーム制は行数が多いぶん先に高さが埋まるが、明細行は1行1項目で縦に詰まって
+  // いるため、幅基準の等倍 (correction=1) では縦に余ることがある。1ゲーム制は行が「明細3行」と
   // 「合計ポイント」だけでさらに大きく余るので、上限をより高く開く。いずれも buildDim の
   // clampNum の max と幅からの逆算で頭打ちになるため、上限を上げても青天井にはならない。
   const maxCorrection = doubleMode ? 1.6 : 2.2;
@@ -173,7 +173,7 @@ export function PlayerSidePanel({ side, snapshot, serverStatus, width, maxHeight
 
     const fits = el.scrollHeight <= maxHeight + 1;
     let { lo, hi } = boundsRef.current;
-    // 「試合中は空欄・終了後は実値」のようにコンテンツの形が変わると、width/maxHeight/
+    // 「ゲーム中は空欄・終了後は実値」のようにコンテンツの形が変わると、width/maxHeight/
     // doubleMode/roundResults.length のどれも変化しないまま探索範囲が [lo,hi] に収束済み
     // (lo===hi) の状態で実際の要否だけが反転することがある。この場合に再探索が走るよう、
     // 収まらなかったときは lo を、収まったときは hi を、現在値から確実に離して区間を
@@ -224,22 +224,22 @@ function bonusColor(n: number): string {
   return TEXT_MUTED;
 }
 
-// ── SingleModeContent (2試合制OFF: 自分側のチームだけを表示) ────────────────────
+// ── SingleModeContent (2ゲーム制OFF: 自分側のチームだけを表示) ────────────────────
 
-// 1試合制では idxForSide(side, 0) === side なので、画面側 (side) がそのまま team-index になる。
-// 2試合制の DoubleModeContent と同じく「1パネル = 自分側のプログラム」に揃え、左右で同じ表を
+// 1ゲーム制では idxForSide(side, 0) === side なので、画面側 (side) がそのまま team-index になる。
+// 2ゲーム制の DoubleModeContent と同じく「1パネル = 自分側のプログラム」に揃え、左右で同じ表を
 // 二重に出さない。勝敗はフッターの結果ピル、獲得アイテム数は上部スコアバーが既に大きく出して
 // いるため、このパネルは得点計算の内訳 (アイテム → 一撃 → 総取り → 合計ポイント) に絞る。
 function SingleModeContent({ side, snapshot, roundResults, dim }: {
   side: 0 | 1; snapshot: GameStateSnapshot | null; roundResults: RoundResult[]; dim: PanelDim;
 }) {
-  // 1試合制で roundResults が2件以上になることはない (リピート/リセットのたびに
-  // RoundController.resetForNewGame() で消え、2試合制への切り替えは setup 中のみ)
+  // 1ゲーム制で roundResults が2件以上になることはない (リピート/リセットのたびに
+  // RoundController.resetForNewGame() で消え、2ゲーム制への切り替えは setup 中のみ)
   const rr       = roundResults.find(r => r.round === 0);
   const finished = rr !== undefined;
 
   const items = rr ? rr.scores[side] : (snapshot?.teamScore[side] ?? 0);
-  // 試合中は確定していない一撃/総取りを除いた アイテム×10 をライブ表示し、
+  // ゲーム中は確定していない一撃/総取りを除いた アイテム×10 をライブ表示し、
   // 決着後にボーナス込みの確定値へ切り替える
   const totalPoints = rr ? roundPointsFor(rr, side) : items * 10;
 
@@ -260,9 +260,9 @@ function SingleModeContent({ side, snapshot, roundResults, dim }: {
           <span style={{ ...s.teamLabel, fontSize: dim.labelFont }}>{label}</span>
         </div>
 
-        {/* 得点の明細。一撃/総取りが確定するのは決着後のみだが、試合中も同じ3行を描いて
+        {/* 得点の明細。一撃/総取りが確定するのは決着後のみだが、ゲーム中も同じ3行を描いて
             高さを確保し、終了の瞬間に行が増えて下の合計ポイントがずれないようにする
-            (2試合制の RoundLedger と同じ方針)。未確定は「—」で示す。 */}
+            (2ゲーム制の RoundLedger と同じ方針)。未確定は「—」で示す。 */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: dim.rowGap }}>
           <LedgerRow
             label="アイテム" value={`${items * 10}pt`} color={base}
@@ -295,7 +295,7 @@ function SingleModeContent({ side, snapshot, roundResults, dim }: {
   );
 }
 
-// ── DoubleModeContent (2試合制ON: 試合ごとに明細を分け、自分側だけの成績を出す) ──────
+// ── DoubleModeContent (2ゲーム制ON: ゲームごとに明細を分け、自分側だけの成績を出す) ──────
 
 type RoundRowStatus = 'finished' | 'live' | 'pending';
 type RoundOutcome   = 'WIN' | 'LOSE' | 'DRAW';
@@ -314,14 +314,14 @@ interface RoundRowData {
   strikeBonus: number;
   sweepBonus:  number;
   outcome:     RoundOutcome | null;
-  /** アイテム + 一撃 + 総取り。2試合分を足すと TOTAL の合計ポイントになる */
+  /** アイテム + 一撃 + 総取り。2ゲーム分を足すと TOTAL の合計ポイントになる */
   subtotal:    number;
 }
 
-// 画面側 (side) ×試合番号 (round) から、確定済み/進行中/未対戦のいずれかを判定してスコア行を組み立てる。
-// 1試合目終了直後は phase='finished' のまま currentRound だけ 1 に進むため、対応する
+// 画面側 (side) ×ゲーム番号 (round) から、確定済み/進行中/未対戦のいずれかを判定してスコア行を組み立てる。
+// 第1ゲーム終了直後は phase='finished' のまま currentRound だけ 1 に進むため、対応する
 // roundResults が無い限りは (currentRound===round であっても) 進行中とはみなさない —
-// これにより1試合目の古いスナップショットを2試合目の行に誤表示することを防いでいる。
+// これにより第1ゲームの古いスナップショットを第2ゲームの行に誤表示することを防いでいる。
 function computeRoundRow(
   side: 0 | 1,
   round: 0 | 1,
@@ -362,19 +362,19 @@ function DoubleModeContent({ side, snapshot, serverStatus, roundResults, dim }: 
     computeRoundRow(side, 0, roundResults, serverStatus, snapshot),
     computeRoundRow(side, 1, roundResults, serverStatus, snapshot),
   ];
-  // 進行中ラウンドの分 (アイテム×10) も含めてライブ更新したいので、確定分だけを扱う
-  // computeSetResult の totals ではなく行データから合算する。2試合とも確定した時点では
+  // 進行中ゲームの分 (アイテム×10) も含めてライブ更新したいので、確定分だけを扱う
+  // computeSetResult の totals ではなく行データから合算する。2ゲームとも確定した時点では
   // totals と一致するため、下の勝者判定と食い違うことはない。
   const sideTotalPoints = rows[0].subtotal + rows[1].subtotal;
 
-  // 競技ルール: 勝利数が多い方が勝者、同数なら合計ポイント。勝利数は確定したラウンドだけを数える。
+  // 競技ルール: 勝利数が多い方が勝者、同数なら合計ポイント。勝利数は確定したゲームだけを数える。
   const setResult = computeSetResult(roundResults);
   const wins   = setResult.wins[side];
   const draws  = setResult.draws;
   const losses = roundResults.length - wins - draws;
   const winsText = `${wins}勝${losses}敗${draws > 0 ? `${draws}分` : ''}`;
 
-  // 2試合とも終わってから、セット勝者のマークと「何で決まったか」の強調を出す
+  // 2ゲームとも終わってから、試合勝者のマークと「何で決まったか」の強調を出す
   const setComplete = serverStatus?.phase === 'finished' && roundResults.length >= 2;
   const isSetWinner = setComplete && setResult.winnerSide === side;
   const wonByWins   = isSetWinner && setResult.decidedBy === 'wins';
@@ -385,7 +385,7 @@ function DoubleModeContent({ side, snapshot, serverStatus, roundResults, dim }: 
       <RoundLedger row={rows[0]} dim={dim} />
       <RoundLedger row={rows[1]} dim={dim} />
 
-      {/* ── TOTAL (この画面側=このプログラム自身の2試合の成績) ── */}
+      {/* ── TOTAL (この画面側=このプログラム自身の2ゲームの成績) ── */}
       <div style={{
         ...s.totalSection,
         padding: `${dim.totalPadV}px ${dim.totalPadH}px`,
@@ -430,33 +430,33 @@ function RoundLedger({ row, dim }: { row: RoundRowData; dim: PanelDim }) {
 
   const blank    = row.status === 'pending';
   const finished = row.status === 'finished';
-  // 一撃/総取りが確定するのは決着後だけ。試合中は「—」で未確定を示す
+  // 一撃/総取りが確定するのは決着後だけ。ゲーム中は「—」で未確定を示す
   const bonusPlaceholder = blank ? '' : '—';
 
   return (
     <div style={{ ...s.teamBox, gap: dim.teamBoxGap, paddingBottom: dim.teamBoxPadB }}>
-      {/* グラデヘッダー: 第何試合か + そのラウンドのチーム (COOL/HOT) + 勝敗 */}
+      {/* グラデヘッダー: 第何ゲームか + そのゲームのチーム (COOL/HOT) + 勝敗 */}
       <div style={{
         ...s.teamHeader,
         gap: dim.headerGap,
         padding: `${dim.headerPadV}px ${dim.headerPadH}px`, marginBottom: dim.headerMarginB,
         background: `linear-gradient(135deg, ${base}, ${dark})`,
       }}>
-        <span style={{ ...s.roundNum, fontSize: dim.badgeFont }}>第{row.round + 1}試合</span>
+        <span style={{ ...s.roundNum, fontSize: dim.badgeFont }}>第{row.round + 1}ゲーム</span>
         <span style={{ ...s.teamLabel, fontSize: dim.labelFont }}>{row.label}</span>
         {row.outcome && (
           <span style={{
             ...s.outcomeBadge,
             fontSize: dim.badgeFont, padding: `${dim.badgePadV}px ${dim.badgePadH}px`,
-            // 勝ったラウンドだけ白ベタで強く出し、勝利数の数え上げが目で追えるようにする
+            // 勝ったゲームだけ白ベタで強く出し、勝利数の数え上げが目で追えるようにする
             background: row.outcome === 'WIN' ? '#fff' : 'rgba(255,255,255,0.25)',
             color:      row.outcome === 'WIN' ? base   : '#fff',
           }}>{row.outcome}</span>
         )}
       </div>
 
-      {/* 明細は pending/live/finished のどの状態でも同じ行数を描画し、高さを試合開始前から
-          確保しておく。そうしないと 未対戦→試合中→終了 と状態が進むたびにこの行の高さが
+      {/* 明細は pending/live/finished のどの状態でも同じ行数を描画し、高さをゲーム開始前から
+          確保しておく。そうしないと 未対戦→ゲーム中→終了 と状態が進むたびにこの行の高さが
           変わり、下に続く行や TOTAL 欄の表示位置がズレてしまう。
           pending 時は中身を空にし、「未対戦」バッジを中央に重ねて表示する。 */}
       <div style={{ position: 'relative' }}>
@@ -583,7 +583,7 @@ const s: Record<string, React.CSSProperties> = {
     whiteSpace: 'nowrap', lineHeight: 1.15,
   },
   totalPointsBox: { borderRadius: RADIUS_SM },
-  // 1試合制の合計ポイント (明細行を介さない単独の大きい数値)
+  // 1ゲーム制の合計ポイント (明細行を介さない単独の大きい数値)
   soloTotalValue: {
     fontFamily: FONT_NUM, fontWeight: 700, color: WIN_BASE,
     textAlign: 'center', lineHeight: 1.05,
