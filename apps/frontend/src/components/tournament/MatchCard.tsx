@@ -1,7 +1,7 @@
 import type { ResolvedParticipant, TournamentMatch } from '@u15/ws-types';
 import {
   BG_CARD, BORDER_COLOR, COOL_COLOR, COOL_PALE, FONT_NUM, FONT_UI,
-  GOLD_BASE, HOT_COLOR, HOT_PALE, RADIUS_SM, SHADOW_SM,
+  GOLD_BASE, GOLD_LIGHT, HOT_COLOR, HOT_PALE, RADIUS_SM, SHADOW_SM,
   TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, TURN_BASE, WIN_BASE,
 } from '../../styles/tokens';
 
@@ -35,12 +35,14 @@ export interface MatchCardProps {
   /** true なら選択できる (control / 専用窓)。display では false */
   interactive?: boolean;
   selected?:    boolean;
+  /** 「この試合を準備」で確定した、これから行う試合。観客に一目で分かるよう強調する */
+  upcoming?:    boolean;
   onSelect?:    (matchId: string) => void;
   style?:       React.CSSProperties;
 }
 
 export function MatchCard({
-  match, participants, interactive = false, selected = false, onSelect, style,
+  match, participants, interactive = false, selected = false, upcoming = false, onSelect, style,
 }: MatchCardProps) {
   const nameOf = (id: string | null, isBye: boolean): string => {
     if (isBye) return '不戦';
@@ -68,16 +70,25 @@ export function MatchCard({
 
   return (
     <div
-      style={{ ...card, ...(selected ? cardSelected : null), ...(clickable ? cardClickable : null), ...style }}
+      style={{
+        ...card,
+        ...(upcoming ? cardUpcoming : null),
+        ...(selected ? cardSelected : null),
+        ...(clickable ? cardClickable : null),
+        ...style,
+      }}
       onClick={clickable ? () => onSelect!(match.id) : undefined}
       role={clickable ? 'button' : undefined}
       tabIndex={clickable ? 0 : undefined}
       title={match.label}
     >
+      {upcoming && <style>{UPCOMING_KEYFRAMES}</style>}
       <div style={header}>
         <span style={label}>{match.label}</span>
-        <span style={{ ...badge, color: STATUS_COLOR[match.status] }}>
-          {STATUS_LABEL[match.status]}
+        <span style={upcoming
+          ? { ...badge, ...badgeUpcoming }
+          : { ...badge, color: STATUS_COLOR[match.status] }}>
+          {upcoming ? '▶ 次の試合' : STATUS_LABEL[match.status]}
         </span>
       </div>
 
@@ -110,6 +121,26 @@ const cardClickable: React.CSSProperties = { cursor: 'pointer' };
 
 const cardSelected: React.CSSProperties = {
   outline: `2px solid ${COOL_COLOR}`, outlineOffset: 1,
+};
+
+// これから行う試合。観客席から一目で分かるよう、枠を金色にして脈打たせる。
+// アニメーションはインラインの <style> で入れる (ManualControls と同じやり方)。
+const UPCOMING_KEYFRAMES = `
+@keyframes u15-upcoming {
+  0%,100% { box-shadow: 0 0 0 2px ${GOLD_BASE}, 0 0 10px 2px rgba(221,170,34,0.35) }
+  50%     { box-shadow: 0 0 0 3px ${GOLD_BASE}, 0 0 20px 6px rgba(221,170,34,0.65) }
+}`;
+
+const cardUpcoming: React.CSSProperties = {
+  // card と同じ border ショートハンドで上書きする (borderColor だけ足すと
+  // 「ショートハンドと混ぜるな」と React に警告される)
+  border: `1px solid ${GOLD_BASE}`,
+  background: GOLD_LIGHT,
+  animation: 'u15-upcoming 1.6s ease-in-out infinite',
+};
+
+const badgeUpcoming: React.CSSProperties = {
+  color: '#fff', background: GOLD_BASE, borderRadius: 99, padding: '1px 6px',
 };
 
 const header: React.CSSProperties = {

@@ -165,6 +165,7 @@ U15-server-maizuru/
 │   │       │   ├── MapSourceSection.tsx     使うマップの選択 (ライブラリ/ランダム生成/エディタ) — マップ列にインライン展開
 │   │       │   ├── MapEditorDialog.tsx      Canvas ベースのマップ編集 (現在のマップを起点に編集し、適用/ライブラリ保存/ダウンロードを分離)
 │   │       │   ├── MapThumbnail.tsx         マップの縮小プレビュー (マップ列で使用)
+│   │       │   ├── FitArea.tsx              中身を親の空きいっぱいまで拡大・縮小して中央に置く入れ物 (観戦画面・大会の表)
 │   │       │   ├── MainWindow.tsx      盤面・スコア・進行状況の表示 (対戦表示/コントロール共用)
 │   │       │   ├── GameBoardCanvas.tsx 盤面描画 (テクスチャ・探索範囲・決着演出・ダーク幕)
 │   │       │   ├── PlayerSidePanel.tsx 左右のスコアパネル (ゲームごとの明細と TOTAL)
@@ -178,6 +179,7 @@ U15-server-maizuru/
 │   │       │   ├── useLobby.ts         ロビー用 WS フック
 │   │       │   ├── useGamePhaseSound.ts  ControlApp/DisplayMode 共用のフェーズ遷移 SE
 │   │       │   ├── useTextures.ts        GameBoardCanvas/MapEditorDialog/MapThumbnail 共用のテクスチャ読込
+│   │       │   ├── useFitScale.ts        空き領域に合わせた表示倍率の算出 (FitArea の中身)
 │   │       │   ├── useBgm.ts             フェーズに応じた BGM 再生
 │   │       │   ├── useStartCountdown.ts  ゲーム開始カウントダウンの表示制御
 │   │       │   └── ...
@@ -673,7 +675,8 @@ App.tsx (ErrorBoundary でラップ)
 ├── Lobby.tsx               (?room なし — Web サービスモードのロビー)
 │
 ├── DisplayMode.tsx         (?room=xxx&mode=display)
-│   ├── SetupWaiting        (setup フェーズの待機画面, ポートを動的表示)
+│   ├── SetupWaiting        (setup フェーズの待機画面)
+│   │   └── BracketView / LeagueTable    大会運営中の勝ち上がり (fit で空きいっぱいに拡大)
 │   └── MainWindow.tsx      (playing/finished フェーズ)
 │       ├── PlayerSidePanel.tsx × 2   左右のスコアパネル (1ゲーム制/2ゲーム制で明細が変わる)
 │       └── GameBoardCanvas.tsx       盤面描画 (探索範囲・決着演出・ダーク幕)
@@ -713,6 +716,7 @@ App.tsx (ErrorBoundary でラップ)
 | `useSound()` | SE 再生 |
 | `useGamePhaseSound(snapshot, serverStatus, gameEnd, muted)` | フェーズ遷移 (go/finish/win) とスコア変化の SE 再生。ControlApp と DisplayMode で共用 |
 | `useTextures(theme)` | テーマ別テクスチャ読込。GameBoardCanvas / MapEditorDialog / MapThumbnail で共用 |
+| `useFitScale(max, min)` | 入れ物と中身を実測して表示倍率を出す。`FitArea` 経由で使う |
 | `useBgm(phase, muted)` | フェーズに応じた BGM 再生・停止 |
 | `useStartCountdown(phase, turnInfo)` | ゲーム開始カウントダウンの表示制御 |
 | `useFileUpload()` | XHR multipart アップロード |
@@ -1131,6 +1135,7 @@ server/tournament/<大会id>/
 |---|---|
 | `lib/bracketLayout.ts` | 【純関数】試合グラフ → カード座標と接続線のパス |
 | `lib/bracketSlots.ts` | 【純関数】組み合わせ編集のスロット操作 (`autoSlots` / `fitSlots` / 試合数の見積り) |
+| `components/FitArea.tsx` | 中身を親の空きいっぱいまで拡大・縮小して中央に置く入れ物 (`useFitScale`) |
 | `components/tournament/BracketView.tsx` | トーナメント表。接続線は SVG、カードは絶対配置の DOM |
 | `components/tournament/LeagueTable.tsx` | リーグの星取表 + 順位表 (素の DOM) |
 | `components/tournament/MatchCard.tsx` | 1試合のカード。3画面で共用 (`interactive` で操作の有無を切替) |
@@ -1146,6 +1151,22 @@ server/tournament/<大会id>/
 **ブラケット描画をハイブリッドにした理由**: Canvas だと DPR 対応・テキスト省略・当たり判定を
 全部自前で書くことになり、静的な図には割に合わない。DOM だけだと bye や回戦数の変化で
 接続線が破綻する。線だけ SVG にすれば両方の問題が消える。
+
+**観客に見せるための拡大 (`fit`)**: `BracketView` / `LeagueTable` に `fit` を渡すと、
+`FitArea` (= `useFitScale`) が親の空きに合わせて図ごと `transform: scale()` する。
+文字サイズだけを上げないのは、カード幅・接続線・余白との比率が崩れ `bracketLayout` の
+座標計算にも手を入れることになるため。**`fit` の親は高さの決まった箱にすること** —
+中身を絶対配置で流れから外すので、親が `height:auto` だと高さ 0 になって何も見えない。
+`transform` はレイアウトサイズに影響しないので「拡大 → 再測定 → さらに拡大」の循環は起きない。
+リーグ表は `fit` のとき星取表と順位表を横に並べる (縦積みだと高さで頭打ちになる)。
+
+**星取表の並びはエントリー順で固定**: 行・列は `participants` (= seed 順) をそのまま使う。
+順位順に並べ替えると、試合が確定するたびに表の行が動いて観客も運営も同じチームを追えなくなる。
+順位で並ぶのは下段の順位表だけ。
+
+**これから行う試合の強調**: `armedMatchId` (「この試合を準備」で確定) を
+`BracketView.upcomingId` / `LeagueTable.upcomingMatchId` に渡すと、該当カード・該当セルが
+金色になる。運営席 (`?mode=tournament`) と観戦席 (`?mode=display`) の両方で同じ見え方にする。
 
 ### 13-7. 大会データ作成 UI
 

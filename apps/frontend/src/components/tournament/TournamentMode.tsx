@@ -61,16 +61,22 @@ export function TournamentMode({ wsUrl, roomId, httpBase }: TournamentModeProps)
               matches={t.matches}
               participants={t.participants}
               standings={t.standings ?? []}
+              upcomingMatchId={t.armedMatchId}
               interactive
               onSelect={setSelected}
+              fit
+              maxScale={1.6}
             />
           ) : (
             <BracketView
               matches={t.matches}
               participants={t.participants}
+              upcomingId={t.armedMatchId}
               interactive
               selectedId={selected}
               onSelect={setSelected}
+              fit
+              maxScale={1.6}
             />
           )}
         </div>
@@ -118,9 +124,10 @@ const header: React.CSSProperties = {
 const h1: React.CSSProperties = { margin: 0, fontSize: 20, fontWeight: 700 };
 
 const board: React.CSSProperties = {
+  // 高さの決まった箱にしておくこと (中の表がこの空きに合わせて自分で拡大・縮小する)
   flex: 1, minHeight: 0, background: BG_CARD, borderRadius: RADIUS_MD,
   border: `1px solid ${BORDER_COLOR}`, boxShadow: SHADOW_MD,
-  padding: 12, overflow: 'auto',
+  padding: 12, overflow: 'hidden',
 };
 
 const side: React.CSSProperties = {

@@ -1,6 +1,7 @@
 import type { ResolvedParticipant, StandingRow, TournamentMatch } from '@u15/ws-types';
+import { FitArea } from '../FitArea';
 import {
-  BG_CARD, BG_ROOT, BORDER_COLOR, COOL_PALE, FONT_NUM, FONT_UI, GOLD_LIGHT,
+  BG_CARD, BG_ROOT, BORDER_COLOR, COOL_PALE, FONT_NUM, FONT_UI, GOLD_BASE, GOLD_LIGHT,
   RADIUS_SM, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE,
 } from '../../styles/tokens';
 
@@ -8,6 +9,10 @@ import {
 //
 // 順位は公式ルールどおり「勝ち点(3-1-0) → 全試合の合計ポイント → 直接対決」で決まる。
 // そこまで並んだ場合は同順位として出す (tied)。
+//
+// **星取表の行・列はエントリー順 (選手番号順) で固定する。** 順位順に並べ替えると
+// 試合が確定するたびに表の行が動き、観客も運営も同じチームを目で追えなくなる。
+// 順位で並ぶのは下段の順位表だけ。
 
 export interface LeagueTableProps {
   matches:      TournamentMatch[];
@@ -15,13 +20,25 @@ export interface LeagueTableProps {
   standings:    StandingRow[];
   interactive?: boolean;
   onSelect?:    (matchId: string) => void;
+  /** 「この試合を準備」で確定した、これから行う試合 */
+  upcomingMatchId?: string | null;
+  /** 親の空き領域いっぱいまで自動で拡大・縮小する (親は高さの決まった箱にすること) */
+  fit?:         boolean;
+  /** fit の拡大上限 */
+  maxScale?:    number;
 }
 
 export function LeagueTable({
   matches, participants, standings, interactive = false, onSelect,
+  upcomingMatchId = null, fit = false, maxScale = 3,
 }: LeagueTableProps) {
   const nameOf = (id: string) => participants.find(p => p.id === id)?.name ?? id;
-  const order  = standings.map(s => s.participantId);
+  // エントリー順 (participants は seed 順で配信される)。順位で並べ替えない
+  const order  = participants.map(p => p.id);
+
+  const upcoming = matches.find(m => m.id === upcomingMatchId) ?? null;
+  const isUpcomingTeam = (id: string) =>
+    !!upcoming && (upcoming.resolvedA === id || upcoming.resolvedB === id);
 
   /** a から見た b との対戦結果 */
   const cellOf = (a: string, b: string): {
@@ -39,8 +56,11 @@ export function LeagueTable({
     return { text: aWon ? '○' : '●', match: m, tone: aWon ? 'win' : 'loss' };
   };
 
-  return (
+  const body = (
     <div style={wrap}>
+      {/* fit のときは2つの表を横に並べる。縦に積むと高さで頭打ちになり、
+          横長の画面では拡大できる余地を捨ててしまう */}
+      <div style={fit ? tablesRow : tablesColumn}>
       {/* ── 星取表 ── */}
       <div style={scroller}>
         <table style={table}>
@@ -48,18 +68,30 @@ export function LeagueTable({
             <tr>
               <th style={{ ...th, textAlign: 'left' }}>チーム</th>
               {order.map(id => (
-                <th key={id} style={th} title={nameOf(id)}>{shortName(nameOf(id))}</th>
+                <th
+                  key={id}
+                  style={{ ...th, ...(isUpcomingTeam(id) ? headUpcoming : null) }}
+                  title={nameOf(id)}
+                >
+                  {shortName(nameOf(id))}
+                </th>
               ))}
             </tr>
           </thead>
           <tbody>
             {order.map(a => (
               <tr key={a}>
-                <td style={{ ...td, textAlign: 'left', fontWeight: 600 }}>{nameOf(a)}</td>
+                <td style={{
+                  ...td, textAlign: 'left', fontWeight: 600,
+                  ...(isUpcomingTeam(a) ? headUpcoming : null),
+                }}>
+                  {nameOf(a)}
+                </td>
                 {order.map(b => {
                   if (a === b) return <td key={b} style={{ ...td, background: BG_ROOT }} />;
                   const c = cellOf(a, b);
                   const clickable = interactive && !!onSelect && !!c.match;
+                  const isUpcoming = !!upcoming && c.match?.id === upcoming.id;
                   return (
                     <td
                       key={b}
@@ -68,12 +100,13 @@ export function LeagueTable({
                         ...(c.tone === 'win'  ? { color: WIN_BASE, fontWeight: 700 } : null),
                         ...(c.tone === 'draw' ? { color: TEXT_SECONDARY } : null),
                         ...(c.tone === 'loss' ? { color: TEXT_MUTED } : null),
+                        ...(isUpcoming ? cellUpcoming : null),
                         cursor: clickable ? 'pointer' : undefined,
                       }}
                       onClick={clickable ? () => onSelect!(c.match!.id) : undefined}
                       title={c.match?.label}
                     >
-                      {c.text}
+                      {isUpcoming ? '▶' : c.text}
                     </td>
                   );
                 })}
@@ -116,10 +149,16 @@ export function LeagueTable({
           </tbody>
         </table>
       </div>
+      </div>
 
-      <div style={legend}>○ 勝ち ・ △ 引き分け ・ ● 負け ・ ・ 未消化</div>
+      <div style={legend}>
+        ○ 勝ち ・ △ 引き分け ・ ● 負け ・ ・ 未消化{upcoming ? ' ・ ▶ 次の試合' : ''}
+      </div>
     </div>
   );
+
+  // 空き領域に合わせて拡大・縮小する
+  return fit ? <FitArea maxScale={maxScale}>{body}</FitArea> : body;
 }
 
 /** 星取表の列見出しは幅が限られるので短く切る */
@@ -133,6 +172,14 @@ const wrap: React.CSSProperties = {
 };
 
 const scroller: React.CSSProperties = { overflowX: 'auto', maxWidth: '100%' };
+
+const tablesColumn: React.CSSProperties = {
+  display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0,
+};
+
+const tablesRow: React.CSSProperties = {
+  display: 'flex', flexDirection: 'row', alignItems: 'flex-start', gap: 20,
+};
 
 const table: React.CSSProperties = {
   borderCollapse: 'collapse', fontSize: 12, background: BG_CARD,
@@ -152,6 +199,15 @@ const td: React.CSSProperties = {
 const tdNum: React.CSSProperties = { ...td, fontFamily: FONT_NUM };
 
 const rowTop: React.CSSProperties = { background: GOLD_LIGHT };
+
+// これから行う試合。該当セルと、その2チームの見出しを金色で示す
+const cellUpcoming: React.CSSProperties = {
+  background: GOLD_BASE, color: '#fff', fontWeight: 700,
+};
+
+const headUpcoming: React.CSSProperties = {
+  background: GOLD_LIGHT, color: TEXT_PRIMARY, fontWeight: 700,
+};
 
 const legend: React.CSSProperties = {
   fontSize: 10, color: TEXT_MUTED, background: COOL_PALE,

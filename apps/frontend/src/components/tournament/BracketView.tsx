@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type { ResolvedParticipant, TournamentMatch } from '@u15/ws-types';
 import { bracketLayout } from '../../lib/bracketLayout';
+import { FitArea } from '../FitArea';
 import { CARD_H, CARD_W, MatchCard } from './MatchCard';
 import { BORDER_COLOR, FONT_UI, TEXT_SECONDARY } from '../../styles/tokens';
 
@@ -14,12 +15,19 @@ export interface BracketViewProps {
   interactive?: boolean;
   selectedId?:  string | null;
   onSelect?:    (matchId: string) => void;
-  /** 表示倍率 (プロジェクタ表示で使う) */
+  /** 「この試合を準備」で確定した、これから行う試合 */
+  upcomingId?:  string | null;
+  /** 表示倍率 (プロジェクタ表示で使う)。fit のときは無視される */
   scale?:       number;
+  /** 親の空き領域いっぱいまで自動で拡大・縮小する (親は高さの決まった箱にすること) */
+  fit?:         boolean;
+  /** fit の拡大上限 */
+  maxScale?:    number;
 }
 
 export function BracketView({
-  matches, participants, interactive = false, selectedId = null, onSelect, scale = 1,
+  matches, participants, interactive = false, selectedId = null, onSelect,
+  upcomingId = null, scale = 1, fit = false, maxScale = 3,
 }: BracketViewProps) {
   const layout = useMemo(
     () => bracketLayout(matches, { cardW: CARD_W, cardH: CARD_H }),
@@ -29,6 +37,57 @@ export function BracketView({
 
   if (layout.nodes.length === 0) {
     return <div style={empty}>対戦カードがありません</div>;
+  }
+
+  const figure = (
+    <>
+      {/* 接続線 (クリックを邪魔しないよう pointerEvents は無効) */}
+      <svg
+        width={layout.width} height={layout.height}
+        style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
+      >
+        {layout.edges.map((e, i) => (
+          <path key={`${e.from}-${e.to}-${i}`} d={e.d}
+                fill="none" stroke={BORDER_COLOR} strokeWidth={2} />
+        ))}
+      </svg>
+
+      {/* 回戦の見出し */}
+      {layout.columns.map(c => (
+        <div key={c.stage} style={{ ...colHead, left: c.x, width: CARD_W }}>
+          {c.label}
+        </div>
+      ))}
+
+      {/* カード */}
+      {layout.nodes.map(n => {
+        const m = byId.get(n.matchId);
+        if (!m) return null;
+        return (
+          <MatchCard
+            key={n.matchId}
+            match={m}
+            participants={participants}
+            interactive={interactive}
+            selected={selectedId === n.matchId}
+            upcoming={upcomingId === n.matchId}
+            {...(onSelect ? { onSelect } : {})}
+            style={{ position: 'absolute', left: n.x, top: n.y }}
+          />
+        );
+      })}
+    </>
+  );
+
+  // 空き領域に合わせて拡大・縮小する
+  if (fit) {
+    return (
+      <FitArea maxScale={maxScale}>
+        <div style={{ position: 'relative', width: layout.width, height: layout.height }}>
+          {figure}
+        </div>
+      </FitArea>
+    );
   }
 
   return (
@@ -42,40 +101,7 @@ export function BracketView({
           transformOrigin: 'top left',
         }}
       >
-        {/* 接続線 (クリックを邪魔しないよう pointerEvents は無効) */}
-        <svg
-          width={layout.width} height={layout.height}
-          style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
-        >
-          {layout.edges.map((e, i) => (
-            <path key={`${e.from}-${e.to}-${i}`} d={e.d}
-                  fill="none" stroke={BORDER_COLOR} strokeWidth={2} />
-          ))}
-        </svg>
-
-        {/* 回戦の見出し */}
-        {layout.columns.map(c => (
-          <div key={c.stage} style={{ ...colHead, left: c.x, width: CARD_W }}>
-            {c.label}
-          </div>
-        ))}
-
-        {/* カード */}
-        {layout.nodes.map(n => {
-          const m = byId.get(n.matchId);
-          if (!m) return null;
-          return (
-            <MatchCard
-              key={n.matchId}
-              match={m}
-              participants={participants}
-              interactive={interactive}
-              selected={selectedId === n.matchId}
-              {...(onSelect ? { onSelect } : {})}
-              style={{ position: 'absolute', left: n.x, top: n.y }}
-            />
-          );
-        })}
+        {figure}
       </div>
     </div>
   );

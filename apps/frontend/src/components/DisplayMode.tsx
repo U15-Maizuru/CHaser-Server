@@ -5,6 +5,7 @@ import { useGamePhaseSound } from '../hooks/useGamePhaseSound';
 import { useStartCountdown } from '../hooks/useStartCountdown';
 import { useBgm } from '../hooks/useBgm';
 import { MainWindow } from './MainWindow';
+import { FitArea } from './FitArea';
 import { BracketView } from './tournament/BracketView';
 import { LeagueTable } from './tournament/LeagueTable';
 import { idxForSide } from '../lib/roundSide';
@@ -15,6 +16,7 @@ import {
   HOT_COLOR,  HOT_DARK,  HOT_PALE,
   TURN_BASE, TURN_LIGHT,
   WIN_BASE, WIN_LIGHT,
+  GOLD_BASE, GOLD_LIGHT,
   TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
   SHADOW_MD, SHADOW_SM,
   RADIUS_MD,
@@ -111,16 +113,14 @@ function SetupWaiting({ serverStatus, displayTitle, tournament }: {
   const leftIdx  = idxForSide(0, currentRound);
   const rightIdx = idxForSide(1, currentRound);
 
-  return (
-    <div style={sw.root}>
-      {/* タイトル */}
-      <div style={sw.titleWrap}>
-        <div style={sw.title}>{displayTitle}</div>
-        <div style={sw.sub}>
-          {doubleMode ? `第${currentRound + 1}ゲーム — ` : ''}対戦開始をお待ちください
-        </div>
-      </div>
+  const upcoming = tournament?.matches.find(m => m.id === tournament.armedMatchId) ?? null;
+  const nameOfParticipant = (id: string | null) =>
+    tournament?.participants.find(p => p.id === id)?.name ?? '—';
 
+  // 対戦カードの並びと勝ち上がり表は、画面の残りを分け合って**どちらも**空きいっぱいに拡大する。
+  // 片方を自然な大きさのまま置くと、第1ゲームの結果が出ている間だけ勝ち上がり表が潰れてしまう。
+  const meeting = (
+    <div style={sw.meeting}>
       {/* 第1ゲームの結果 (2ゲーム制のインターミッション中のみ) */}
       {intermission && (
         <div style={sw.recap}>
@@ -145,6 +145,32 @@ function SetupWaiting({ serverStatus, displayTitle, tournament }: {
         </div>
       )}
 
+      {upcoming && (
+        <div style={sw.upcoming}>
+          <span style={sw.upcomingTag}>次の試合</span>
+          <span style={sw.upcomingLabel}>{upcoming.label}</span>
+          <span style={sw.upcomingNames}>
+            {nameOfParticipant(upcoming.resolvedA)} vs {nameOfParticipant(upcoming.resolvedB)}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div style={sw.root}>
+      {/* タイトル */}
+      <div style={sw.titleWrap}>
+        <div style={sw.title}>{displayTitle}</div>
+        <div style={sw.sub}>
+          {doubleMode ? `第${currentRound + 1}ゲーム — ` : ''}対戦開始をお待ちください
+        </div>
+      </div>
+
+      <FitArea maxScale={1.4} style={tournament ? sw.meetingArea : sw.meetingAreaAlone}>
+        {meeting}
+      </FitArea>
+
       {/* 大会運営中は勝ち上がりを観客に見せる (待機中の間だけ) */}
       {tournament && (
         <div style={sw.bracket}>
@@ -153,11 +179,15 @@ function SetupWaiting({ serverStatus, displayTitle, tournament }: {
               matches={tournament.matches}
               participants={tournament.participants}
               standings={tournament.standings ?? []}
+              upcomingMatchId={tournament.armedMatchId}
+              fit
             />
           ) : (
             <BracketView
               matches={tournament.matches}
               participants={tournament.participants}
+              upcomingId={tournament.armedMatchId}
+              fit
             />
           )}
         </div>
@@ -194,24 +224,43 @@ const splash: Record<string, React.CSSProperties> = {
 
 const sw: Record<string, React.CSSProperties> = {
   root: {
-    // 大会のトーナメント表が入ると縦に伸びるので、中央寄せのまま縦スクロールできるようにする
-    minHeight: '100vh', display: 'flex', flexDirection: 'column',
-    alignItems: 'center', justifyContent: 'center',
-    background: BG_ROOT, fontFamily: FONT_UI, gap: 40, padding: '32px 16px',
-    boxSizing: 'border-box',
+    // 画面から出さない縦フレックス。中の2つの領域が、割り当てられた高さに合わせて自分で拡大・縮小する
+    height: '100vh', display: 'flex', flexDirection: 'column',
+    alignItems: 'stretch', justifyContent: 'center',
+    background: BG_ROOT, fontFamily: FONT_UI, gap: 16, padding: '20px 16px',
+    boxSizing: 'border-box', overflow: 'hidden',
   },
-  // 待機中に見せる勝ち上がり表。横に長い図なので中身側でスクロールさせる
+  // 対戦カード + マップ。大会運営中は画面を勝ち上がり表と分け合う
+  meeting: {
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20,
+  },
+  meetingArea:      { flex: '0 0 45%' },
+  meetingAreaAlone: { flex: 1 },
+  // 待機中に見せる勝ち上がり表。残りの高さを渡し、その中で図を最大化させる
   bracket: {
-    maxWidth: '100%', display: 'flex', justifyContent: 'center',
+    flex: 1, minHeight: 0, width: '100%',
   },
-  titleWrap: { textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 8 },
+  titleWrap: { textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 },
   title: { fontSize: 38, fontWeight: 800, letterSpacing: '0.05em', color: TEXT_PRIMARY },
   sub:   { fontSize: 16, color: TEXT_SECONDARY },
-  teams: { display: 'flex', alignItems: 'center', gap: 40 },
+  teams: { display: 'flex', alignItems: 'center', gap: 32, flexShrink: 0 },
   vs: {
     fontSize: 28, fontWeight: 800, color: TEXT_MUTED,
     fontFamily: FONT_NUM, letterSpacing: '0.1em',
   },
+
+  // 「この試合を準備」で確定した、これから行う試合
+  upcoming: {
+    display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0,
+    background: GOLD_LIGHT, border: `2px solid ${GOLD_BASE}`,
+    borderRadius: 99, padding: '8px 22px',
+  },
+  upcomingTag: {
+    fontSize: 12, fontWeight: 800, letterSpacing: '0.1em',
+    color: '#fff', background: GOLD_BASE, borderRadius: 99, padding: '3px 12px',
+  },
+  upcomingLabel: { fontSize: 14, color: TEXT_SECONDARY },
+  upcomingNames: { fontSize: 22, fontWeight: 800, color: TEXT_PRIMARY },
 
   // 第1ゲームの結果 (2ゲーム制のインターミッション)。左右の並びは下のチームカードと揃える
   recap: {
