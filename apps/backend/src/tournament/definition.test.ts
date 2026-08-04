@@ -29,9 +29,30 @@ describe('parseTournamentDefinition', () => {
     expect(def.rules).toEqual({
       doubleMode: true,
       mapCatalogId: null,
+      stageMaps: [],
       thirdPlaceMatch: false,
       leaguePoints: { win: 3, draw: 1, loss: 0 },
       doubleRoundRobin: false,
+    });
+  });
+
+  describe('rules.stageMaps (回戦ごとのマップ)', () => {
+    const withStageMaps = (stageMaps: unknown) => parse({ ...OK, rules: { stageMaps } });
+
+    it('マップ ID と null の配列を読める', () => {
+      expect(withStageMaps(['m1', null, 'm2']).rules.stageMaps).toEqual(['m1', null, 'm2']);
+    });
+
+    it('空文字は「大会の設定に従う」(null) として扱う', () => {
+      expect(withStageMaps(['', 'm2']).rules.stageMaps).toEqual([null, 'm2']);
+    });
+
+    it('配列でなければエラー', () => {
+      expect(() => withStageMaps('m1')).toThrow(/rules.stageMaps は配列/);
+    });
+
+    it('要素が文字列でも null でもなければエラー', () => {
+      expect(() => withStageMaps([1])).toThrow(/rules.stageMaps\[0\]/);
     });
   });
 

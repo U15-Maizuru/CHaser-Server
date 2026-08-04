@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { killTree } from './killTree';
 
 const isDev = process.env['NODE_ENV'] === 'development';
 
@@ -63,11 +64,17 @@ function startBackend(appPath: string): void {
   backendProcess.on('exit', (code) => console.log('[backend] exit:', code));
 }
 
+/**
+ * バックエンドを木ごと終了させる。
+ *
+ * dev では tsx の CLI が実体のバックエンドを子プロセスとして起動するため、
+ * `backendProcess.kill()` だけでは実体が残って 8765 を握り続ける。
+ * 対戦プログラム (python 等) もバックエンドの子なので、木ごと落とせば一緒に片付く。
+ */
 function stopBackend(): void {
-  if (backendProcess && !backendProcess.killed) {
-    backendProcess.kill();
-    backendProcess = null;
-  }
+  if (!backendProcess) return;
+  killTree(backendProcess.pid);
+  backendProcess = null;
 }
 
 const WEB_PREFS = {

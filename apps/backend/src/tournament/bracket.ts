@@ -1,13 +1,13 @@
 import type { MatchSlotRef, ParticipantDef, TournamentMatch } from '@u15/ws-types';
-import { bracketSizeFor, seedOrder } from '@u15/ws-types';
+import { bracketSizeFor, seedOrder, stageLabel } from '@u15/ws-types';
 
 // トーナメント (勝ち上がり) の試合グラフを組み立てる純関数。
 // 結果の反映・slot の解決は progress.ts が行う。ここは構造だけを作る。
 //
-// 1回戦の並べ方 (seedOrder / bracketSizeFor) は大会データ作成 UI と共有するため
-// @u15/ws-types にある。ここからも従来どおり import できるよう re-export しておく。
+// 1回戦の並べ方 (seedOrder / bracketSizeFor) と回戦名 (stageLabel) は大会データ作成 UI と
+// 共有するため @u15/ws-types にある。ここからも従来どおり import できるよう re-export しておく。
 
-export { bracketSizeFor, seedOrder };
+export { bracketSizeFor, seedOrder, stageLabel };
 
 /**
  * 参加者を「選手番号」順に並べる。
@@ -25,14 +25,6 @@ export function orderBySeed(participants: ParticipantDef[]): ParticipantDef[] {
       return sa !== sb ? sa - sb : a.i - b.i;
     })
     .map(x => x.p);
-}
-
-function stageLabel(stage: number, totalStages: number): string {
-  const fromLast = totalStages - 1 - stage;
-  if (fromLast === 0) return '決勝';
-  if (fromLast === 1) return '準決勝';
-  if (fromLast === 2) return '準々決勝';
-  return `${stage + 1}回戦`;
 }
 
 /** その回戦に1試合しかなければ「決勝」のように回戦名だけにする */

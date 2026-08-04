@@ -164,7 +164,7 @@ U15-server-maizuru/
 │   │       │   ├── MapLibraryDialog.tsx     マップライブラリの管理モーダル (追加・DL・削除のみ。選択はしない)
 │   │       │   ├── MapSourceSection.tsx     使うマップの選択 (ライブラリ/ランダム生成/エディタ) — マップ列にインライン展開
 │   │       │   ├── MapEditorDialog.tsx      Canvas ベースのマップ編集 (現在のマップを起点に編集し、適用/ライブラリ保存/ダウンロードを分離)
-│   │       │   ├── MapThumbnail.tsx         マップの縮小プレビュー (マップ列で使用)
+│   │       │   ├── MapThumbnail.tsx         マップの縮小プレビュー (マップ列・待機画面で使用。flip で第2ゲームの反転表示)
 │   │       │   ├── FitArea.tsx              中身を親の空きいっぱいまで拡大・縮小して中央に置く入れ物 (観戦画面・大会の表)
 │   │       │   ├── MainWindow.tsx      盤面・スコア・進行状況の表示 (対戦表示/コントロール共用)
 │   │       │   ├── GameBoardCanvas.tsx 盤面描画 (テクスチャ・探索範囲・決着演出・ダーク幕)
@@ -179,6 +179,7 @@ U15-server-maizuru/
 │   │       │   ├── useLobby.ts         ロビー用 WS フック
 │   │       │   ├── useGamePhaseSound.ts  ControlApp/DisplayMode 共用のフェーズ遷移 SE
 │   │       │   ├── useTextures.ts        GameBoardCanvas/MapEditorDialog/MapThumbnail 共用のテクスチャ読込
+│   │       │   ├── useCurrentMap.ts      今出ているマップの取得 (コントロール窓と観戦窓で共用)
 │   │       │   ├── useFitScale.ts        空き領域に合わせた表示倍率の算出 (FitArea の中身)
 │   │       │   ├── useBgm.ts             フェーズに応じた BGM 再生
 │   │       │   ├── useStartCountdown.ts  ゲーム開始カウントダウンの表示制御
@@ -245,6 +246,34 @@ pnpm --filter @u15/electron dev
 ```
 
 > **トラブルシューティング**: `pnpm install` で `[ERR_PNPM_IGNORED_BUILDS] Ignored build scripts: electron, esbuild...` という警告が出た場合、`electron` の実行バイナリ (`electron.exe`) がダウンロードされておらず `pnpm --filter @u15/electron dev` や E2E テストが動きません。`pnpm-workspace.yaml` の `allowBuilds` で `electron`/`esbuild` を許可済みですが、初回や pnpm のバージョンアップ後に再度出た場合は `pnpm approve-builds --all` を実行してください。
+
+### 残るプロセス (dev の終了処理)
+
+dev で立ち上がるのは3つのサーバー的プロセスで、**実体は孫の位置にいる**:
+
+```
+node dev.js
+├── vite                       … 5173 (esbuild を子に持つ)
+└── electron
+    └── node tsx/cli.cjs
+        └── node backend       … 8765 (対戦プログラムを子に持つ)
+```
+
+Windows には POSIX のプロセスグループが無く、`child.kill()` は指定した PID しか殺さない。
+そのため直接の子だけを kill すると Vite やバックエンドが生き残り、ポートを握ったままになる。
+この状態で次に dev すると、新しいバックエンドは 8765 を取れず画面は**前回の**ゴーストに
+つながる (前の対戦状態が見える・変更が反映されない) ため、原因が非常に分かりにくい。
+
+対策は2つ:
+
+- **`killTree()` (`apps/electron/src/killTree.ts`) で木ごと落とす。** Ctrl+C・コントロール
+  画面を閉じた場合・E2E の後始末のすべてがこれを通る (`dev.js` / `main.ts` の `stopBackend` /
+  `test-e2e.mjs`)。Windows は `taskkill /T /F`、POSIX はプロセスグループへのシグナル。
+- **起動前にポートを点検する。** 5173 / 8765 が既に使われていたら、黙って壊れた状態で
+  立ち上がらず、掃除のコマンドを表示して止まる (`dev.js` の `preflight`)。
+
+`dev.js` が Vite を pnpm 経由ではなく直接起動しているのも同じ理由 (pnpm/cmd を挟むと
+実体が3階層下に来る)。**新しい子プロセスを足すときは、必ず `killTree` の対象に入れること。**
 
 ### 環境変数
 
@@ -676,6 +705,7 @@ App.tsx (ErrorBoundary でラップ)
 │
 ├── DisplayMode.tsx         (?room=xxx&mode=display)
 │   ├── SetupWaiting        (setup フェーズの待機画面)
+│   │   ├── MapPreview (SetupWaiting 内) これから戦うマップ。第2ゲーム前は盤面と同じ向きに反転
 │   │   └── BracketView / LeagueTable    大会運営中の勝ち上がり (fit で空きいっぱいに拡大)
 │   └── MainWindow.tsx      (playing/finished フェーズ)
 │       ├── PlayerSidePanel.tsx × 2   左右のスコアパネル (1ゲーム制/2ゲーム制で明細が変わる)
@@ -702,6 +732,11 @@ App.tsx (ErrorBoundary でラップ)
 `GameBoardCanvas.tsx`) は、バックエンドから明示的な「新ゲーム開始」通知が来ないため、
 `turnCount` が前回より増加したことを検知してゲーム境界とみなす設計になっている。
 
+**待機画面のマップも同じ向きで出す**: 第2ゲームは先攻・後攻が入れ替わるぶん盤面を180°反転する
+(`doubleMode && currentRound === 1`)。待機中のプレビュー (`DisplayMode` の `MapPreview` と
+`StartupDialog` の `MapPreviewColumn`) にも同じ条件で `MapThumbnail flip` を渡すこと。
+反転しないと、ゲームが始まった瞬間に向きが変わって見える。反転の式は `GameBoardCanvas` と同一。
+
 ### 主要フック
 
 | フック | 役割 |
@@ -716,6 +751,7 @@ App.tsx (ErrorBoundary でラップ)
 | `useSound()` | SE 再生 |
 | `useGamePhaseSound(snapshot, serverStatus, gameEnd, muted)` | フェーズ遷移 (go/finish/win) とスコア変化の SE 再生。ControlApp と DisplayMode で共用 |
 | `useTextures(theme)` | テーマ別テクスチャ読込。GameBoardCanvas / MapEditorDialog / MapThumbnail で共用 |
+| `useCurrentMap(httpBase, roomId, isConnected, serverStatus)` | 今出ているマップ (`GET /api/maps/current`)。マップ変更の WS イベントは無いので setup 中は `server_status` のたびに取り直す。同じ内容なら state を更新しない |
 | `useFitScale(max, min)` | 入れ物と中身を実測して表示倍率を出す。`FitArea` 経由で使う |
 | `useBgm(phase, muted)` | フェーズに応じた BGM 再生・停止 |
 | `useStartCountdown(phase, turnInfo)` | ゲーム開始カウントダウンの表示制御 |
@@ -962,7 +998,11 @@ pnpm test:e2e
 node apps/electron/test-e2e.mjs
 ```
 
-前提: `apps/electron/node_modules/electron/dist/electron.exe` が存在すること（セットアップ節のトラブルシューティング参照）。ポート 5173 を他プロセスが使用していると Vite dev サーバーの起動検知がタイムアウトするため、事前に空けておくこと。テスト終了後に Vite の子プロセスが残ることがあるので、連続実行する場合は 5173 が解放されているか確認する。
+前提: `apps/electron/node_modules/electron/dist/electron.exe` と `apps/electron/dist/`
+(`killTree` を読み込むためビルド済みであること)。ポート 5173 を他プロセスが使用していると
+Vite dev サーバーの起動検知がタイムアウトするため、事前に空けておくこと。
+後始末は `killTree` で木ごと行うため、Vite やバックエンドの残骸は出ない
+(「残るプロセス (dev の終了処理)」参照)。
 
 テスト開始時に `localStorage['u15_match_config'].turnDelay = 0` を設定してからページをリロードし、ゲームを高速化します（`ControlApp` は接続後に一度だけこの値をサーバーへ送るため、リロードが必要）。テストは `?room=local&mode=control` で操作します。
 
@@ -1049,6 +1089,7 @@ server/tournament/<大会id>/
 ├── tournament.json   ← 人が書く。アプリは読むだけで絶対に書き戻さない
 ├── programs/*.py     ← 参加プログラムの原本
 └── state.json        ← アプリが書く進行状態。消せば大会をやり直せる
+                        (matches / programs / stageMapOverrides)
 ```
 
 `server/program-catalog` / `server/map-catalog` と同じグローバル層に置く。ルームは 30分 TTL で
@@ -1073,6 +1114,12 @@ server/tournament/<大会id>/
   状態なので、`bind()` のたびに `ready` へ戻す (中断した運営を再開してもカードが詰まらない)。
 - **`addCatalogEntry` は渡したファイルを rename する**: 大会フォルダの原本を直接渡さず、
   一時ファイルへコピーしてから渡すこと。登録直後に `setDemoEnabled(id, false)` でデモ抽選から外す。
+- **マップの解決順**: `match.rematchMapCatalogId` → `state.stageMapOverrides[stage]` (運営中の差し替え)
+  → `def.rules.stageMaps[stage]` (回戦ごとの指定) → `def.rules.mapCatalogId` (大会全体)。
+  `TournamentStore.mapForMatch()` / `mapForStage()` に一本化してあるので、判定を各所で書き直さないこと。
+  配信ペイロードには解決済みの `stageMaps` を載せるため、UI 側でこの順序を再現する必要はない。
+  `catalogId` はこの PC でしか通じないので、運営中の差し替えは配布物 (`tournament.json`) ではなく
+  `state.json` に書く (`programs` と同じ二層構造)。
 - **実施順と表示順は別物**: `TournamentMatch.order` は「同一 stage 内の**表示**順」で、
   トーナメント表では決勝 (order 0) が上、3位決定戦 (order 1) がその下に来る。
   一方**実施順は3位決定戦が先** — 決勝を締めくくりにするためで、両者は依存関係が無いので選べる。
@@ -1089,15 +1136,20 @@ server/tournament/<大会id>/
 - **リーグ**: 引き分けは正当な結果。そのまま確定できる。
 - **トーナメント**: `confirmResult` は勝者不在のままの確定を**拒否する** (詰み防止)。UI では
   ①マップを変更して再試合 ②審判裁定で勝者を指定 ③両者敗退 の3択を出す。
-  固定マップ運用 (`rules.mapCatalogId`) では、公式ルール「マップを変更して再試合」に従い
-  別マップを指定しないと `discardResult` が通らない。
+  固定マップ運用 (その試合の実効マップが `null` でない = `mapForStage()` が返す) では、
+  公式ルール「マップを変更して再試合」に従い別マップを指定しないと `discardResult` が通らない。
+  大会全体はランダムでも、その回戦だけマップを指定していれば同じ扱いになる。
 
 ### 13-5. WebSocket / HTTP
 
 `FrontendMessage` に `tournament_bind` / `tournament_unbind` / `tournament_arm_match` /
 `tournament_confirm_result` / `tournament_discard_result` / `tournament_reopen_match` /
-`tournament_set_walkover` / `tournament_assign_program` / `tournament_rescan` を追加。
-失敗は握りつぶさず `error` メッセージで理由を返す。
+`tournament_set_walkover` / `tournament_assign_program` / `tournament_set_stage_map` /
+`tournament_rescan` を追加。失敗は握りつぶさず `error` メッセージで理由を返す。
+
+`tournament_set_stage_map` は運営中に回戦のマップを差し替える (`state.json` へ保存)。
+準備済み (`armed`) の試合が同じ回戦なら、その場で `loadMap` し直す — 次の `arm` まで待つと
+「変えたのに反映されない」ように見えるため。
 
 `WsMessage` に `tournament_state` (`TournamentStatePayload | null`) を追加し、bind 中の
 ルームへ丸ごと配信する。後から開いたウィンドウには、`WsServer.getExtraJoinMessages` という
@@ -1139,7 +1191,7 @@ server/tournament/<大会id>/
 | `components/tournament/BracketView.tsx` | トーナメント表。接続線は SVG、カードは絶対配置の DOM |
 | `components/tournament/LeagueTable.tsx` | リーグの星取表 + 順位表 (素の DOM) |
 | `components/tournament/MatchCard.tsx` | 1試合のカード。3画面で共用 (`interactive` で操作の有無を切替) |
-| `components/tournament/TournamentPanel.tsx` | 運営パネル (大会の選択・取り込み・次の一手) |
+| `components/tournament/TournamentPanel.tsx` | 運営パネル (大会の選択・取り込み・回戦ごとのマップ・次の一手) |
 | `components/tournament/ResultConfirmDialog.tsx` | 結果確定。同点時の3択を出す |
 | `components/tournament/TournamentEditorDialog.tsx` | 大会データの作成・編集フォーム (13-7) |
 | `components/tournament/TournamentMode.tsx` | `?mode=tournament` のルート |
@@ -1182,9 +1234,16 @@ server/tournament/<大会id>/
 編集時は `GET /api/tournament/:id` の `state.participants[].programCatalogId` から復元する。
 
 **シード配置の共有**: 「手動で指定する」の初期値は、サーバーが自動生成するのと
-寸分違わぬ並びでなければならない。そのため `seedOrder` / `bracketSizeFor` は
-`@u15/ws-types` (`tournament.ts`) に置き、`apps/backend/src/tournament/bracket.ts` は
-そこから re-export している。二重定義すると必ずズレる。
+寸分違わぬ並びでなければならない。そのため `seedOrder` / `bracketSizeFor` / `stageCountFor` /
+`stageLabel` は `@u15/ws-types` (`tournament.ts`) に置き、
+`apps/backend/src/tournament/bracket.ts` はそこから re-export している。二重定義すると必ずズレる。
+
+**回戦ごとのマップ**: 「ルール」欄の下に回戦ぶんのセレクトを出し、`rules.stageMaps`
+(index = stage、`null` は大会の設定に従う) として保存する。回戦数は参加者数だけで決まる
+(`stageCountFor`) ので、参加者を減らして回戦が減ったら余った指定は保存しない。
+3位決定戦は決勝と同じ stage なので決勝と同じマップになる。
+運営中は編集画面が開けないため、差し替えは運営パネル (`tournament_set_stage_map`) から行う。
+リーグの節には用意していない (節数の算出を frontend に二重定義することになるため)。
 
 **参加者 id の扱い**: 表示順がそのまま `seed` (選手番号 = 第1ゲームの先攻順) になる。
 新しい行には `p01`, `p02`, … を採番するが、**既存の大会を編集するときは元の id を必ず保つ**。

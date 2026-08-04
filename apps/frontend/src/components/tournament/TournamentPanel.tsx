@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type {
-  CatalogEntry, TournamentStatePayload, TournamentSummary,
+  CatalogEntry, MapCatalogEntry, TournamentStatePayload, TournamentSummary,
 } from '@u15/ws-types';
-import { compareByPlayOrder } from '@u15/ws-types';
+import { compareByPlayOrder, stageLabel } from '@u15/ws-types';
 import type { TournamentCommands } from '../../hooks/useGameState';
 import { MatchCard } from './MatchCard';
 import { ResultConfirmDialog } from './ResultConfirmDialog';
@@ -31,6 +31,7 @@ export function TournamentPanel({
   const [summaries, setSummaries] = useState<TournamentSummary[]>([]);
   const [scanErrors, setScanErrors] = useState<{ id: string; message: string }[]>([]);
   const [programs, setPrograms]   = useState<CatalogEntry[]>([]);
+  const [maps, setMaps]           = useState<MapCatalogEntry[]>([]);
   const [busy, setBusy]           = useState(false);
   /** 大会データ作成/編集ダイアログ。'new' なら新規、大会 id なら編集 */
   const [editing, setEditing]     = useState<string | null>(null);
@@ -46,6 +47,10 @@ export function TournamentPanel({
       const res = await fetch(`${httpBase}/api/programs`);
       setPrograms((await res.json() as { entries: CatalogEntry[] }).entries ?? []);
     } catch { /* 同上 */ }
+    try {
+      const res = await fetch(`${httpBase}/api/maps`);
+      setMaps((await res.json() as { entries: MapCatalogEntry[] }).entries ?? []);
+    } catch { /* 回戦ごとのマップを選べないだけ */ }
   };
 
   useEffect(() => { void refresh(); }, [httpBase, state?.tournamentId]);
@@ -189,6 +194,38 @@ export function TournamentPanel({
             </section>
           )}
 
+          {/* ── 回戦ごとのマップ (トーナメントのみ) ── */}
+          {state.format === 'single-elimination' && state.stageMaps.length > 0 && (
+            <section style={card}>
+              <div style={sectionTitle}>回戦ごとのマップ</div>
+              <p style={hint}>
+                ここでの変更はこの大会の進行状態に保存され、次に「この試合を準備」したときから使われます。
+                準備済みの試合が同じ回戦なら、その場で読み直します。
+              </p>
+              {state.stageMaps.map((mapId, stage) => (
+                <div key={stage} style={assignRow}>
+                  <span style={{ width: 68, flexShrink: 0 }}>
+                    {stageLabel(stage, state.stageMaps.length)}
+                  </span>
+                  <select
+                    style={{ ...select, flex: 1, minWidth: 0 }}
+                    aria-label={`${stageLabel(stage, state.stageMaps.length)} のマップ`}
+                    value={mapId ?? ''}
+                    onChange={e => commands.setStageMap(stage, e.target.value || null)}
+                  >
+                    <option value="">
+                      大会の設定に従う（{state.rules.mapCatalogId ? '固定マップ' : '毎回ランダム生成'}）
+                    </option>
+                    {maps.map(m => <option key={m.id} value={m.id}>{m.displayName}</option>)}
+                  </select>
+                </div>
+              ))}
+              {state.rules.thirdPlaceMatch && (
+                <p style={hint}>3位決定戦は決勝と同じ回戦なので、決勝と同じマップになります。</p>
+              )}
+            </section>
+          )}
+
           {/* ── 次の一手 ── */}
           <section style={card}>
             <div style={sectionTitle}>いま操作する試合</div>
@@ -241,7 +278,11 @@ export function TournamentPanel({
           participants={state.participants}
           isLeague={state.format === 'league'}
           httpBase={httpBase}
-          requireMapChangeOnRematch={state.rules.mapCatalogId !== null}
+          // 回戦ごとのマップも「固定マップ運用」— リセットしても引き直されないので
+          // 同点の再試合では別マップを選ばせる (バックエンドの discardResult と同じ判定)
+          requireMapChangeOnRematch={
+            (state.stageMaps[awaiting.stage] ?? state.rules.mapCatalogId) !== null
+          }
           onConfirm={(winnerSide, note) => commands.confirm(awaiting.id, winnerSide, note)}
           onRematch={mapId => commands.discard(awaiting.id, mapId)}
           onWalkover={winnerSide => commands.walkover(awaiting.id, winnerSide)}

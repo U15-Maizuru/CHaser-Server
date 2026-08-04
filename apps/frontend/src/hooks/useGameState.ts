@@ -25,6 +25,8 @@ export interface TournamentCommands {
   reopen:   (matchId: string, cascade?: boolean) => void;
   walkover: (matchId: string, winnerSide: 0 | 1 | null) => void;
   assignProgram: (participantId: string, catalogId: string | null) => void;
+  /** 回戦ごとのマップ差し替え。null は「大会の設定に従う」 */
+  setStageMap: (stage: number, mapCatalogId: string | null) => void;
   rescan:   () => void;
 }
 
@@ -195,6 +197,8 @@ export function useGameState(wsUrl: string, roomId: string): GameStateHook {
       walkover: (matchId, winnerSide) => send({ type: 'tournament_set_walkover',   payload: { matchId, winnerSide } }),
       assignProgram: (participantId, catalogId) =>
         send({ type: 'tournament_assign_program', payload: { participantId, catalogId } }),
+      setStageMap: (stage, mapCatalogId) =>
+        send({ type: 'tournament_set_stage_map', payload: { stage, mapCatalogId } }),
       rescan:   ()                    => send({ type: 'tournament_rescan' }),
     },
   };

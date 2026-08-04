@@ -16,6 +16,7 @@ import { spawn }                 from 'node:child_process';
 import path                      from 'node:path';
 import fs                        from 'node:fs';
 import { fileURLToPath }         from 'node:url';
+import { killTree }              from './dist/killTree.js';
 
 const __dirname     = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT  = path.resolve(__dirname, '../..');
@@ -1072,8 +1073,16 @@ async function testTournament(app, page) {
     console.error('\n  FATAL:', err.message);
     fail('テスト実行全体', err.message);
   } finally {
-    if (app)      await app.close().catch(() => {});
-    if (viteProc) viteProc.kill();
+    if (app) {
+      // close() が正常に効かなかった場合の保険。バックエンドは Electron の子なので
+      // 木ごと落とせば 8765 を握った残骸が出ない (既に終了していれば無害)
+      const electronPid = app.process()?.pid;
+      await app.close().catch(() => {});
+      killTree(electronPid);
+    }
+    // pnpm/cmd を挟んでいるので Vite の実体は孫プロセス。木ごと落とさないと
+    // 5173 を握ったまま残り、次回の実行が**前回のサーバー**につながって大量に失敗する
+    if (viteProc) killTree(viteProc.pid);
   }
 
   // ── 結果サマリー ────────────────────────────────────────────────────────

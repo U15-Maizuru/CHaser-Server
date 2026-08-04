@@ -16,9 +16,12 @@ import {
   assignProgram,
   buildStatePayload,
   loadTournament,
+  mapForMatch,
+  mapForStage,
   resolveParticipants,
   saveState,
   scanTournaments,
+  stageCountOf,
   type LoadedTournament,
 } from './TournamentStore.js';
 import {
@@ -115,7 +118,9 @@ export class TournamentOrchestrator {
     // 大会運営中はデモ・リピートと排他 (自動進行が勝手に次の対戦を始めてしまうため)
     room.manager.setDemoMode(false);
     room.manager.setRepeatMode(false);
-    if (loaded.def.rules.mapCatalogId) room.manager.loadMap(loaded.def.rules.mapCatalogId);
+    // まだ試合を選んでいないので、最初の回戦のマップを出しておく (arm で改めて確定する)
+    const firstMap = mapForStage(binding.loaded, 0);
+    if (firstMap) room.manager.loadMap(firstMap);
 
     this.publish(roomId);
   }
@@ -174,7 +179,6 @@ export class TournamentOrchestrator {
     // COOL だけ準備完了・HOT は未選択という中途半端な状態が残ってしまう
     const configs = [this.resolveSlotConfig(a, 0, roomId), this.resolveSlotConfig(bp, 1, roomId)];
 
-    const fixedMap = b.loaded.def.rules.mapCatalogId;
     const room = this.deps.rm.getRoom(roomId);
     if (!room) throw new TournamentError('ルームが見つかりません');
     const manager = room.manager;
@@ -185,7 +189,8 @@ export class TournamentOrchestrator {
     await manager.requestReset();
     manager.setDoubleMode(b.loaded.def.rules.doubleMode);
 
-    const mapId = match.rematchMapCatalogId ?? fixedMap;
+    // 再試合の指定 → 回戦ごとのマップ → 大会全体の固定マップ の順に効かせる
+    const mapId = mapForMatch(b.loaded, match);
     if (mapId) manager.loadMap(mapId);
 
     for (const c of configs) {
@@ -237,13 +242,16 @@ export class TournamentOrchestrator {
    * 公式ルールは同点時に「マップを変更して再試合を行う」と定めている。ランダムマップなら
    * requestReset() が自動で引き直すが、大会で固定マップを使っている場合は引き直されないため、
    * 別マップの指定を必須にする (同じマップのまま再試合するとルール違反になる)。
+   *
+   * 「固定かどうか」は回戦ごとのマップも含めた実効値で見る — 大会全体はランダムでも
+   * その回戦だけマップを指定していれば、やはり引き直されない。
    */
   discardResult(roomId: string, matchId: string, rematchMapCatalogId?: string): void {
     const b     = this.require(roomId);
     const match = this.requireMatch(b, matchId);
 
     const wasTie   = match.result?.winnerSide === null;
-    const fixedMap = b.loaded.def.rules.mapCatalogId;
+    const fixedMap = mapForStage(b.loaded, match.stage);
     if (wasTie && fixedMap && !rematchMapCatalogId) {
       throw new TournamentError('同点の再試合ではマップを変更してください (別のマップを選んでから実行してください)');
     }
@@ -271,6 +279,45 @@ export class TournamentOrchestrator {
     this.requireMatch(b, matchId);
     this.commit(b, walkoverInGraph(b.loaded.state.matches, matchId, winnerSide));
     if (b.armedMatchId === matchId) b.armedMatchId = null;
+    this.publish(roomId);
+  }
+
+  /**
+   * 回戦 (stage) ごとのマップを差し替える。null で「大会の設定に従う」に戻す。
+   *
+   * 定義 (tournament.json) は配布物なので書き換えず、state.json 側に上書きとして持つ
+   * (プログラムの割り当てと同じ考え方)。既に準備済みの試合がその回戦なら、次の arm を
+   * 待たずにその場でマップを読み直す — でないと「変えたのに反映されない」が起きる。
+   */
+  setStageMap(roomId: string, stage: number, mapCatalogId: string | null): void {
+    const b = this.require(roomId);
+
+    const count = stageCountOf(b.loaded.state.matches);
+    if (!Number.isInteger(stage) || stage < 0 || stage >= count) {
+      throw new TournamentError('その回戦は存在しません');
+    }
+    if (b.loaded.def.format !== 'single-elimination') {
+      throw new TournamentError('回戦ごとのマップはトーナメント (勝ち上がり) でのみ設定できます');
+    }
+
+    const overrides = { ...(b.loaded.state.stageMapOverrides ?? {}), [String(stage)]: mapCatalogId };
+    b.loaded = {
+      ...b.loaded,
+      state: { ...b.loaded.state, stageMapOverrides: overrides, updatedAt: Date.now() },
+    };
+    saveState(b.loaded.state);
+
+    // 準備済みの試合が同じ回戦なら、その場で反映する。1ゲームでも消化していると
+    // RoundController.canEditMap が塞ぐので、その場合は次の arm に任せる。
+    const armed = b.armedMatchId
+      ? b.loaded.state.matches.find(m => m.id === b.armedMatchId)
+      : undefined;
+    if (armed && armed.stage === stage && armed.status === 'armed') {
+      const manager = this.deps.rm.getRoom(roomId)?.manager;
+      const mapId   = mapForMatch(b.loaded, armed);
+      if (manager && mapId) manager.loadMap(mapId);
+    }
+
     this.publish(roomId);
   }
 

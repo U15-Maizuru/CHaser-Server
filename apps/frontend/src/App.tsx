@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useGameState }      from './hooks/useGameState';
 import { useMatchConfig }    from './hooks/useMatchConfig';
 import { useMapGenParams, toMapParams } from './hooks/useMapGenParams';
+import { fetchCurrentMap, useCurrentMap } from './hooks/useCurrentMap';
 import { useEnvConfig }      from './hooks/useEnvConfig';
 import { useGamePhaseSound } from './hooks/useGamePhaseSound';
 import { useStartCountdown } from './hooks/useStartCountdown';
@@ -67,8 +68,11 @@ function ControlApp({ roomId }: { roomId: string }) {
   const [showMapEditor,      setShowMapEditor]      = useState(false);
   const [showProgramLibrary, setShowProgramLibrary] = useState(false);
   const [showTournament,     setShowTournament]     = useState(false);
-  const [currentMap,         setCurrentMap]         = useState<InlineMapData | null>(null);
   const [editorSeed,         setEditorSeed]         = useState<EditableMap | null>(null);
+
+  // 今出ているマップ (観戦窓の待機画面と同じフックを使う)
+  const { currentMap, refresh: refreshCurrentMap } = useCurrentMap(
+    HTTP_BASE, roomId, isConnected, serverStatus);
 
   const phase        = serverStatus?.phase ?? 'setup';
   const roundResults = serverStatus?.roundResults ?? [];
@@ -149,33 +153,8 @@ function ControlApp({ roomId }: { roomId: string }) {
     await fetch(`${HTTP_BASE}/api/upload/music`, { method: 'POST', body: fd });
   };
 
-  const fetchCurrentMap = async (): Promise<InlineMapData | null> => {
-    try {
-      const res = await fetch(`${HTTP_BASE}/api/maps/current?room=${roomId}`);
-      if (!res.ok) return null;
-      const { data } = await res.json() as { data: InlineMapData };
-      return data;
-    } catch {
-      return null;
-    }
-  };
-
-  // マップ変更を知らせる WS イベントは無く、さらに requestReset / requestRepeat は
-  // サーバー側でマップを再生成する。そのため setup 中は server_status のたびに取り直し、
-  // 内容が変わっていないときは state を更新せず再描画を避ける。
-  const refreshCurrentMap = useCallback(async () => {
-    const data = await fetchCurrentMap();
-    setCurrentMap(prev => (JSON.stringify(prev) === JSON.stringify(data) ? prev : data));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId]);
-
-  useEffect(() => {
-    if (!isConnected || phase !== 'setup') return;
-    void refreshCurrentMap();
-  }, [isConnected, phase, serverStatus, refreshCurrentMap]);
-
   const openMapEditor = async () => {
-    const data = await fetchCurrentMap();
+    const data = await fetchCurrentMap(HTTP_BASE, roomId);
     setEditorSeed(data
       ? { field: data.field as MapObject[][], size: data.size, turn: data.turn, teamFirstPoint: data.teamFirstPoint }
       : defaultEditableMap);

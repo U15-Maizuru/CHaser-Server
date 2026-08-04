@@ -254,6 +254,49 @@ describe('TournamentOrchestrator', () => {
       expect(lastState()!.armedMatchId).toBeNull();
     });
 
+    it('回戦ごとのマップがあればそれを読む (4人なら準決勝=stage0 / 決勝=stage1)', async () => {
+      writeCup(cupDef({
+        rules: { doubleMode: false, mapCatalogId: 'cup-map', stageMaps: ['sf-map', 'final-map'] },
+      }));
+      orch.bind(ROOM, CUP);
+
+      const manager = rm.getRoom(ROOM)!.manager;
+      const spy = vi.spyOn(manager, 'loadMap');
+
+      await orch.armMatch(ROOM, 'SF1');
+      expect(spy).toHaveBeenLastCalledWith('sf-map');
+
+      orch.setWalkover(ROOM, 'SF1', 0);
+      orch.setWalkover(ROOM, 'SF2', 0);
+      await orch.armMatch(ROOM, 'FINAL');
+      expect(spy).toHaveBeenLastCalledWith('final-map');
+      vi.restoreAllMocks();
+    });
+
+    it('回戦の指定が null の回戦は大会全体の固定マップに従う', async () => {
+      writeCup(cupDef({
+        rules: { doubleMode: false, mapCatalogId: 'cup-map', stageMaps: [null, 'final-map'] },
+      }));
+      orch.bind(ROOM, CUP);
+
+      const spy = vi.spyOn(rm.getRoom(ROOM)!.manager, 'loadMap');
+      await orch.armMatch(ROOM, 'SF1');
+      expect(spy).toHaveBeenLastCalledWith('cup-map');
+      vi.restoreAllMocks();
+    });
+
+    it('再試合のマップ指定は回戦ごとのマップより優先される', async () => {
+      writeCup(cupDef({ rules: { doubleMode: false, stageMaps: ['sf-map', null] } }));
+      orch.bind(ROOM, CUP);
+      orch.setWalkover(ROOM, 'SF1', null);
+      orch.discardResult(ROOM, 'SF1', 'rematch-map');
+
+      const spy = vi.spyOn(rm.getRoom(ROOM)!.manager, 'loadMap');
+      await orch.armMatch(ROOM, 'SF1');
+      expect(spy).toHaveBeenLastCalledWith('rematch-map');
+      vi.restoreAllMocks();
+    });
+
     it('cancelArm で準備を取り消せる', async () => {
       writeCup(cupDef());
       orch.bind(ROOM, CUP);
@@ -383,6 +426,20 @@ describe('TournamentOrchestrator', () => {
       expect(matchOf('SF1').rematchMapCatalogId).toBe('another-map');
     });
 
+    it('その回戦だけマップ固定でも、同点の再試合にはマップ変更が要る', () => {
+      // 大会全体はランダムでも、回戦を指定していれば引き直されないので同じ扱いにする
+      writeCup(cupDef({ rules: { doubleMode: false, stageMaps: ['sf-map', null] } }));
+      orch.bind(ROOM, CUP);
+      orch.setWalkover(ROOM, 'SF1', null);
+
+      expect(() => orch.discardResult(ROOM, 'SF1')).toThrow(/マップを変更してください/);
+      // 決勝 (stage1) は指定が無いのでランダムのまま → 変更不要
+      orch.setWalkover(ROOM, 'SF1', 0);
+      orch.setWalkover(ROOM, 'SF2', 0);
+      orch.setWalkover(ROOM, 'FINAL', null);
+      expect(() => orch.discardResult(ROOM, 'FINAL')).not.toThrow();
+    });
+
     it('勝敗がついた試合のやり直しにはマップ変更は要らない', () => {
       writeCup(cupDef({ rules: { doubleMode: false, mapCatalogId: 'fixed-map' } }));
       orch.bind(ROOM, CUP);
@@ -402,6 +459,65 @@ describe('TournamentOrchestrator', () => {
       expect(() => orch.reopenMatch(ROOM, 'SF1', true)).not.toThrow();
       expect(matchOf('FINAL').status).toBe('pending');
       expect(matchOf('SF2').status).toBe('done'); // 無関係な枝は無傷
+    });
+  });
+
+  describe('setStageMap (運営中の回戦マップ差し替え)', () => {
+    it('差し替えると実効値が変わり、配信される', () => {
+      writeCup(cupDef({ rules: { doubleMode: false, stageMaps: ['sf-map', null] } }));
+      orch.bind(ROOM, CUP);
+      expect(lastState()!.stageMaps).toEqual(['sf-map', null]);
+
+      orch.setStageMap(ROOM, 1, 'final-map');
+      expect(lastState()!.stageMaps).toEqual(['sf-map', 'final-map']);
+    });
+
+    it('null に戻すと大会の設定に従う', () => {
+      writeCup(cupDef({ rules: { doubleMode: false, stageMaps: ['sf-map', null] } }));
+      orch.bind(ROOM, CUP);
+      orch.setStageMap(ROOM, 0, null);
+      expect(lastState()!.stageMaps).toEqual([null, null]);
+    });
+
+    it('差し替えは state.json に残り、次の arm で使われる', async () => {
+      writeCup(cupDef({ rules: { doubleMode: false } }));
+      orch.bind(ROOM, CUP);
+      orch.setStageMap(ROOM, 0, 'sf-map');
+
+      expect(loadTournament(CUP)!.state.stageMapOverrides).toEqual({ '0': 'sf-map' });
+
+      const spy = vi.spyOn(rm.getRoom(ROOM)!.manager, 'loadMap');
+      await orch.armMatch(ROOM, 'SF1');
+      expect(spy).toHaveBeenLastCalledWith('sf-map');
+      vi.restoreAllMocks();
+    });
+
+    it('準備済みの試合と同じ回戦なら、その場で読み直す', async () => {
+      writeCup(cupDef({ rules: { doubleMode: false } }));
+      orch.bind(ROOM, CUP);
+      await orch.armMatch(ROOM, 'SF1');
+
+      const spy = vi.spyOn(rm.getRoom(ROOM)!.manager, 'loadMap');
+      orch.setStageMap(ROOM, 0, 'sf-map');
+      expect(spy).toHaveBeenCalledWith('sf-map');
+
+      // 別の回戦なら準備中の試合には触らない
+      spy.mockClear();
+      orch.setStageMap(ROOM, 1, 'final-map');
+      expect(spy).not.toHaveBeenCalled();
+      vi.restoreAllMocks();
+    });
+
+    it('存在しない回戦とリーグは断る', () => {
+      writeCup(cupDef());
+      orch.bind(ROOM, CUP);
+      expect(() => orch.setStageMap(ROOM, 2, 'x')).toThrow(/回戦は存在しません/);
+      expect(() => orch.setStageMap(ROOM, -1, 'x')).toThrow(/回戦は存在しません/);
+
+      orch.unbind(ROOM);
+      writeCup(cupDef({ id: 'lg', format: 'league' }), 'lg');
+      orch.bind(ROOM, 'lg');
+      expect(() => orch.setStageMap(ROOM, 0, 'x')).toThrow(/トーナメント/);
     });
   });
 

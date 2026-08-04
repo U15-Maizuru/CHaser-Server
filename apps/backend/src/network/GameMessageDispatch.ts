@@ -119,6 +119,10 @@ export class GameMessageDispatch {
         this.tournament(ws, t =>
           t.assignProgram(roomId, msg.payload.participantId, msg.payload.catalogId));
         break;
+      case 'tournament_set_stage_map':
+        this.tournament(ws, t =>
+          t.setStageMap(roomId, msg.payload.stage, msg.payload.mapCatalogId));
+        break;
       case 'tournament_rescan':
         this.tournament(ws, t => t.rescan(roomId));
         break;

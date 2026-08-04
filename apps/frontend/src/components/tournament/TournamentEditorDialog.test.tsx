@@ -143,6 +143,50 @@ describe('TournamentEditorDialog — 新規作成', () => {
     expect(def.bracket).toBeUndefined();
   });
 
+  describe('回戦ごとのマップ', () => {
+    it('参加者数から回戦の欄が生えて、選んだマップが rules.stageMaps に入る', async () => {
+      renderNew();
+      fireEvent.change(screen.getByLabelText('大会名'), { target: { value: 'テスト杯' } });
+      addParticipants(['A', 'B', 'C', 'D']);
+      // 4人 = 準決勝と決勝の2回戦。マップ一覧は非同期に届く
+      await waitFor(() =>
+        expect(screen.getByLabelText('決勝 のマップ')).toHaveTextContent('公式マップ'));
+      expect(screen.getByLabelText('準決勝 のマップ')).toBeInTheDocument();
+
+      fireEvent.change(screen.getByLabelText('決勝 のマップ'), { target: { value: 'map-1' } });
+      fireEvent.click(screen.getByText('この内容で作成'));
+
+      await waitFor(() => expect(calls.some(c => c.url.includes('/import'))).toBe(true));
+      // index が stage。未指定の準決勝は null (大会の設定に従う)
+      expect(sentDefinition().rules.stageMaps).toEqual([null, 'map-1']);
+    });
+
+    it('参加者を減らして回戦が減ったら、その回戦の指定は保存されない', async () => {
+      renderNew();
+      fireEvent.change(screen.getByLabelText('大会名'), { target: { value: 'テスト杯' } });
+      addParticipants(['A', 'B', 'C', 'D']);
+      await waitFor(() =>
+        expect(screen.getByLabelText('決勝 のマップ')).toHaveTextContent('公式マップ'));
+      fireEvent.change(screen.getByLabelText('決勝 のマップ'), { target: { value: 'map-1' } });
+
+      // 2人 = 決勝のみ (stage 0)。旧 stage1 の指定は捨てる
+      fireEvent.click(screen.getByLabelText('参加者4 を削除'));
+      fireEvent.click(screen.getByLabelText('参加者3 を削除'));
+      fireEvent.click(screen.getByText('この内容で作成'));
+
+      await waitFor(() => expect(calls.some(c => c.url.includes('/import'))).toBe(true));
+      expect(sentDefinition().rules.stageMaps).toEqual([null]);
+    });
+
+    it('リーグでは出さない (節ごとのマップは扱わない)', () => {
+      renderNew();
+      fireEvent.change(screen.getByLabelText('大会名'), { target: { value: 'リーグ杯' } });
+      addParticipants(['A', 'B', 'C', 'D']);
+      fireEvent.click(screen.getByText('リーグ (総当たり)'));
+      expect(screen.queryByLabelText('決勝 のマップ')).not.toBeInTheDocument();
+    });
+  });
+
   it('並べ替えると選手番号も入れ替わる', async () => {
     renderNew();
     fireEvent.change(screen.getByLabelText('大会名'), { target: { value: 'テスト杯' } });
@@ -302,7 +346,7 @@ describe('TournamentEditorDialog — 編集', () => {
     name:   '既存の杯',
     format: 'single-elimination',
     rules: {
-      doubleMode: true, mapCatalogId: null, thirdPlaceMatch: true,
+      doubleMode: true, mapCatalogId: null, stageMaps: [], thirdPlaceMatch: true,
       leaguePoints: { win: 3, draw: 1, loss: 0 }, doubleRoundRobin: false,
     },
     participants: [

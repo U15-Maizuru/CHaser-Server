@@ -89,7 +89,8 @@ export function StartupDialog({
 
       {isMidMatch && (
         <div style={s.midSetStrip}>
-          第{(status.currentRound ?? 0) + 1}ゲーム — マップと対戦ルールは第1ゲームと共通です。
+          第{(status.currentRound ?? 0) + 1}ゲーム — マップと対戦ルールは第1ゲームと共通です
+          （先攻・後攻が入れ替わるため、盤面は180°反転して表示されます）。
           両チームの再接続を待って「ゲームスタート」を押してください。
         </div>
       )}
@@ -182,6 +183,10 @@ function MapPreviewColumn({
 }) {
   const tex = useTextures(theme);
 
+  // 第2ゲームは先攻・後攻が入れ替わるので盤面も180°反転する (MainWindow と同じ条件)。
+  // プレビューだけ反転しないと、開始した瞬間に上下左右が入れ替わって見えてしまう。
+  const flip = status.doubleMode && status.currentRound === 1;
+
   // ── プレビュー以外 (ラベル・要約・選択パネル) が使う高さを実測する ─────────────
   // 選択パネルは開閉で高さが変わるので定数では持てない。ただしこの高さは
   // プレビューの大きさには一切依存しないため、「測定→反映→再測定」の循環にはならない。
@@ -263,10 +268,12 @@ function MapPreviewColumn({
         teamFirstPoint={currentMap.teamFirstPoint}
         textures={tex}
         cellSize={cellSize}
+        flip={flip}
       />
       <div ref={footerRef} style={s.mapFooter}>
         <div style={s.mapInfo}>
           <span style={s.mapKind}>{sourceLabel(status.mapSource)}</span>
+          {flip && <span style={s.flipBadge}>↻ 第2ゲーム — 反転表示</span>}
           <span>{currentMap.size.x}×{currentMap.size.y} ・ ターン {currentMap.turn}</span>
           <span>ブロック {blocks} ・ アイテム {items}</span>
         </div>
@@ -359,6 +366,10 @@ const s: Record<string, React.CSSProperties> = {
   mapKind: {
     maxWidth: '100%', fontSize: 11, fontWeight: 700, color: TEXT_PRIMARY, fontFamily: FONT_UI,
     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  },
+  flipBadge: {
+    fontSize: 10, fontWeight: 700, fontFamily: FONT_UI, color: TURN_BASE,
+    background: TURN_LIGHT, borderRadius: 99, padding: '2px 8px', margin: '2px 0',
   },
   hint: { fontSize: 10, color: TEXT_MUTED },
 

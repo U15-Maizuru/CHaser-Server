@@ -51,6 +51,8 @@ export type FrontendMessage =
   | { type: 'tournament_reopen_match';    payload: { matchId: string; cascade?: boolean } }
   | { type: 'tournament_set_walkover';    payload: { matchId: string; winnerSide: 0 | 1 | null } }
   | { type: 'tournament_assign_program';  payload: { participantId: string; catalogId: string | null } }
+  /** 回戦 (stage) ごとのマップ差し替え。null は「大会の設定に従う」 */
+  | { type: 'tournament_set_stage_map';   payload: { stage: number; mapCatalogId: string | null } }
   | { type: 'tournament_rescan' };
 
 // --- Room / lobby ---

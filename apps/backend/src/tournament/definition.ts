@@ -83,10 +83,32 @@ function parseRules(v: unknown): TournamentRules {
   return {
     doubleMode:       asBool(o['doubleMode'], true),
     mapCatalogId:     typeof o['mapCatalogId'] === 'string' ? o['mapCatalogId'] : null,
+    stageMaps:        parseStageMaps(o['stageMaps']),
     thirdPlaceMatch:  asBool(o['thirdPlaceMatch'], false),
     leaguePoints:     lp,
     doubleRoundRobin: asBool(o['doubleRoundRobin'], false),
   };
+}
+
+/**
+ * 回戦ごとのマップ。index が stage で、null / 未指定は「大会の設定に従う」。
+ *
+ * マップライブラリの ID はこの PC でしか通じないため、存在チェックはここではしない
+ * (別の PC で書かれた tournament.json を読めなくしないため)。見つからない ID は
+ * ServerManager.loadMap 側で黙って無視され、大会の設定へフォールバックする。
+ */
+function parseStageMaps(v: unknown): (string | null)[] {
+  if (v === undefined || v === null) return [];
+  if (!Array.isArray(v)) {
+    throw new DefinitionError('rules.stageMaps は配列である必要があります');
+  }
+  return v.map((s, i) => {
+    if (s === null || s === undefined || s === '') return null;
+    if (typeof s !== 'string') {
+      throw new DefinitionError(`rules.stageMaps[${i}] はマップの ID か null である必要があります`);
+    }
+    return s;
+  });
 }
 
 function parseParticipants(v: unknown): ParticipantDef[] {

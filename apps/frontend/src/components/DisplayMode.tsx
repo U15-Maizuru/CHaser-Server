@@ -1,11 +1,15 @@
-import type { ServerStatusPayload, TournamentStatePayload } from '@u15/ws-types';
+import type { InlineMapData, MapObject, ServerStatusPayload, TournamentStatePayload } from '@u15/ws-types';
 import { DEFAULT_DISPLAY_PREFS } from '@u15/ws-types';
 import { useGameState } from '../hooks/useGameState';
 import { useGamePhaseSound } from '../hooks/useGamePhaseSound';
 import { useStartCountdown } from '../hooks/useStartCountdown';
 import { useBgm } from '../hooks/useBgm';
+import { useCurrentMap } from '../hooks/useCurrentMap';
+import { useTextures } from '../hooks/useTextures';
 import { MainWindow } from './MainWindow';
 import { FitArea } from './FitArea';
+import { MapThumbnail } from './MapThumbnail';
+import { sourceLabel } from './MapSourceSection';
 import { BracketView } from './tournament/BracketView';
 import { LeagueTable } from './tournament/LeagueTable';
 import { idxForSide } from '../lib/roundSide';
@@ -32,6 +36,8 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
   useGamePhaseSound(snapshot, serverStatus, gameEnd, turnInfo, prefs.muted, true);
   const countdown = useStartCountdown(serverStatus?.phase, turnInfo);
   useBgm(httpBase, serverStatus?.phase, prefs.bgmTrack, prefs.bgmMuted, true);
+  // 待機中にこれから戦うマップを見せる (対戦中は盤面そのものが出るので使わない)
+  const { currentMap } = useCurrentMap(httpBase, roomId, isConnected, serverStatus);
 
   if (!isConnected) {
     return (
@@ -48,6 +54,8 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
         serverStatus={serverStatus}
         displayTitle={prefs.displayTitle}
         tournament={state.tournamentState}
+        currentMap={currentMap}
+        theme={prefs.theme}
       />
     );
   }
@@ -92,11 +100,14 @@ const TEAM_COLORS = [
   { label: 'HOT',  color: HOT_COLOR,  dark: HOT_DARK,  pale: HOT_PALE  },
 ] as const;
 
-function SetupWaiting({ serverStatus, displayTitle, tournament }: {
+function SetupWaiting({ serverStatus, displayTitle, tournament, currentMap, theme }: {
   serverStatus: ServerStatusPayload | null;
   displayTitle: string;
   /** 大会運営中なら、待機中にトーナメント表 / リーグ表を見せる */
   tournament?: TournamentStatePayload | null;
+  /** これから戦うマップ。取得前は null */
+  currentMap?: InlineMapData | null;
+  theme: string;
 }) {
   const clients      = serverStatus?.clients;
   const doubleMode   = serverStatus?.doubleMode ?? false;
@@ -112,6 +123,10 @@ function SetupWaiting({ serverStatus, displayTitle, tournament }: {
   // 第1ゲーム前 (currentRound=0) は恒等写像なので、従来どおり COOL が左・HOT が右になる。
   const leftIdx  = idxForSide(0, currentRound);
   const rightIdx = idxForSide(1, currentRound);
+
+  // 第2ゲームは先攻・後攻が入れ替わるぶん盤面も180°反転する (MainWindow と同じ条件)。
+  // 待機中のプレビューも反転させておかないと、開始した瞬間に向きが変わって見える。
+  const flip = doubleMode && currentRound === 1;
 
   const upcoming = tournament?.matches.find(m => m.id === tournament.armedMatchId) ?? null;
   const nameOfParticipant = (id: string | null) =>
@@ -136,14 +151,21 @@ function SetupWaiting({ serverStatus, displayTitle, tournament }: {
         </div>
       )}
 
-      {/* チームカード */}
-      {clients && (
-        <div style={sw.teams}>
-          <TeamCard idx={leftIdx}  name={clients[leftIdx].name  || '---'} state={clients[leftIdx].state} />
-          <div style={sw.vs}>VS</div>
+      {/* COOL / マップ / HOT (セットアップ画面と同じ骨格) */}
+      <div style={sw.teams}>
+        {clients && (
+          <TeamCard idx={leftIdx} name={clients[leftIdx].name || '---'} state={clients[leftIdx].state} />
+        )}
+        {currentMap
+          ? <MapPreview
+              map={currentMap} theme={theme} flip={flip}
+              label={serverStatus ? sourceLabel(serverStatus.mapSource) : ''}
+            />
+          : <div style={sw.vs}>VS</div>}
+        {clients && (
           <TeamCard idx={rightIdx} name={clients[rightIdx].name || '---'} state={clients[rightIdx].state} />
-        </div>
-      )}
+        )}
+      </div>
 
       {upcoming && (
         <div style={sw.upcoming}>
@@ -192,6 +214,31 @@ function SetupWaiting({ serverStatus, displayTitle, tournament }: {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/** これから戦うマップ。第2ゲーム前は対戦画面と同じ向き (反転) で見せる */
+function MapPreview({ map, theme, flip, label }: {
+  map: InlineMapData; theme: string; flip: boolean; label: string;
+}) {
+  const tex = useTextures(theme);
+  // 15×17 のマップでチームカードと釣り合う大きさ
+  const cellSize = Math.max(4, Math.min(12, Math.floor(200 / Math.max(map.size.x, map.size.y))));
+  return (
+    <div style={mp.card}>
+      <div style={mp.head}>マップ</div>
+      <MapThumbnail
+        field={map.field as MapObject[][]}
+        size={map.size}
+        teamFirstPoint={map.teamFirstPoint}
+        textures={tex}
+        cellSize={cellSize}
+        flip={flip}
+      />
+      <div style={mp.name}>{label}</div>
+      <div style={mp.meta}>{map.size.x}×{map.size.y} ・ ターン {map.turn}</div>
+      {flip && <div style={mp.flip}>↻ 第2ゲーム — 盤面は反転しています</div>}
     </div>
   );
 }
@@ -276,6 +323,25 @@ const sw: Record<string, React.CSSProperties> = {
   recapScore: { fontSize: 34, fontWeight: 800, color: TEXT_PRIMARY, fontFamily: FONT_NUM },
   recapDash:  { fontSize: 22, color: TEXT_MUTED },
   recapNote:  { fontSize: 13, color: TEXT_SECONDARY },
+};
+
+// これから戦うマップ (待機画面の中央)
+const mp: Record<string, React.CSSProperties> = {
+  card: {
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+    padding: '14px 18px', background: BG_CARD,
+    borderRadius: RADIUS_MD, boxShadow: SHADOW_SM,
+  },
+  head: { fontSize: 11, color: TEXT_MUTED, letterSpacing: '0.1em', alignSelf: 'flex-start' },
+  name: {
+    fontSize: 14, fontWeight: 700, color: TEXT_PRIMARY,
+    maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  },
+  meta: { fontSize: 11, color: TEXT_SECONDARY, fontFamily: FONT_NUM },
+  flip: {
+    fontSize: 11, fontWeight: 700, color: TURN_BASE, background: TURN_LIGHT,
+    borderRadius: 99, padding: '3px 10px',
+  },
 };
 
 const tc: Record<string, React.CSSProperties> = {

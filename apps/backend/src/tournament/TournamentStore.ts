@@ -71,6 +71,39 @@ export function buildMatches(def: TournamentDefinition): TournamentMatch[] {
   return resolveMatches(buildBracket(def.participants, opts));
 }
 
+// ── 回戦ごとのマップ ──────────────────────────────────────────────────────
+//
+// 解決順は「試合の再試合指定 → 運営中の差し替え → 定義の回戦指定 → 大会全体の固定マップ」。
+// 定義 (tournament.json) は配布物なので運営中は書き換えず、差し替えは state.json 側に持つ
+// (プログラムの割り当て = programs と同じ二層構造)。
+
+/** その大会の回戦数。試合グラフから数えるので league (節) でも破綻しない */
+export function stageCountOf(matches: TournamentMatch[]): number {
+  return matches.reduce((max, m) => Math.max(max, m.stage + 1), 0);
+}
+
+/** 回戦ごとの実効マップ (index = stage)。null は「大会の設定に従う」 */
+export function resolveStageMaps(loaded: LoadedTournament): (string | null)[] {
+  const count     = stageCountOf(loaded.state.matches);
+  const authored  = loaded.def.rules.stageMaps;
+  const overrides = loaded.state.stageMapOverrides ?? {};
+  return Array.from({ length: count }, (_, stage) => {
+    const o = overrides[String(stage)];
+    if (o !== undefined) return o;
+    return authored[stage] ?? null;
+  });
+}
+
+/** その回戦のマップ (再試合の指定を除いた実効値)。null ならランダム生成のまま */
+export function mapForStage(loaded: LoadedTournament, stage: number): string | null {
+  return resolveStageMaps(loaded)[stage] ?? loaded.def.rules.mapCatalogId;
+}
+
+/** その試合で実際に使うマップ。null ならランダム生成のまま */
+export function mapForMatch(loaded: LoadedTournament, match: TournamentMatch): string | null {
+  return match.rematchMapCatalogId ?? mapForStage(loaded, match.stage);
+}
+
 /** 保存済みの進行状態が今の定義とまだ噛み合っているか */
 function stateMatchesDefinition(def: TournamentDefinition, state: TournamentState): boolean {
   if (state.matches.length === 0) return false;
@@ -394,6 +427,7 @@ export function buildStatePayload(
     standings:    loaded.def.format === 'league'
       ? computeStandings(participants.map(p => p.id), loaded.state.matches, loaded.def.rules.leaguePoints)
       : null,
+    stageMaps:    resolveStageMaps(loaded),
     armedMatchId,
     boundRoomId,
     updatedAt:    loaded.state.updatedAt,

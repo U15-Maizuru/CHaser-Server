@@ -28,6 +28,11 @@ export interface TournamentRules {
   doubleMode:       boolean;
   /** 大会全体で固定マップを使う場合のマップライブラリ ID */
   mapCatalogId:     string | null;
+  /**
+   * single-elimination のみ: 回戦 (stage) ごとのマップ。index が stage、null は
+   * 「大会の設定 (mapCatalogId) に従う」。3位決定戦は決勝と同じ stage なので決勝と同じマップになる。
+   */
+  stageMaps:        (string | null)[];
   /** single-elimination のみ: 3位決定戦を行うか */
   thirdPlaceMatch:  boolean;
   /** league のみ: 勝ち点 (公式ルールは 勝利3 / 引き分け1 / 敗北0) */
@@ -90,6 +95,26 @@ export function bracketSizeFor(n: number): number {
   let size = 1;
   while (size < n) size *= 2;
   return Math.max(size, 1);
+}
+
+/** 回戦の数 (= 決勝までの stage 数)。size=8 なら 3 (1回戦・準決勝・決勝) */
+export function stageCountFor(participantCount: number): number {
+  const size = bracketSizeFor(participantCount);
+  return size < 2 ? 0 : Math.log2(size);
+}
+
+/**
+ * 回戦の名前。後ろから数えて決勝・準決勝・準々決勝、それ以前は「N回戦」。
+ *
+ * 試合グラフの組み立て (backend/tournament/bracket.ts) と、大会データ作成 UI の
+ * 「回戦ごとのマップ」欄が同じ名前を出す必要があるのでここに置く。
+ */
+export function stageLabel(stage: number, totalStages: number): string {
+  const fromLast = totalStages - 1 - stage;
+  if (fromLast === 0) return '決勝';
+  if (fromLast === 1) return '準決勝';
+  if (fromLast === 2) return '準々決勝';
+  return `${stage + 1}回戦`;
 }
 
 // --- 試合グラフ ---
@@ -221,6 +246,12 @@ export interface TournamentStatePayload {
   matches:      TournamentMatch[];
   /** league のときのみ */
   standings:    StandingRow[] | null;
+  /**
+   * 回戦ごとの実効マップ (index = stage)。定義の rules.stageMaps に運営中の差し替えを
+   * 重ねた結果で、null は「大会の設定 (rules.mapCatalogId) に従う」。
+   * 表示・判定はこれだけを見ればよく、UI 側で解決順を再現しなくてよい。
+   */
+  stageMaps:    (string | null)[];
   armedMatchId: string | null;
   boundRoomId:  string;
   updatedAt:    number;
@@ -232,5 +263,11 @@ export interface TournamentState {
   matches:      TournamentMatch[];
   /** participantId → プログラムライブラリのエントリ */
   programs:     Record<string, { catalogId: string; sha256: string } | undefined>;
+  /**
+   * 運営中に差し替えた回戦ごとのマップ (キーは stage の10進表記)。
+   * catalogId はこの PC のライブラリでしか通じないので、programs と同じく
+   * 配布物である tournament.json ではなくこちら側に持つ。
+   */
+  stageMapOverrides?: Record<string, string | null>;
   updatedAt:    number;
 }

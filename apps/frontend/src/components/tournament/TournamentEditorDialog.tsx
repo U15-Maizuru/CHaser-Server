@@ -3,6 +3,7 @@ import type {
   CatalogEntry, MapCatalogEntry, ParticipantDef, TournamentDefinition,
   TournamentFormat, TournamentStatePayload, TournamentSummary,
 } from '@u15/ws-types';
+import { stageCountFor, stageLabel } from '@u15/ws-types';
 import { autoSlots, fitSlots, matchCountOf, slotPairs } from '../../lib/bracketSlots';
 import {
   BG_CARD, BG_ROOT, BORDER_COLOR, COOL_COLOR, FONT_UI, GOLD_BASE, HOT_COLOR,
@@ -71,6 +72,8 @@ export function TournamentEditorDialog({
   const [thirdPlaceMatch, setThirdPlaceMatch]   = useState(false);
   const [doubleRoundRobin, setDoubleRoundRobin] = useState(false);
   const [mapCatalogId, setMapCatalogId]         = useState('');
+  /** 回戦ごとのマップ。index が stage、'' は「大会の設定に従う」 */
+  const [stageMaps, setStageMaps]               = useState<string[]>([]);
   const [leaguePoints, setLeaguePoints]         = useState({ win: 3, draw: 1, loss: 0 });
 
   const [participants, setParticipants] = useState<DraftParticipant[]>([]);
@@ -135,6 +138,7 @@ export function TournamentEditorDialog({
     setThirdPlaceMatch(def.rules.thirdPlaceMatch);
     setDoubleRoundRobin(def.rules.doubleRoundRobin);
     setMapCatalogId(def.rules.mapCatalogId ?? '');
+    setStageMaps((def.rules.stageMaps ?? []).map(m => m ?? ''));
     setLeaguePoints(def.rules.leaguePoints);
 
     // 表示順 = 選手番号順 (小さいほど第1ゲームで先攻)。seed 未指定は記載順で後ろへ
@@ -255,6 +259,18 @@ export function TournamentEditorDialog({
 
   const preview = matchCountOf(format, participants.length, { thirdPlaceMatch, doubleRoundRobin });
 
+  // 回戦の数は参加者数だけで決まる (bracketSizeFor の log2)。参加者を足し引きすると増減するので
+  // 保存時に切り詰める
+  const stageCount = format === 'single-elimination' ? stageCountFor(participants.length) : 0;
+  const stageMapAt = (stage: number) => stageMaps[stage] ?? '';
+  const setStageMapAt = (stage: number, value: string) => {
+    setStageMaps(prev => {
+      const next = Array.from({ length: Math.max(prev.length, stage + 1) }, (_, i) => prev[i] ?? '');
+      next[stage] = value;
+      return next;
+    });
+  };
+
   // ── 保存 ──
   const buildDefinition = (): TournamentDefinition => {
     const defs: ParticipantDef[] = participants.map((p, i) => ({
@@ -276,6 +292,8 @@ export function TournamentEditorDialog({
       rules: {
         doubleMode,
         mapCatalogId: mapCatalogId === '' ? null : mapCatalogId,
+        // 回戦数ぶんだけ保存する (参加者を減らして回戦が減ったときの残骸を持ち越さない)
+        stageMaps: Array.from({ length: stageCount }, (_, i) => stageMapAt(i) || null),
         thirdPlaceMatch,
         leaguePoints,
         doubleRoundRobin,
@@ -444,6 +462,34 @@ export function TournamentEditorDialog({
                 固定マップにすると全試合が同じマップになります。同点で再試合になったときは
                 運営が別のマップを選び直す必要があります。
               </p>
+
+              {/* 回戦ごとのマップ (トーナメントのみ) */}
+              {format === 'single-elimination' && stageCount > 0 && (
+                <>
+                  <div style={{ ...sectionTitle, fontSize: 12, marginTop: 4 }}>回戦ごとのマップ</div>
+                  {Array.from({ length: stageCount }, (_, stage) => (
+                    <label key={stage} style={field}>
+                      <span style={label}>{stageLabel(stage, stageCount)}</span>
+                      <select
+                        style={{ ...select, flex: 1, minWidth: 0 }}
+                        aria-label={`${stageLabel(stage, stageCount)} のマップ`}
+                        value={stageMapAt(stage)}
+                        onChange={e => setStageMapAt(stage, e.target.value)}
+                      >
+                        <option value="">
+                          上の設定に従う（{mapCatalogId === '' ? '毎回ランダム生成' : '固定マップ'}）
+                        </option>
+                        {maps.map(m => <option key={m.id} value={m.id}>{m.displayName}</option>)}
+                      </select>
+                    </label>
+                  ))}
+                  <p style={hint}>
+                    回戦ごとに違うマップで戦わせたいときに指定します。大会中でも運営パネルから
+                    差し替えられます。
+                    {thirdPlaceMatch && ' 3位決定戦は決勝と同じ回戦なので、決勝と同じマップになります。'}
+                  </p>
+                </>
+              )}
             </section>
 
             {/* ── 参加者 ── */}
