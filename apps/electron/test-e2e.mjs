@@ -195,7 +195,7 @@ async function waitForGameEnd(page, timeoutMs = 40000) {
 }
 
 /** ゲーム中 (ボード表示) を確認 — 1ゲーム制のサイドパネルは主役として「合計ポイント」を
- *  大きく表示する (2ゲーム制は明細 + TOTAL 欄の「合計」なので、この文字列では判定できない) */
+ *  大きく表示する (2ゲーム制は明細 + 総合欄の「合計」なので、この文字列では判定できない) */
 async function waitForGameStart(page, timeoutMs = 15000) {
   const found = await waitFor(page, '合計ポイント', timeoutMs);
   return found;
@@ -434,9 +434,9 @@ async function testDoubleMatch(page) {
     ? pass('ゲーム1終了後に「第2ゲームへ」ボタンが表示される')
     : fail('ゲーム1終了後に「第2ゲームへ」ボタンが表示される', 'タイムアウト');
 
-  // 新UIでは TOTAL 合計ボックスと 第2ゲームへボタンが表示される
+  // 新UIでは総合の合計ボックスと 第2ゲームへボタンが表示される
   const r1Text = await bodyText(page);
-  r1Text.includes('第2ゲームへ') && r1Text.includes('TOTAL')
+  r1Text.includes('第2ゲームへ') && r1Text.includes('総合')
     ? pass('ゲーム1のポイントが ScorePanel に表示される')
     : fail('ゲーム1のポイントが ScorePanel に表示される');
 
@@ -491,25 +491,25 @@ async function testDoubleMatch(page) {
     : fail('ゲーム2が正常に終了する', 'タイムアウト');
 
   // 合計ポイント / 最終勝者
-  // 新UIでは TOTAL 合計ボックスに pt サフィックス付きで両スコアが表示される
+  // 新UIでは総合の合計ボックスに pt サフィックス付きで両スコアが表示される
   const finalText = await bodyText(page);
-  finalText.includes('TOTAL') && finalText.includes('pt')
+  finalText.includes('総合') && finalText.includes('pt')
     ? pass('最終結果 (合計ポイント) が表示される')
     : fail('最終結果 (合計ポイント) が表示される', `text: ${finalText.slice(0,200)}`);
 
-  // セット全体の勝者 (勝利数 → 同数なら合計ポイント) は、勝者側パネルの TOTAL 欄の 🏆 で示す。
+  // セット全体の勝者 (勝利数 → 同数なら合計ポイント) は、勝者側パネルの総合欄の 🏆 で示す。
   // フッターは第2ゲーム終了時もそのゲームの勝敗を表示する。
-  finalText.includes('🏆 TOTAL')
-    ? pass('セット全体の勝者側パネルの TOTAL に 🏆 が付く')
-    : fail('セット全体の勝者側パネルの TOTAL に 🏆 が付く', `text: ${finalText.slice(0,200)}`);
+  finalText.includes('🏆 総合')
+    ? pass('セット全体の勝者側パネルの総合に 🏆 が付く')
+    : fail('セット全体の勝者側パネルの総合に 🏆 が付く', `text: ${finalText.slice(0,200)}`);
 
-  // 勝者判定の第1基準である勝利数を TOTAL 欄に出す (例: 2勝0敗)。
+  // 勝者判定の第1基準である勝利数を総合欄に出す (例: 2勝0敗)。
   // 左右のパネルの勝敗数を足すと、引き分けが無ければ 2ゲームぶんになる
   const winsTexts = [...finalText.matchAll(/(\d+)勝(\d+)敗/g)].map(m => [+m[1], +m[2]]);
   winsTexts.length === 2 && winsTexts.every(([w, l]) => w + l <= 2) &&
   winsTexts[0][0] === winsTexts[1][1] && winsTexts[0][1] === winsTexts[1][0]
-    ? pass(`TOTAL 欄に勝敗数が表示され左右で整合する (${winsTexts.map(([w, l]) => `${w}勝${l}敗`).join(' / ')})`)
-    : fail('TOTAL 欄に勝敗数が表示され左右で整合する', JSON.stringify(winsTexts));
+    ? pass(`総合欄に勝敗数が表示され左右で整合する (${winsTexts.map(([w, l]) => `${w}勝${l}敗`).join(' / ')})`)
+    : fail('総合欄に勝敗数が表示され左右で整合する', JSON.stringify(winsTexts));
 
   // 「第2ゲームへ」ではなく「セットアップに戻る」が表示される
   finalText.includes('セットアップに戻る') && !finalText.includes('第2ゲームへ')
@@ -612,14 +612,17 @@ async function testManualMode(app, page) {
     await wait(400);
 
     if (darkOn === 'OK') {
-      const sent = await sendManualScan(manualPage, '探索 (SEARCH)');
-      if (sent === 'OK') {
-        await ss(page, '11c_scan_search_dark');
-        pass('ダークモード中でも探索範囲が見える (11c_scan_search_dark.png)');
-      } else {
-        fail('ダークモード中でも探索範囲が見える', sent);
+      // LOOK と SEARCH は対になる行動なので、ダークモードでも両方撮っておく
+      for (const [label, name] of [['探索 (SEARCH)', '11c_scan_search_dark'], ['観察 (LOOK)', '11d_scan_look_dark']]) {
+        const sent = await sendManualScan(manualPage, label);
+        if (sent === 'OK') {
+          await ss(page, name);
+          pass(`ダークモード中でも${label}の範囲が見える (${name}.png)`);
+        } else {
+          fail(`ダークモード中でも${label}の範囲が見える`, sent);
+        }
+        await wait(200);
       }
-      await wait(200);
       // 後続のテストに影響しないよう元に戻す
       await clickText(page, '設定');
       await wait(500);
@@ -865,6 +868,49 @@ async function clickWhenReady(page, text, timeoutMs = 15000) {
   return 'TIMEOUT';
 }
 
+/**
+ * 運営窓の「いま操作する試合」を準備済みにする。
+ * 既に準備済み (armed) ならそのまま通す — 呼び出し側が arm 済みかを知らなくてよいようにする。
+ */
+async function armNextMatch(tw, timeoutMs = 20000) {
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) {
+    if ((await bodyText(tw)).includes('フッターの「ゲームスタート」')) return 'ARMED';
+    if (await clickText(tw, 'この試合を準備') === 'OK') {
+      await wait(2500);
+      continue; // 準備済みの表示に変わったかを次の周回で確かめる
+    }
+    await wait(300);
+  }
+  return 'TIMEOUT';
+}
+
+/**
+ * 1試合を最後まで進めて確定する (準備 → ゲームスタート → 確定)。
+ *
+ * CPU 同士は同点で終わることがある。同点の試合はトーナメントでは「確定」できないので、
+ * ダイアログの②審判裁定で勝者を決めて先へ進める (再試合を選ぶと終わらない可能性がある)。
+ */
+async function playAndConfirmMatch(page, tw, label) {
+  if (await armNextMatch(tw) !== 'ARMED') return `準備できない (${label})`;
+
+  await clickText(page, 'ゲームスタート');
+  if (!await waitForGameStart(page)) return `開始しない (${label})`;
+  if (!await waitForGameEnd(page))   return `終了しない (${label})`;
+
+  if (!await waitFor(tw, 'の結果', 15000)) return `確定ダイアログが出ない (${label})`;
+
+  if ((await bodyText(tw)).includes('同点です')) {
+    await clickText(tw, 'の勝ち');          // 審判裁定の勝者チップ
+    await wait(300);
+    await clickText(tw, 'この裁定で確定');
+  } else {
+    await clickText(tw, 'この結果で確定');
+  }
+  await wait(1800);
+  return 'OK';
+}
+
 const UI_CUP_ID  = 'e2e-ui-cup';
 const UI_CUP_DIR = path.join(PROJECT_ROOT, 'server/tournament', UI_CUP_ID);
 
@@ -1021,6 +1067,22 @@ async function testTournament(app, page) {
     ? pass('回戦の見出しが出る')
     : fail('回戦の見出しが出る');
 
+  // 運営を始めた直後の観戦画面: 対戦カードはまだ無く、表だけを見せる
+  const dw = app.windows().find(w => w.url().includes('mode=display'));
+  if (dw) {
+    await waitFor(dw, 'まもなく開始します', 10000);
+    const standby = await dw.evaluate(() => ({
+      text:  document.body.innerText ?? '',
+      paths: document.querySelectorAll('svg path').length,
+    }));
+    standby.text.includes('まもなく開始します')
+      && !standby.text.includes('対戦開始をお待ちください')
+      && standby.paths >= 2
+      ? pass('「この大会を運営」で観戦画面にトーナメント表が出る')
+      : fail('「この大会を運営」で観戦画面にトーナメント表が出る', JSON.stringify(standby).slice(0, 160));
+    await ss(dw, 'tournament-standby');
+  }
+
   // 試合を準備 → コントロール画面のスロットへ自動割り当てされる
   await clickWhenReady(tw, 'この試合を準備');
   await wait(2500);
@@ -1031,13 +1093,73 @@ async function testTournament(app, page) {
     : fail('両スロットにプログラムが自動割り当てされる');
   await ss(page, 'tournament-armed');
 
-  // 対戦表示画面 (待機中) にもブラケットが出る
-  const dw = app.windows().find(w => w.url().includes('mode=display'));
+  // 準備すると、これまでどおりの試合準備画面 (対戦カード + マップ + 表) に切り替わる
   if (dw) {
-    const d = await dw.evaluate(() => document.querySelectorAll('svg path').length);
-    d >= 2 ? pass('対戦表示画面の待機中にブラケットが出る')
-           : fail('対戦表示画面の待機中にブラケットが出る', `paths=${d}`);
+    await waitFor(dw, '対戦開始をお待ちください', 10000);
+    const armedView = await dw.evaluate(() => ({
+      text:  document.body.innerText ?? '',
+      paths: document.querySelectorAll('svg path').length,
+    }));
+    armedView.text.includes('対戦開始をお待ちください') && armedView.text.includes('次の試合')
+      ? pass('「この試合を準備」で観戦画面が試合準備画面になる')
+      : fail('「この試合を準備」で観戦画面が試合準備画面になる', armedView.text.slice(0, 160));
+    armedView.paths >= 2
+      ? pass('試合準備画面にもトーナメント表が出る')
+      : fail('試合準備画面にもトーナメント表が出る', `paths=${armedView.paths}`);
     await ss(dw, 'tournament-display');
+  }
+
+  // 1試合目: 確定すると観戦画面が表に戻り、終わった試合が強調される
+  let played = await playAndConfirmMatch(page, tw, '準決勝1');
+  played === 'OK'
+    ? pass('1試合目を確定できる')
+    : fail('1試合目を確定できる', played);
+
+  if (dw && played === 'OK') {
+    await waitFor(dw, '試合終了', 10000);
+    const afterConfirm = await dw.evaluate(() => ({
+      text:  document.body.innerText ?? '',
+      paths: document.querySelectorAll('svg path').length,
+      // 見出しの結果ピルと、表の中の該当カードのバッジの2か所だけに出る
+      marked: [...document.querySelectorAll('span')]
+        .filter(el => el.textContent === '✓ 試合終了').length,
+    }));
+    afterConfirm.text.includes('試合終了') && afterConfirm.paths >= 2
+      ? pass('「この結果で確定」で観戦画面がトーナメント表に戻る')
+      : fail('「この結果で確定」で観戦画面がトーナメント表に戻る', afterConfirm.text.slice(0, 160));
+    afterConfirm.marked === 2
+      ? pass('確定した試合が表の中で強調される')
+      : fail('確定した試合が表の中で強調される', `「✓ 試合終了」=${afterConfirm.marked}`);
+    await ss(dw, 'tournament-standby-confirmed');
+  }
+
+  // 残り (準決勝2 + 決勝)。最後の「確定」で観戦画面が表彰画面に切り替わる
+  for (const label of ['準決勝2', '決勝']) {
+    if (played !== 'OK') break;
+    played = await playAndConfirmMatch(page, tw, label);
+  }
+  played === 'OK'
+    ? pass('3試合を最後まで進めて確定できる')
+    : fail('3試合を最後まで進めて確定できる', played);
+
+  (await bodyText(tw)).includes('全ての試合が終了しました')
+    ? pass('運営席が大会の終了を示す')
+    : fail('運営席が大会の終了を示す');
+
+  // 観戦用画面: 確定した瞬間に、試合結果ではなく表彰画面が出る
+  if (dw && played === 'OK') {
+    await waitFor(dw, '全試合終了', 10000);
+    const finale = await dw.evaluate(() => ({
+      text:  document.body.innerText ?? '',
+      paths: document.querySelectorAll('svg path').length,
+    }));
+    finale.text.includes('全試合終了') && finale.text.includes('優勝')
+      ? pass('最後の確定で観戦画面が表彰画面に切り替わる')
+      : fail('最後の確定で観戦画面が表彰画面に切り替わる', finale.text.slice(0, 120));
+    finale.paths >= 2
+      ? pass('表彰画面にトーナメント表が残る')
+      : fail('表彰画面にトーナメント表が残る', `paths=${finale.paths}`);
+    await ss(dw, 'tournament-finale');
   }
 
   // エクスポート

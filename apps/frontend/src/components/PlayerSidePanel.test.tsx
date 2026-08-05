@@ -110,7 +110,7 @@ describe('PlayerSidePanel (2ゲーム制)', () => {
     expect(liveRows.find(r => r.label === '総取り')?.value).toBe('—');
   });
 
-  it('TOTAL は勝敗数と2ゲームの合計 (小計の和) を出す', () => {
+  it('総合は勝敗数と2ゲームの合計 (小計の和) を出す', () => {
     // side 0 から見て 2勝0敗。合計 = 168 + 100 = 268
     const round1 = makeRound(0, {
       winner: Winner.COOL, reason: Reason.ATTACK,
@@ -121,7 +121,7 @@ describe('PlayerSidePanel (2ゲーム制)', () => {
 
     const { container } = renderPanel(0, [round1, round2]);
     expect(container.textContent).toContain('2勝0敗');
-    expect(container.textContent).toContain('🏆 TOTAL');
+    expect(container.textContent).toContain('🏆 総合');
     expect(rowsOf(container).find(r => r.label === '合計')?.value).toBe('268pt');
   });
 
@@ -135,8 +135,8 @@ describe('PlayerSidePanel (2ゲーム制)', () => {
     expect(left.container.textContent).toContain('1勝1敗');
     expect(right.container.textContent).toContain('1勝1敗');
     // 合計 150 vs 70 → side 0 の勝ち
-    expect(left.container.textContent).toContain('🏆 TOTAL');
-    expect(right.container.textContent).toContain('⭐ TOTAL');
+    expect(left.container.textContent).toContain('🏆 総合');
+    expect(right.container.textContent).toContain('⭐ 総合');
   });
 
   it('引き分けたゲームは勝敗数に入らず「分」で示す', () => {

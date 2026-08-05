@@ -12,6 +12,9 @@ import { MapThumbnail } from './MapThumbnail';
 import { sourceLabel } from './MapSourceSection';
 import { BracketView } from './tournament/BracketView';
 import { LeagueTable } from './tournament/LeagueTable';
+import { TournamentFinale } from './tournament/TournamentFinale';
+import { TournamentStandby } from './tournament/TournamentStandby';
+import { isTournamentComplete } from '../lib/tournamentResult';
 import { idxForSide } from '../lib/roundSide';
 import { roundPointsFor } from '../lib/setResult';
 import {
@@ -29,7 +32,7 @@ import {
 
 export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId: string; httpBase: string }) {
   const state   = useGameState(wsUrl, roomId);
-  const { serverStatus, snapshot, turnInfo, gameEnd, isConnected } = state;
+  const { serverStatus, snapshot, turnInfo, gameEnd, isConnected, tournamentState } = state;
   const prefs = serverStatus?.displayPrefs ?? DEFAULT_DISPLAY_PREFS;
   const phase = serverStatus?.phase ?? 'setup';
 
@@ -48,12 +51,30 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
     );
   }
 
+  // ── 大会運営中の出し分け ──────────────────────────────────────────────────
+  //
+  // 対戦中 (playing) はどの場合も盤面が主役。それ以外は armedMatchId が分かれ目になる:
+  //
+  //   armed 無し … 運営を始めた直後 / 試合を確定した直後 → 表だけを大きく見せる
+  //   armed 有り … 「この試合を準備」以降 → 準備画面、対戦が終われば結果画面
+  //
+  // 確定しても phase は 'finished' のまま (バックエンドはルームに触れない) なので、
+  // armedMatchId を見ないと結果画面から抜けられない。最後の試合には次の arm も無い。
+  if (tournamentState && phase !== 'playing') {
+    if (isTournamentComplete(tournamentState)) {
+      return <TournamentFinale state={tournamentState} displayTitle={prefs.displayTitle} />;
+    }
+    if (!tournamentState.armedMatchId) {
+      return <TournamentStandby state={tournamentState} displayTitle={prefs.displayTitle} />;
+    }
+  }
+
   if (phase === 'setup') {
     return (
       <SetupWaiting
         serverStatus={serverStatus}
         displayTitle={prefs.displayTitle}
-        tournament={state.tournamentState}
+        tournament={tournamentState}
         currentMap={currentMap}
         theme={prefs.theme}
       />
@@ -238,7 +259,7 @@ function MapPreview({ map, theme, flip, label }: {
       />
       <div style={mp.name}>{label}</div>
       <div style={mp.meta}>{map.size.x}×{map.size.y} ・ ターン {map.turn}</div>
-      {flip && <div style={mp.flip}>↻ 第2ゲーム — 盤面は反転しています</div>}
+      {flip && <div style={mp.flip}>盤面反転</div>}
     </div>
   );
 }

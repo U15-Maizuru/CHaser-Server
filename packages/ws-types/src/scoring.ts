@@ -54,7 +54,7 @@ export interface SetResult {
  *
  * 競技ルール: 勝利数が多い方を勝者とし、勝利数が同じ場合は2ゲームの合計ポイントで決める。
  *
- * 試合勝者を示す表示 (サイドパネルの TOTAL 欄の 🏆 など) が別々に計算して食い違わないよう、
+ * 試合勝者を示す表示 (サイドパネルの総合欄の 🏆 など) が別々に計算して食い違わないよう、
  * 判定はこの関数に一本化する。
  */
 export function computeSetResult(roundResults: RoundResult[]): SetResult {

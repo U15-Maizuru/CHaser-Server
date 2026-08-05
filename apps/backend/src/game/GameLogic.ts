@@ -126,26 +126,58 @@ export function getScanCells(pos: Point, action: Action, rote: Rote): Point[] {
   return grid3x3(pos);
 }
 
+/** 盤面の生の値。盤外は BLOCK 扱い。プレイヤーの位置は考慮しない */
+function fieldAt(state: GameState, { x, y }: Point): MapObject {
+  return x < 0 || x >= state.map.size.x || y < 0 || y >= state.map.size.y
+    ? MapObject.BLOCK
+    : state.map.field[y][x];
+}
+
 /**
- * 指定マスのマップ情報を返す。method を省略すると自機中心の 3x3 (従来の挙動)。
+ * judgeGame 専用の自機中心 3x3。相手プレイヤーのオーバーレイを載せない生の盤面値を返す。
  *
- * judgeGame の下敷き判定 (data[4]) / 囲まれ判定 (data[1][3][5][7]) は 3x3 前提なので、
- * judgeGame からは必ず method なしで呼ぶこと。
+ * 下敷き判定 ([4]) / 囲まれ判定 ([1][3][5][7]) はどちらも「そのマスがブロックか」しか見ないため、
+ * getAroundData の TARGET オーバーレイが混ざると、両者が同一マスに重なったときに BLOCK が
+ * 隠れて判定が消えてしまう。範囲も常に 3x3 で固定する (行動依存にしない)。
+ */
+export function getJudgeAround(state: GameState, team: Team): MapObject[] {
+  return grid3x3(state.teamPos[team as unknown as 0 | 1]).map(c => fieldAt(state, c));
+}
+
+/**
+ * クライアントに返す9マス。method を省略すると自機中心の 3x3 (GetReady フェーズの挙動)。
+ *
+ * 本家 GameBoard::FieldAccess と同じく、相手プレイヤーがいるマスは盤面値より優先して
+ * TARGET を返す。これが look()/search() で相手を発見する唯一の手段になる。
+ * 勝敗判定にこのオーバーレイを持ち込まないため、judgeGame は getJudgeAround を使うこと。
  */
 export function getAroundData(state: GameState, team: Team, method?: Method): AroundData {
-  const pos = state.teamPos[team as unknown as 0 | 1];
-  const cells = getScanCells(pos, method?.action ?? Action.WALK, method?.rote ?? Rote.UNKNOWN);
-  const data = cells.map(({ x, y }) =>
-    x < 0 || x >= state.map.size.x || y < 0 || y >= state.map.size.y
-      ? MapObject.BLOCK
-      : state.map.field[y][x],
+  const self  = team as unknown as 0 | 1;
+  const enemy = state.teamPos[(1 - self) as 0 | 1];
+  const cells = getScanCells(state.teamPos[self], method?.action ?? Action.WALK, method?.rote ?? Rote.UNKNOWN);
+  const data = cells.map(c =>
+    c.x === enemy.x && c.y === enemy.y ? MapObject.TARGET : fieldAt(state, c),
   );
   return { connect: ConnectingStatus.CONTINUE, data };
 }
 
 /**
+ * 演出用に探索範囲を自機から近い順へ並べ替える。SEARCH は getScanCells の時点で既に
+ * 近い順なので実質そのまま。LOOK は絶対座標の row-major (ワイヤ形式に合わせた順序) で
+ * 届くため、方向ベクトルへの射影で並べ替えて「距離1の帯 3マス → 距離2 → 距離3」にする。
+ * 同じ帯の中の並びは row-major のまま保たれる (Array.prototype.sort は安定ソート)。
+ */
+function orderByDistance(cells: Point[], rote: Rote): Point[] {
+  const v = getRoteVector(rote);
+  return [...cells].sort((a, b) => (a.x * v.x + a.y * v.y) - (b.x * v.x + b.y * v.y));
+}
+
+/**
  * 盤面演出用に、LOOK/SEARCH が調べた範囲を組み立てる。それ以外の行動と、
  * 方向が不正で範囲が縮退する場合は null。
+ *
+ * cells は描画側がスイープ演出に使えるよう自機から近い順に並べる。クライアントに返る
+ * AroundData の順序 (絶対座標 row-major) とは別物なので、getScanCells 側は触らない。
  */
 export function scanInfoFrom(state: GameState, team: 0 | 1, method: Method): ScanInfo | null {
   if (method.action !== Action.LOOK && method.action !== Action.SEARCH) return null;
@@ -154,7 +186,10 @@ export function scanInfoFrom(state: GameState, team: 0 | 1, method: Method): Sca
     team,
     action: method.action,
     rote:   method.rote,
-    cells:  getScanCells(state.teamPos[team], method.action, method.rote),
+    cells:  orderByDistance(
+      getScanCells(state.teamPos[team], method.action, method.rote),
+      method.rote,
+    ),
   };
 }
 
@@ -163,20 +198,20 @@ export function judgeGame(state: GameState, currentPlayer: number): GameStatus {
 
   for (let i = 0; i < TEAM_COUNT; i++) {
     const p = (currentPlayer + 1 + i) % TEAM_COUNT;
-    const around = getAroundData(state, p as Team);
+    const around = getJudgeAround(state, p as Team);
 
     // ブロック下敷き
-    if (around.data[4] === MapObject.BLOCK) {
+    if (around[4] === MapObject.BLOCK) {
       const reason = currentPlayer !== p ? Reason.ATTACK : Reason.COLLISION;
       return { winner: p === 0 ? Winner.HOT : Winner.COOL, reason };
     }
 
     // ブロック囲まれ
     if (
-      around.data[1] === MapObject.BLOCK &&
-      around.data[3] === MapObject.BLOCK &&
-      around.data[5] === MapObject.BLOCK &&
-      around.data[7] === MapObject.BLOCK
+      around[1] === MapObject.BLOCK &&
+      around[3] === MapObject.BLOCK &&
+      around[5] === MapObject.BLOCK &&
+      around[7] === MapObject.BLOCK
     ) {
       const reason = currentPlayer !== p ? Reason.TRAPPED : Reason.CONFINED;
       return { winner: p === 0 ? Winner.HOT : Winner.COOL, reason };

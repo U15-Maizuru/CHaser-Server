@@ -22,7 +22,7 @@ export const TURN_BASE  = '#9966dd';
 export const TURN_LIGHT = '#eee0ff';
 export const TURN_PALE  = '#f8f4ff';
 
-// TOTAL・勝利 (パステルミント)
+// 総合・勝利 (パステルミント)
 export const WIN_BASE  = '#33aa77';
 export const WIN_LIGHT = '#ccf0e0';
 export const WIN_PALE  = '#f0fbf5';

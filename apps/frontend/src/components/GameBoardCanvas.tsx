@@ -28,6 +28,8 @@ const MIN_WALK_MS   = 60;
 const MAX_WALK_MS   = 260;
 
 const VEIL_WIPE_MS = 800; // ゲーム終了時にダーク幕が上から消えていくワイプ演出の所要時間
+// ダーク幕の濃さ。視界と探索範囲だけが見える演出を保ちつつ、盤面全体の形は読める濃さにする
+const VEIL_ALPHA = 0.55;
 
 // 決着演出 (敗者の上にブロック / 周囲4マスの強調) のインパクト部分の長さ。
 // これが終わったあとも、演出そのものは静止した状態で結果表示中ずっと残り続ける。
@@ -39,6 +41,12 @@ const MIN_SCAN_MS = 220;
 const MAX_SCAN_MS = 900;
 // 演出全体の何割を過ぎたらフェードアウトを始めるか
 const SCAN_FADE_START = 0.65;
+// 探索範囲の塗りの濃さ。マスの中身 (床・ブロック・アイテム・相手) が透けて見える程度に留め、
+// 「どこを調べたか」はスイープの走りと枠線に担わせる。ダークモード中は幕を打ち抜いて中身を
+// 見せること自体が演出の主目的なので、さらに薄くする。
+const SCAN_FILL_BASE     = 0.18; // 範囲全体に常時かかるタイント
+const SCAN_FILL_SWEEP    = 0.30; // スイープが通過する瞬間の上乗せ
+const SCAN_FILL_DARK_MUL = 0.55; // ダークモード中の減衰
 
 function easeOutQuad(t: number): number {
   return 1 - (1 - t) * (1 - t);
@@ -416,7 +424,7 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
       const maskCtx = maskCanvas.getContext('2d');
       if (maskCtx) {
         maskCtx.clearRect(0, 0, W, H);
-        maskCtx.fillStyle = 'rgba(0,0,0,0.72)';
+        maskCtx.fillStyle = `rgba(0,0,0,${VEIL_ALPHA})`;
         // ワイプ進行中は幕の上端を下へ動かし、上から徐々に消えていくように見せる
         const wipe = wipeRef.current;
         const coverTop = wipe ? H * Math.min(1, (now - wipe.start) / wipe.duration) : 0;
@@ -489,44 +497,38 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
         ctx.strokeStyle = color;
         ctx.lineWidth   = lineW;
         ctx.stroke(path);
-        return { bx, by, bw, bh };
       };
 
+      // LOOK / SEARCH とも自機から伸びるビーム。近いほど濃く、先端へ向かってスイープが走る。
+      // cells は index 0 が自機に最も近い順で届く (盤面反転は cx/cy が吸収する)。
+      // 「自機からの距離」の単位は LOOK が 3 マスずつの帯、SEARCH が 1 マスずつなので、
+      // 帯番号でスイープさせて 3x3 の同じ帯が同時に光るようにする。
+      const isLook    = action === Action.LOOK;
+      const bandSize  = isLook ? 3 : 1;
+      const bandCount = Math.ceil(cells.length / bandSize);
+      const head      = eased * bandCount;
+      // 幕が出ている間は、打ち抜いて見せたマスの中身を塗りつぶさないよう薄くする
+      const fillMul   = darkMode && !veilLiftedRef.current ? SCAN_FILL_DARK_MUL : 1;
+
       ctx.save();
-      if (action === Action.LOOK) {
-        // 3x3 をまとめて1つの枠で囲み、内側を淡くタイントする
-        ctx.fillStyle   = color;
-        ctx.globalAlpha = alpha * 0.4;
-        for (const c of visible) ctx.fillRect(cx(c.x), cy(c.y), CELL, CELL);
+      ctx.fillStyle = color;
+      cells.forEach((c, i) => {
+        if (c.x < 0 || c.x >= size.x || c.y < 0 || c.y >= size.y) return;
+        const band    = Math.floor(i / bandSize);
+        const falloff = 1 - (band / bandCount) * 0.6;
+        const sweep   = Math.max(0, 1 - Math.abs(band - head));
+        ctx.globalAlpha = Math.min(1, alpha * fillMul * (SCAN_FILL_BASE * falloff + SCAN_FILL_SWEEP * sweep));
+        ctx.fillRect(cx(c.x), cy(c.y), CELL, CELL);
+      });
 
-        const box = strokeBounds(cells, alpha, Math.max(3, CELL * 0.18));
-
-        // 発生時に一度だけ広がる発光リング (決着演出のインパクトリングと同じ手法)
-        if (ratio < 1) {
-          ctx.globalAlpha = alpha * (1 - eased) * 0.8;
-          ctx.beginPath();
-          ctx.arc(box.bx + box.bw / 2, box.by + box.bh / 2, (box.bw / 2) * (0.3 + 0.8 * eased), 0, Math.PI * 2);
-          ctx.stroke();
-        }
-      } else {
-        // SEARCH: 自機から伸びるビーム。近いほど濃く、先端へ向かってスイープが走る。
-        // cells は index 0 が自機に最も近い順で届く (盤面反転は cx/cy が吸収する)。
-        const head = eased * cells.length;
-        ctx.fillStyle = color;
-        cells.forEach((c, i) => {
-          if (c.x < 0 || c.x >= size.x || c.y < 0 || c.y >= size.y) return;
-          const falloff = 1 - (i / cells.length) * 0.6;
-          const sweep   = Math.max(0, 1 - Math.abs(i - head));
-          ctx.globalAlpha = Math.min(1, alpha * (0.42 * falloff + 0.5 * sweep));
-          ctx.fillRect(cx(c.x), cy(c.y), CELL, CELL);
-        });
-        strokeBounds(visible, alpha * 0.85, Math.max(3, CELL * 0.15));
-      }
+      // LOOK は 3x3 全体を1つの角丸枠で囲んで形が分かるようにする (盤外にはみ出した分は
+      // canvas 端で切れる)。SEARCH は盤内のマスだけを細長い枠で囲む。
+      strokeBounds(isLook ? cells : visible, alpha * 0.85, Math.max(3, CELL * (isLook ? 0.18 : 0.15)));
       ctx.restore();
     }
   };
 
-  // アニメ対象 (歩行・ブロック出現・アイテム消滅・ダーク幕ワイプ・決着演出) が残っていれば
+  // アニメ対象 (歩行・ブロック出現・アイテム消滅・探索範囲・ダーク幕ワイプ・決着演出) が残っていれば
   // rAF ループを開始する。複数のトリガー (snapshot 受信、ゲーム終了、決着) から呼ばれるため、
   // 既に回っている場合は何もしない。
   const startLoopIfNeeded = () => {

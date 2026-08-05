@@ -64,7 +64,11 @@ export interface ScanInfo {
   team:   0 | 1;
   action: Action.LOOK | Action.SEARCH;
   rote:   Rote;
-  /** 9要素。index 0 が自機に最も近い。盤外の座標も含むので描画側で境界チェックすること */
+  /**
+   * 9要素。自機から近い順に並ぶ (SEARCH は 1 マスずつ、LOOK は 3 マスずつが同じ距離の帯)。
+   * クライアントに返る AroundData の順序 (絶対座標 row-major) とは別物。
+   * 盤外の座標も含むので描画側で境界チェックすること
+   */
   cells:  Point[];
 }
 

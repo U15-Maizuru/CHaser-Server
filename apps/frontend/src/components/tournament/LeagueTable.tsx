@@ -2,7 +2,7 @@ import type { ResolvedParticipant, StandingRow, TournamentMatch } from '@u15/ws-
 import { FitArea } from '../FitArea';
 import {
   BG_CARD, BG_ROOT, BORDER_COLOR, COOL_PALE, FONT_NUM, FONT_UI, GOLD_BASE, GOLD_LIGHT,
-  RADIUS_SM, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE,
+  RADIUS_SM, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE, WIN_LIGHT,
 } from '../../styles/tokens';
 
 // リーグの星取表 + 順位表。素の DOM (既存方針どおり CSS ファイルは作らない)。
@@ -22,6 +22,8 @@ export interface LeagueTableProps {
   onSelect?:    (matchId: string) => void;
   /** 「この試合を準備」で確定した、これから行う試合 */
   upcomingMatchId?: string | null;
+  /** たった今「確定」した試合 */
+  finishedMatchId?: string | null;
   /** 親の空き領域いっぱいまで自動で拡大・縮小する (親は高さの決まった箱にすること) */
   fit?:         boolean;
   /** fit の拡大上限 */
@@ -30,7 +32,7 @@ export interface LeagueTableProps {
 
 export function LeagueTable({
   matches, participants, standings, interactive = false, onSelect,
-  upcomingMatchId = null, fit = false, maxScale = 3,
+  upcomingMatchId = null, finishedMatchId = null, fit = false, maxScale = 3,
 }: LeagueTableProps) {
   const nameOf = (id: string) => participants.find(p => p.id === id)?.name ?? id;
   // エントリー順 (participants は seed 順で配信される)。順位で並べ替えない
@@ -92,6 +94,8 @@ export function LeagueTable({
                   const c = cellOf(a, b);
                   const clickable = interactive && !!onSelect && !!c.match;
                   const isUpcoming = !!upcoming && c.match?.id === upcoming.id;
+                  // 星取表は対称なので、終わった試合は (a,b) と (b,a) の2セルが光る
+                  const isFinished = !!finishedMatchId && c.match?.id === finishedMatchId;
                   return (
                     <td
                       key={b}
@@ -100,6 +104,7 @@ export function LeagueTable({
                         ...(c.tone === 'win'  ? { color: WIN_BASE, fontWeight: 700 } : null),
                         ...(c.tone === 'draw' ? { color: TEXT_SECONDARY } : null),
                         ...(c.tone === 'loss' ? { color: TEXT_MUTED } : null),
+                        ...(isFinished ? cellFinished : null),
                         ...(isUpcoming ? cellUpcoming : null),
                         cursor: clickable ? 'pointer' : undefined,
                       }}
@@ -203,6 +208,12 @@ const rowTop: React.CSSProperties = { background: GOLD_LIGHT };
 // これから行う試合。該当セルと、その2チームの見出しを金色で示す
 const cellUpcoming: React.CSSProperties = {
   background: GOLD_BASE, color: '#fff', fontWeight: 700,
+};
+
+// たった今確定した試合。○●△ の文字は残したまま、枠と地色で「ここが終わった」を示す
+const cellFinished: React.CSSProperties = {
+  background: WIN_LIGHT, fontWeight: 700,
+  outline: `2px solid ${WIN_BASE}`, outlineOffset: -2,
 };
 
 const headUpcoming: React.CSSProperties = {

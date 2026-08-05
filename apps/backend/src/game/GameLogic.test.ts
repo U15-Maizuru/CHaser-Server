@@ -114,6 +114,58 @@ describe('getAroundData', () => {
     // ITEM は1マスだけなので、他は全て NOTHING
     expect(getAroundData(state, Team.COOL, method).data.filter(v => v === MapObject.ITEM)).toHaveLength(1);
   });
+
+  it('LOOK が盤外にはみ出した分は BLOCK になる', () => {
+    // 自機 (5,1) の LOOK(UP) は中心 (5,-1) → y は -2,-1,0。上 2 行 (index 0〜5) が盤外
+    const state = makeEmptyState({ x: 5, y: 1 });
+    const method: Method = { team: Team.COOL, action: Action.LOOK, rote: Rote.UP };
+    const data = getAroundData(state, Team.COOL, method).data;
+    expect(data.slice(0, 6)).toEqual(Array(6).fill(MapObject.BLOCK));
+    expect(data.slice(6)).toEqual(Array(3).fill(MapObject.NOTHING));
+  });
+});
+
+// 本家 GameBoard::FieldAccess は問い合わせたマスが相手の位置なら盤面値より優先して TARGET を
+// 返していた。これが無いと look()/search() で相手を発見できない。
+describe('getAroundData — 相手プレイヤーの TARGET オーバーレイ', () => {
+  it('自機中心の 3x3 にいる相手を TARGET で返す', () => {
+    const state = makeEmptyState({ x: 5, y: 5 });
+    state.teamPos[1] = { x: 6, y: 5 }; // 自機の右隣 = row-major の index 5
+    const data = getAroundData(state, Team.COOL).data;
+    expect(data[5]).toBe(MapObject.TARGET);
+    expect(data.filter(v => v === MapObject.TARGET)).toHaveLength(1);
+  });
+
+  it('HOT 視点でも COOL のマスが TARGET になる', () => {
+    const state = makeEmptyState({ x: 5, y: 5 });
+    state.teamPos[1] = { x: 6, y: 5 };
+    // HOT (6,5) から見て COOL (5,5) は左 = index 3
+    expect(getAroundData(state, Team.HOT).data[3]).toBe(MapObject.TARGET);
+  });
+
+  it('LOOK の範囲にいる相手を TARGET で返す', () => {
+    const state = makeEmptyState({ x: 5, y: 5 });
+    state.teamPos[1] = { x: 5, y: 3 }; // 2 マス上 = LOOK(UP) の中心 = index 4
+    const method: Method = { team: Team.COOL, action: Action.LOOK, rote: Rote.UP };
+    expect(getAroundData(state, Team.COOL, method).data[4]).toBe(MapObject.TARGET);
+    // 自機中心の 3x3 には入らない距離なので、GetReady の 9 マスには現れない
+    expect(getAroundData(state, Team.COOL).data).not.toContain(MapObject.TARGET);
+  });
+
+  it('SEARCH の範囲にいる相手を TARGET で返す', () => {
+    const state = makeEmptyState({ x: 5, y: 10 });
+    state.teamPos[1] = { x: 5, y: 4 }; // 6 マス上 = SEARCH(UP) の index 5
+    const method: Method = { team: Team.COOL, action: Action.SEARCH, rote: Rote.UP };
+    expect(getAroundData(state, Team.COOL, method).data[5]).toBe(MapObject.TARGET);
+  });
+
+  it('相手が範囲外なら TARGET は現れない', () => {
+    const state = makeEmptyState({ x: 5, y: 5 });
+    state.teamPos[1] = { x: state.map.size.x - 1, y: state.map.size.y - 1 };
+    expect(getAroundData(state, Team.COOL).data).not.toContain(MapObject.TARGET);
+    const method: Method = { team: Team.COOL, action: Action.LOOK, rote: Rote.UP };
+    expect(getAroundData(state, Team.COOL, method).data).not.toContain(MapObject.TARGET);
+  });
 });
 
 describe('getScanCells', () => {
@@ -187,6 +239,37 @@ describe('scanInfoFrom', () => {
     expect(scanInfoFrom(state(), 0, { team: Team.COOL, action: Action.SEARCH, rote: Rote.UNKNOWN })).toBeNull();
     expect(scanInfoFrom(state(), 0, { team: Team.COOL, action: Action.LOOK, rote: Rote.UNKNOWN })).toBeNull();
   });
+
+  // 描画側はこの順序でスイープ演出を出す。ワイヤの AroundData (絶対座標 row-major) とは別物。
+  it('LOOK の cells は自機から近い順 (3 マスずつの帯)', () => {
+    const look = (rote: Rote) =>
+      scanInfoFrom(state(), 0, { team: Team.COOL, action: Action.LOOK, rote })!.cells;
+
+    // UP: 帯は y = 4 (距離1) → 3 → 2。getScanCells の row-major (y=2 が先頭) とは逆順になる
+    const up = look(Rote.UP);
+    expect(up.slice(0, 3).every(c => c.y === 4)).toBe(true);
+    expect(up.slice(3, 6).every(c => c.y === 3)).toBe(true);
+    expect(up.slice(6, 9).every(c => c.y === 2)).toBe(true);
+    // 帯の中の並びは row-major のまま (x 昇順)
+    expect(up.slice(0, 3).map(c => c.x)).toEqual([4, 5, 6]);
+
+    const down = look(Rote.DOWN);
+    expect(down.slice(0, 3).every(c => c.y === 6)).toBe(true);
+    expect(down.slice(6, 9).every(c => c.y === 8)).toBe(true);
+
+    const left = look(Rote.LEFT);
+    expect(left.slice(0, 3).every(c => c.x === 4)).toBe(true);
+    expect(left.slice(6, 9).every(c => c.x === 2)).toBe(true);
+
+    const right = look(Rote.RIGHT);
+    expect(right.slice(0, 3).every(c => c.x === 6)).toBe(true);
+    expect(right.slice(6, 9).every(c => c.x === 8)).toBe(true);
+  });
+
+  it('SEARCH の cells は getScanCells の順序 (既に近い順) のまま', () => {
+    const search = scanInfoFrom(state(), 0, { team: Team.COOL, action: Action.SEARCH, rote: Rote.UP })!;
+    expect(search.cells).toEqual(getScanCells({ x: 5, y: 5 }, Action.SEARCH, Rote.UP));
+  });
 });
 
 describe('judgeGame — LOOK/SEARCH 実装後も 3x3 判定であること', () => {
@@ -213,6 +296,25 @@ describe('judgeGame — LOOK/SEARCH 実装後も 3x3 判定であること', () 
     expect(result.winner).toBe(Winner.HOT);
     expect([Reason.TRAPPED, Reason.CONFINED]).toContain(result.reason);
   });
+
+  it('両者が同一マスに重なっても下敷き判定は消えない (TARGET に隠されない)', () => {
+    const map = createRandomMap();
+    const field = map.field.map(row => row.map(() => MapObject.NOTHING));
+    const p = { x: 5, y: 5 };
+    field[p.y][p.x] = MapObject.BLOCK; // COOL がブロックの下敷き
+    const state: GameState = {
+      map: { ...map, field },
+      teamPos: [{ ...p }, { ...p }],   // HOT も同じマスに重なっている
+      teamScore: [0, 0],
+      turnCount: 100,
+      leaveItems: 0,
+      isDisconnected: [false, false],
+    };
+    // クライアント向けの 9 マスでは中央が TARGET になり BLOCK が隠れる配置
+    expect(getAroundData(state, Team.COOL).data[4]).toBe(MapObject.TARGET);
+    // judgeGame は生の盤面 (getJudgeAround) を見るので下敷き判定は成立する
+    expect(judgeGame(state, 1).winner).toBe(Winner.HOT);
+  });
 });
 
 describe('applyMethod', () => {
@@ -235,6 +337,24 @@ describe('applyMethod', () => {
     };
     return { state, ix, iy };
   }
+
+  it('LOOK / SEARCH は盤面・位置・得点・アイテム数を一切変えない', () => {
+    for (const action of [Action.LOOK, Action.SEARCH]) {
+      const { state } = makeWalkState(true);
+      const before = {
+        field:      state.map.field.map(row => [...row]),
+        teamPos:    state.teamPos.map(p => ({ ...p })),
+        teamScore:  [...state.teamScore],
+        leaveItems: state.leaveItems,
+      };
+      const next = applyMethod(state, { team: Team.COOL, action, rote: Rote.RIGHT });
+
+      expect(next.map.field).toEqual(before.field);
+      expect(next.teamPos).toEqual(before.teamPos);
+      expect(next.teamScore).toEqual(before.teamScore);
+      expect(next.leaveItems).toBe(before.leaveItems);
+    }
+  });
 
   it('アイテムのあるマスへ WALK → 得点+1・leaveItems-1・移動先NOTHING・移動前マスがBLOCKになる', () => {
     const { state, ix, iy } = makeWalkState(true);

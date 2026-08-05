@@ -17,6 +17,8 @@ export interface BracketViewProps {
   onSelect?:    (matchId: string) => void;
   /** 「この試合を準備」で確定した、これから行う試合 */
   upcomingId?:  string | null;
+  /** たった今「確定」した試合 */
+  finishedId?:  string | null;
   /** 表示倍率 (プロジェクタ表示で使う)。fit のときは無視される */
   scale?:       number;
   /** 親の空き領域いっぱいまで自動で拡大・縮小する (親は高さの決まった箱にすること) */
@@ -27,7 +29,7 @@ export interface BracketViewProps {
 
 export function BracketView({
   matches, participants, interactive = false, selectedId = null, onSelect,
-  upcomingId = null, scale = 1, fit = false, maxScale = 3,
+  upcomingId = null, finishedId = null, scale = 1, fit = false, maxScale = 3,
 }: BracketViewProps) {
   const layout = useMemo(
     () => bracketLayout(matches, { cardW: CARD_W, cardH: CARD_H }),
@@ -71,6 +73,7 @@ export function BracketView({
             interactive={interactive}
             selected={selectedId === n.matchId}
             upcoming={upcomingId === n.matchId}
+            justFinished={finishedId === n.matchId}
             {...(onSelect ? { onSelect } : {})}
             style={{ position: 'absolute', left: n.x, top: n.y }}
           />

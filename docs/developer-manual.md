@@ -168,7 +168,7 @@ U15-server-maizuru/
 │   │       │   ├── FitArea.tsx              中身を親の空きいっぱいまで拡大・縮小して中央に置く入れ物 (観戦画面・大会の表)
 │   │       │   ├── MainWindow.tsx      盤面・スコア・進行状況の表示 (対戦表示/コントロール共用)
 │   │       │   ├── GameBoardCanvas.tsx 盤面描画 (テクスチャ・探索範囲・決着演出・ダーク幕)
-│   │       │   ├── PlayerSidePanel.tsx 左右のスコアパネル (ゲームごとの明細と TOTAL)
+│   │       │   ├── PlayerSidePanel.tsx 左右のスコアパネル (ゲームごとの明細と総合)
 │   │       │   ├── BottomBar.tsx       フッター (ライブラリ管理 / 次の一手 / 設定・リセット)
 │   │       │   ├── ManualMode.tsx      手動操作ウィンドウのルート
 │   │       │   ├── ManualControls.tsx  手動操作の入力パネル (矢印キー/ボタン)
@@ -187,7 +187,7 @@ U15-server-maizuru/
 │   │       ├── lib/
 │   │       │   ├── roundSide.ts        2ゲーム制のゲーム番号から画面左右の team-index を算出
 │   │       │   ├── setResult.ts        画面側 (side) ごとの勝利数・合計ポイントと試合勝者を算出
-│   │       │   │                        (勝利数優先 → 同数なら合計ポイント。サイドパネルの TOTAL 欄で使用)
+│   │       │   │                        (勝利数優先 → 同数なら合計ポイント。サイドパネルの総合欄で使用)
 │   │       │   ├── decisiveEffect.ts   決着理由 → 盤面演出 (勝者の 👑・敗者の暗転・敗因バッジ/リング) の変換
 │   │       │   └── ...
 │   │       └── ...
@@ -585,6 +585,20 @@ Python ライブラリ側では `get_ready()` の戻り値がフェーズ2、`wa
 
 ワイヤ形式は「1桁の ConnectStatus + 9桁の値」で固定。LOOK/SEARCH も9マスなので形式の変更は不要。
 
+#### 9マスの「値」— 相手プレイヤーは TARGET
+
+各マスの値は `MapObject` (`NOTHING=0` / `TARGET=1` / `BLOCK=2` / `ITEM=3`)。盤外は `BLOCK` 扱い。
+
+**問い合わせたマスに相手プレイヤーがいる場合は、盤面の値より優先して `TARGET`(1) を返す**
+(`GameLogic.getAroundData`)。本家 Qt 版の `GameBoard::FieldAccess` と同じ挙動で、選手のボットが
+`look()` / `search()` で相手を発見する唯一の手段になる。上表のどの範囲でも、また `get_ready()` /
+`walk()` / `put()` でも同様に効く。
+
+一方 **勝敗判定 (`judgeGame`) はこのオーバーレイを載せない生の盤面 (`getJudgeAround`) を見る**。
+両者が同一マスに重なったとき、下敷き判定 (`[4]`) の `BLOCK` が `TARGET` に隠されて判定が
+消えるのを防ぐため。`getJudgeAround` は範囲も常に自機中心 3x3 で固定してある
+(下敷き `[4]` / 囲まれ `[1][3][5][7]` のインデックス前提を崩さない)。
+
 なお、方向が `Rote.UNKNOWN` のとき `getRoteVector` は `{0,0}` を返すため範囲は自機中心に縮退する
 (不正な方向自体は `Game.ts` で切断扱いになる)。盤面演出用の `ScanInfo` はこの場合 `null` を返し、
 縮退した範囲を描画側に渡さない。
@@ -595,6 +609,13 @@ LOOK/SEARCH が行われたターンは `stateUpdate` の第2引数に `ScanInfo
 `WsServer.toSnapshot` 経由で `game_state` の `lastScan` としてフロントに届く。マスの座標はサーバー側で
 確定させて送るため、フロントは探索範囲の幾何を持たない。描画は `GameBoardCanvas` のレイヤー5
 (ダーク幕より後) で行う。
+
+`ScanInfo.cells` は **自機から近い順** に並べて送る (`GameLogic.scanInfoFrom` の `orderByDistance`)。
+描画側が自機から先端へ走るスイープ演出を index だけで書けるようにするため。SEARCH は 1 マスずつ、
+LOOK は 3 マスずつが同じ距離の帯になる (`cells[0..2]` が距離1、`[3..5]` が距離2、`[6..8]` が距離3)。
+**ワイヤの AroundData とは順序が違う**点に注意 — あちらは絶対座標の row-major で固定
+(`getScanCells` の出力そのまま)。並べ替えは `scanInfoFrom` の中だけで行い、`getScanCells` /
+`getAroundData` には持ち込まない。
 
 ### ポート番号
 
@@ -655,7 +676,7 @@ sweepBonus[winnerIdx] = SWEEP_POINT_PER_ITEM * leaveItems;
 team-index を引き直さないと同じプログラムを追いかけられない。
 
 試合勝者の判定順は競技ルールどおり **① 勝利数 → ② 合計ポイント**。`computeSetResult()` は
-どちらで決まったかを `decidedBy: 'wins' | 'points'` で返し、`PlayerSidePanel` の TOTAL 欄が
+どちらで決まったかを `decidedBy: 'wins' | 'points'` で返し、`PlayerSidePanel` の総合欄が
 決め手になった側の行を枠で強調するのに使う。
 
 **勝利数・合計ポイントとも並んだ場合、競技ルールでは「マップを変更して再試合」** となる。
@@ -665,7 +686,7 @@ team-index を引き直さないと同じプログラムを追いかけられな
 
 表示の役割分担: `MainWindow` のフッター結果ピルは `gameEnd` (直前ゲームの結果) をそのまま
 表示し、2ゲーム制の第2ゲーム終了時も切り替えない。試合全体の勝者は `PlayerSidePanel` の
-TOTAL 欄に付く 🏆 (`computeSetResult().winnerSide`) だけが示す。
+総合欄に付く 🏆 (`computeSetResult().winnerSide`) だけが示す。
 
 ### 判定優先順位 (`judgeGame`)
 

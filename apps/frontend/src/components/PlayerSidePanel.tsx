@@ -55,7 +55,7 @@ const LEDGER_LABEL_RATIO     = 0.8;
 const LEDGER_LABEL_RATIO_MIN = 0.65;
 /** これを下回るなら、ラベルを縮めてでも値のフォントを確保する */
 const LEDGER_VALUE_MIN = 12;
-// TOTAL 欄のラベル「合計ポイント」= 全角6文字 + letterSpacing ≒ 6.4em
+// 総合欄のラベル「合計ポイント」= 全角6文字 + letterSpacing ≒ 6.4em
 const LABEL_EM = 6.4;
 // 1ゲーム制の合計ポイントは符号なし「9999pt」= 6文字 ≒ 3.6em、フォント差の余裕を見て 3.7em
 const POINTS_EM = 3.7;
@@ -314,7 +314,7 @@ interface RoundRowData {
   strikeBonus: number;
   sweepBonus:  number;
   outcome:     RoundOutcome | null;
-  /** アイテム + 一撃 + 総取り。2ゲーム分を足すと TOTAL の合計ポイントになる */
+  /** アイテム + 一撃 + 総取り。2ゲーム分を足すと総合の合計ポイントになる */
   subtotal:    number;
 }
 
@@ -385,7 +385,7 @@ function DoubleModeContent({ side, snapshot, serverStatus, roundResults, dim }: 
       <RoundLedger row={rows[0]} dim={dim} />
       <RoundLedger row={rows[1]} dim={dim} />
 
-      {/* ── TOTAL (この画面側=このプログラム自身の2ゲームの成績) ── */}
+      {/* ── 総合 (この画面側=このプログラム自身の2ゲームの成績) ── */}
       <div style={{
         ...s.totalSection,
         padding: `${dim.totalPadV}px ${dim.totalPadH}px`,
@@ -396,7 +396,7 @@ function DoubleModeContent({ side, snapshot, serverStatus, roundResults, dim }: 
         <div style={{
           ...s.totalHeader,
           fontSize: dim.totalHeaderFont, marginBottom: dim.totalHeaderMarginB, paddingTop: dim.totalHeaderPadT,
-        }}>{isSetWinner ? '🏆 TOTAL' : '⭐ TOTAL'}</div>
+        }}>{isSetWinner ? '🏆 総合' : '⭐ 総合'}</div>
 
         {/* 勝敗数 = 勝者を決める第1基準。決め手になったときは枠で示す */}
         <div style={{
@@ -457,7 +457,7 @@ function RoundLedger({ row, dim }: { row: RoundRowData; dim: PanelDim }) {
 
       {/* 明細は pending/live/finished のどの状態でも同じ行数を描画し、高さをゲーム開始前から
           確保しておく。そうしないと 未対戦→ゲーム中→終了 と状態が進むたびにこの行の高さが
-          変わり、下に続く行や TOTAL 欄の表示位置がズレてしまう。
+          変わり、下に続く行や総合欄の表示位置がズレてしまう。
           pending 時は中身を空にし、「未対戦」バッジを中央に重ねて表示する。 */}
       <div style={{ position: 'relative' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: dim.rowGap }}>

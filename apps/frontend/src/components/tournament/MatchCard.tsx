@@ -2,7 +2,7 @@ import type { ResolvedParticipant, TournamentMatch } from '@u15/ws-types';
 import {
   BG_CARD, BORDER_COLOR, COOL_COLOR, COOL_PALE, FONT_NUM, FONT_UI,
   GOLD_BASE, GOLD_LIGHT, HOT_COLOR, HOT_PALE, RADIUS_SM, SHADOW_SM,
-  TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, TURN_BASE, WIN_BASE,
+  TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, TURN_BASE, WIN_BASE, WIN_LIGHT, WIN_PALE,
 } from '../../styles/tokens';
 
 // 1試合 (公式ルールの「試合」= 2ゲーム) のカード。
@@ -37,12 +37,15 @@ export interface MatchCardProps {
   selected?:    boolean;
   /** 「この試合を準備」で確定した、これから行う試合。観客に一目で分かるよう強調する */
   upcoming?:    boolean;
+  /** たった今「確定」した試合。次の試合が始まるまで、どれが終わったのかを示す */
+  justFinished?: boolean;
   onSelect?:    (matchId: string) => void;
   style?:       React.CSSProperties;
 }
 
 export function MatchCard({
-  match, participants, interactive = false, selected = false, upcoming = false, onSelect, style,
+  match, participants, interactive = false, selected = false, upcoming = false,
+  justFinished = false, onSelect, style,
 }: MatchCardProps) {
   const nameOf = (id: string | null, isBye: boolean): string => {
     if (isBye) return '不戦';
@@ -71,7 +74,10 @@ export function MatchCard({
   return (
     <div
       style={{
+        // 「次の試合」と「たった今終わった試合」が同時に同じカードに付くことはない
+        // (確定した瞬間に準備は外れる) ので、上書き順は問題にならない
         ...card,
+        ...(justFinished ? cardJustFinished : null),
         ...(upcoming ? cardUpcoming : null),
         ...(selected ? cardSelected : null),
         ...(clickable ? cardClickable : null),
@@ -85,10 +91,11 @@ export function MatchCard({
       {upcoming && <style>{UPCOMING_KEYFRAMES}</style>}
       <div style={header}>
         <span style={label}>{match.label}</span>
-        <span style={upcoming
-          ? { ...badge, ...badgeUpcoming }
-          : { ...badge, color: STATUS_COLOR[match.status] }}>
-          {upcoming ? '▶ 次の試合' : STATUS_LABEL[match.status]}
+        <span style={
+          upcoming     ? { ...badge, ...badgeUpcoming }
+        : justFinished ? { ...badge, ...badgeJustFinished }
+        : { ...badge, color: STATUS_COLOR[match.status] }}>
+          {upcoming ? '▶ 次の試合' : justFinished ? '✓ 試合終了' : STATUS_LABEL[match.status]}
         </span>
       </div>
 
@@ -141,6 +148,18 @@ const cardUpcoming: React.CSSProperties = {
 
 const badgeUpcoming: React.CSSProperties = {
   color: '#fff', background: GOLD_BASE, borderRadius: 99, padding: '1px 6px',
+};
+
+// たった今確定した試合。次の試合の金色とは別の色 (勝利のミント) にして、
+// 観客席から「これから」と「終わったばかり」を取り違えないようにする
+const cardJustFinished: React.CSSProperties = {
+  border: `1px solid ${WIN_BASE}`,
+  background: WIN_PALE,
+  boxShadow: `0 0 0 2px ${WIN_LIGHT}, ${SHADOW_SM}`,
+};
+
+const badgeJustFinished: React.CSSProperties = {
+  color: '#fff', background: WIN_BASE, borderRadius: 99, padding: '1px 6px',
 };
 
 const header: React.CSSProperties = {
