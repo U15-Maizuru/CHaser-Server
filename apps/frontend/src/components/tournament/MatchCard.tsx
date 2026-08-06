@@ -95,7 +95,7 @@ export function MatchCard({
           upcoming     ? { ...badge, ...badgeUpcoming }
         : justFinished ? { ...badge, ...badgeJustFinished }
         : { ...badge, color: STATUS_COLOR[match.status] }}>
-          {upcoming ? '▶ 次の試合' : justFinished ? '✓ 試合終了' : STATUS_LABEL[match.status]}
+          {upcoming ? '対戦試合' : justFinished ? '試合終了' : STATUS_LABEL[match.status]}
         </span>
       </div>
 

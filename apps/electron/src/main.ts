@@ -120,7 +120,7 @@ function createDisplayWindow(roomId: string): void {
   displayWindow = new BrowserWindow({
     width: 1280,
     height: 800,
-    title: 'U15 Server Maizuru — 対戦画面',
+    title: 'CHaser Server — 対戦画面',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), ...WEB_PREFS },
   });
   displayWindow.removeMenu(); // 観覧用ウィンドウはネイティブメニューバー (File/Edit/...) を表示しない
@@ -135,7 +135,7 @@ function createControlWindow(roomId: string): void {
   controlWindow = new BrowserWindow({
     width: 1280,
     height: 800,
-    title: 'U15 Server Maizuru — コントロール',
+    title: 'CHaser Server — コントロール',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), ...WEB_PREFS },
   });
   loadUrl(controlWindow, `?room=${roomId}&mode=control`);
@@ -160,7 +160,7 @@ function createManualWindow(roomId: string, slot: 0 | 1): void {
   const win = new BrowserWindow({
     width: 360,
     height: 560,
-    title: `U15 Server Maizuru — 手動操作 (${MANUAL_LABEL[slot]})`,
+    title: `CHaser Server — 手動操作 (${MANUAL_LABEL[slot]})`,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), ...WEB_PREFS },
   });
   loadUrl(win, `?room=${roomId}&mode=manual&slot=${slot}`);
@@ -179,7 +179,7 @@ function createTournamentWindow(roomId: string): void {
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
-    title: 'U15 Server Maizuru — 大会運営',
+    title: 'CHaser Server — 大会運営',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), ...WEB_PREFS },
   });
   win.removeMenu();

@@ -361,8 +361,8 @@ const defaultStatus = {
   phase:        'setup' as const,
   localIP:      '...',
   clients: [
-    { type: 'process' as const, state: 'waiting' as const, name: '', ip: '', port: 12031 },
-    { type: 'process' as const, state: 'waiting' as const, name: '', ip: '', port: 12032 },
+    { type: 'process' as const, state: 'waiting' as const, name: '', ip: '', port: 2009 },
+    { type: 'process' as const, state: 'waiting' as const, name: '', ip: '', port: 2010 },
   ] as [ClientStatusPayload, ClientStatusPayload],
   doubleMode:   false,
   repeatMode:   false,

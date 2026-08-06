@@ -114,7 +114,7 @@ export function SettingDialog({
                     value={prefs.displayTitle}
                     onChange={e => onSetDisplayPrefs({ displayTitle: e.target.value })}
                     style={s.textInput}
-                    placeholder="U15 Server Maizuru"
+                    placeholder="CHaser Server"
                   />
                 </Row>
                 <Row label="テクスチャテーマ">

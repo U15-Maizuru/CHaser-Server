@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * U15 Server Maizuru — E2E 全自動テストスクリプト
+ * CHaser Server — E2E 全自動テストスクリプト
  *
  * 実行方法:
  *   node apps/electron/test-e2e.mjs
@@ -733,7 +733,7 @@ async function testFileDropZone(page) {
 async function main() {
   const startAt = Date.now();
   console.log('╔══════════════════════════════════════════════════╗');
-  console.log('║  U15 Server Maizuru — E2E 全自動テスト          ║');
+  console.log('║  CHaser Server — E2E 全自動テスト          ║');
   console.log('╚══════════════════════════════════════════════════╝');
 
   let viteProc = null;
@@ -869,7 +869,7 @@ async function clickWhenReady(page, text, timeoutMs = 15000) {
 }
 
 /**
- * 運営窓の「いま操作する試合」を準備済みにする。
+ * 運営窓の「対戦中の試合」を準備済みにする。
  * 既に準備済み (armed) ならそのまま通す — 呼び出し側が arm 済みかを知らなくてよいようにする。
  */
 async function armNextMatch(tw, timeoutMs = 20000) {
@@ -1120,16 +1120,16 @@ async function testTournament(app, page) {
     const afterConfirm = await dw.evaluate(() => ({
       text:  document.body.innerText ?? '',
       paths: document.querySelectorAll('svg path').length,
-      // 見出しの結果ピルと、表の中の該当カードのバッジの2か所だけに出る
+      // 表の中の該当カードのバッジだけに出る (見出しには勝者だけを出す)
       marked: [...document.querySelectorAll('span')]
-        .filter(el => el.textContent === '✓ 試合終了').length,
+        .filter(el => el.textContent === '試合終了').length,
     }));
     afterConfirm.text.includes('試合終了') && afterConfirm.paths >= 2
       ? pass('「この結果で確定」で観戦画面がトーナメント表に戻る')
       : fail('「この結果で確定」で観戦画面がトーナメント表に戻る', afterConfirm.text.slice(0, 160));
-    afterConfirm.marked === 2
+    afterConfirm.marked === 1
       ? pass('確定した試合が表の中で強調される')
-      : fail('確定した試合が表の中で強調される', `「✓ 試合終了」=${afterConfirm.marked}`);
+      : fail('確定した試合が表の中で強調される', `「試合終了」=${afterConfirm.marked}`);
     await ss(dw, 'tournament-standby-confirmed');
   }
 

@@ -127,12 +127,15 @@ export function MainWindow({
   const rightIsWinner = winnerTeamIdx !== null && winnerTeamIdx === rightIdx;
 
   // ── メイン行 (3カラム) の実サイズを計測 ────────────────────────────────
-  // mainRef (行コンテナ) 自体の幅・高さは子要素 (盤面のセルサイズやサイドパネル幅) に
-  // 左右されない安定した値 (ウィンドウサイズだけで決まる)。これ「だけ」を測定に使い、
-  // セルサイズ・パネル幅は両方ともこの単一の実測値から analytical に導出する。
-  // 子要素側を測定してサイズを決めると、その結果が子要素のサイズ自体を変え、それがまた
-  // 測定結果を変える…という「測定→反映→再測定」の循環になるため、常に mainRef だけを
-  // 測定源にすることでこの循環を避けている。
+  // mainRef (行コンテナ) の大きさは子要素 (盤面のセルサイズやサイドパネル幅) には
+  // 左右されない。これ「だけ」を測定に使い、セルサイズ・パネル幅は両方ともこの単一の
+  // 実測値から analytical に導出する。子要素側を測定してサイズを決めると、その結果が
+  // 子要素のサイズ自体を変え、それがまた測定結果を変える…という「測定→反映→再測定」の
+  // 循環になるため、常に mainRef だけを測定源にすることでこの循環を避けている。
+  //
+  // ただし mainRef の**高さ**は子要素以外からは影響を受ける。main は縦並びの列の中で
+  // flex:1 なので、同じ列の兄弟 (スコアバー) が厚くなるとその分だけ低くなる。
+  // よって「main の高さから決めた値」でスコアバーの寸法を決めてはいけない (下記参照)。
   const mainRef = useRef<HTMLDivElement>(null);
   const [mainSize, setMainSize] = useState({ width: 0, height: 0 });
 
@@ -146,6 +149,30 @@ export function MainWindow({
     return () => obs.disconnect();
   }, []);
 
+  // スコアバーは main と同じ縦並びの**兄弟**なので、その高さは main の高さから差し引かれる。
+  // そのためスコアバーの大きさを cellSize (= main の高さ由来) から決めると
+  // 「main が高い → 文字が大きい → スコアバーが厚い → main が低い → 文字が小さい → …」
+  // という循環になり、cellSize の floor() の境目に当たる高さでは 2 値を往復し続けて
+  // 画面が振動する (3840x2160 の 150% 表示など、特定の高さで発生)。
+  //
+  // これを断ち切るため、スコアバーの寸法は「スコアバーと main が取り合う前の総高さ」
+  // から決める。両者は同じ列の兄弟で main が flex:1 なので、
+  // main の高さ + スコアバーの高さ = ヘッダー/フッターを除いた残り = スコアバーの
+  // 厚みに影響されない安定値になる。この安定値だけを入力にすれば循環が閉じない。
+  const scorePadRef = useRef<HTMLDivElement>(null);
+  const [scorePadH, setScorePadH] = useState(0);
+
+  useLayoutEffect(() => {
+    const el = scorePadRef.current;
+    if (!el) { setScorePadH(0); return; }
+    // 高さは main から差し引かれる分 = 外形 (padding 込み) なので offsetHeight で読む
+    const read = () => setScorePadH(el.offsetHeight);
+    const obs = new ResizeObserver(read);
+    obs.observe(el);
+    read();
+    return () => obs.disconnect();
+  }, [!!snapshot]);
+
   // ── セルサイズ / サイドパネル幅を安定した mainSize から一意に導出 ──────────
   const MAIN_GAP    = 12; // s.main の gap と一致させる
   // サイドパネルの可読性のための固定最小幅 (盤面サイズに連動させない)。2ゲーム制は明細行の
@@ -155,12 +182,16 @@ export function MainWindow({
   const mapW = snapshot?.size.x ?? 0;
   const mapH = snapshot?.size.y ?? 0;
 
+  // 幅制約: サイドパネルが最小幅を取った後に残る幅を基準に計算 (これが「幅方向の上限」)。
+  // main の幅は列の高さの取り合いに影響されないので、この値は常に安定している。
+  const byWAtMinPanel = mapW > 0
+    ? Math.floor((mainSize.width - PANEL_MIN_W * 2 - MAIN_GAP * 2) / mapW)
+    : 0;
+
   let cellSize = 28;
   if (mapW > 0 && mapH > 0) {
     // 高さ制約: サイドパネルの幅に関わらず main の高さいっぱいまで使える
     const byH = Math.floor(mainSize.height / mapH);
-    // 幅制約: サイドパネルが最小幅を取った後に残る幅を基準に計算 (これが「幅方向の上限」)
-    const byWAtMinPanel = Math.floor((mainSize.width - PANEL_MIN_W * 2 - MAIN_GAP * 2) / mapW);
     // 上限 640 は極端に小さいマップでの暴走防止用の安全弁のみ
     cellSize = Math.max(10, Math.min(byH, byWAtMinPanel, 640));
   }
@@ -171,11 +202,20 @@ export function MainWindow({
   const leftoverW = Math.max(0, mainSize.width - boardW - MAIN_GAP * 2);
   const panelW    = Math.max(PANEL_MIN_W, leftoverW / 2);
 
-  // ── スコアバー: 盤面の実描画サイズ (cellSize) に応じて内部要素を最大化 ──────────
-  // cellSize は「マップが今どれだけ大きく表示されているか」そのものなので、これを基準に
-  // スコアバーの幅・文字サイズ・余白を連動させる。cellSize=28 (初期値) を基準点とし、
-  // 平方根スケールで伸ばすことで、盤面が非常に大きい場合でも文字が線形に暴走しないようにする。
-  const mapScale = Math.sqrt(cellSize / 28);
+  // ── スコアバー: 盤面の表示サイズに応じて内部要素を最大化 ──────────────────────
+  // 「マップが今どれだけ大きく表示されているか」を基準に、スコアバーの幅・文字サイズ・
+  // 余白を連動させる。基準点 28 からの平方根スケールで伸ばすことで、盤面が非常に大きい
+  // 場合でも文字が線形に暴走しないようにする。
+  //
+  // ただし基準に cellSize そのものを使うと上記の循環に入るため、スコアバーが自分の厚みを
+  // 差し引く前の高さ (budgetH) から求めた nominalCell を使う。cellSize とはスコアバー
+  // 1本ぶんの差しかないので見た目はほぼ変わらず、入力が安定値なので振動しない。
+  const budgetH = mainSize.height + scorePadH;
+  let nominalCell = 28;
+  if (mapW > 0 && mapH > 0) {
+    nominalCell = Math.max(10, Math.min(Math.floor(budgetH / mapH), byWAtMinPanel, 640));
+  }
+  const mapScale = Math.sqrt(nominalCell / 28);
   const scoreDim = {
     numFont:   clampNum(26 * mapScale, 20, 180),
     nameFont:  clampNum(13 * mapScale, 9, 50),
@@ -202,36 +242,48 @@ export function MainWindow({
 
       {/* ── スコアバー ─────────────────────────────────────────── */}
       {snapshot && (
-        <div style={s.scorePad}>
+        <div ref={scorePadRef} style={s.scorePad}>
           <div style={{
             ...s.scoreCard,
-            gap: scoreDim.gap,
+            columnGap: scoreDim.gap,
             padding: `${scoreDim.cardPadV}px ${scoreDim.cardPadH}px`,
             minWidth: boardW > 0 ? boardW : undefined,
           }}>
-            <span style={{
-              ...s.namePill,
-              fontSize: scoreDim.nameFont,
-              padding: `${scoreDim.namePadV}px ${scoreDim.namePadH}px`,
-              background: leftIdx === 0 ? COOL_LIGHT : HOT_LIGHT,
-              color:      leftIdx === 0 ? COOL_DARK  : HOT_DARK,
-            }}>
-              {leftIdx === 0 ? '🔵' : '🔴'} {names[leftIdx]}
-            </span>
-            <span style={{ ...s.scoreNum, fontSize: scoreDim.numFont, color: leftIdx === 0 ? COOL_COLOR : HOT_COLOR }}>{leftScore}</span>
-            <span style={{ ...s.scoreDivider, height: scoreDim.dividerH }} />
-            <span style={{ ...s.itemsPill, fontSize: scoreDim.itemsFont, padding: `${scoreDim.itemsPadV}px ${scoreDim.itemsPadH}px` }}>{leaveItems}</span>
-            <span style={{ ...s.scoreDivider, height: scoreDim.dividerH }} />
-            <span style={{ ...s.scoreNum, fontSize: scoreDim.numFont, color: rightIdx === 0 ? COOL_COLOR : HOT_COLOR }}>{rightScore}</span>
-            <span style={{
-              ...s.namePill,
-              fontSize: scoreDim.nameFont,
-              padding: `${scoreDim.namePadV}px ${scoreDim.namePadH}px`,
-              background: rightIdx === 0 ? COOL_LIGHT : HOT_LIGHT,
-              color:      rightIdx === 0 ? COOL_DARK  : HOT_DARK,
-            }}>
-              {rightIdx === 0 ? '🔵' : '🔴'} {names[rightIdx]}
-            </span>
+            {/* 左側グループ: 名前+スコアを左寄せ (右側グループと独立) */}
+            <div style={{ ...s.scoreSide, justifyContent: 'flex-start', gap: scoreDim.gap }}>
+              <span style={{
+                ...s.namePill,
+                fontSize: scoreDim.nameFont,
+                padding: `${scoreDim.namePadV}px ${scoreDim.namePadH}px`,
+                background: leftIdx === 0 ? COOL_LIGHT : HOT_LIGHT,
+                color:      leftIdx === 0 ? COOL_DARK  : HOT_DARK,
+              }}>
+                {leftIdx === 0 ? '🔵' : '🔴'} {names[leftIdx]}
+              </span>
+              <span style={{ ...s.scoreNum, fontSize: scoreDim.numFont, color: leftIdx === 0 ? COOL_COLOR : HOT_COLOR }}>{leftScore}</span>
+            </div>
+
+            {/* 中央グループ: 残りアイテム数。自身の幅を持つ grid の中央カラムに置くことで、
+                左右グループ (名前の長さ・獲得スコアの桁数) がどう変わっても常に幾何学的中央に来る */}
+            <div style={{ ...s.scoreCenter, gap: scoreDim.gap }}>
+              <span style={{ ...s.scoreDivider, height: scoreDim.dividerH }} />
+              <span style={{ ...s.itemsPill, fontSize: scoreDim.itemsFont, padding: `${scoreDim.itemsPadV}px ${scoreDim.itemsPadH}px` }}>{leaveItems}</span>
+              <span style={{ ...s.scoreDivider, height: scoreDim.dividerH }} />
+            </div>
+
+            {/* 右側グループ: 名前+スコアを右寄せ */}
+            <div style={{ ...s.scoreSide, justifyContent: 'flex-end', gap: scoreDim.gap }}>
+              <span style={{ ...s.scoreNum, fontSize: scoreDim.numFont, color: rightIdx === 0 ? COOL_COLOR : HOT_COLOR }}>{rightScore}</span>
+              <span style={{
+                ...s.namePill,
+                fontSize: scoreDim.nameFont,
+                padding: `${scoreDim.namePadV}px ${scoreDim.namePadH}px`,
+                background: rightIdx === 0 ? COOL_LIGHT : HOT_LIGHT,
+                color:      rightIdx === 0 ? COOL_DARK  : HOT_DARK,
+              }}>
+                {rightIdx === 0 ? '🔵' : '🔴'} {names[rightIdx]}
+              </span>
+            </div>
           </div>
         </div>
       )}
@@ -271,7 +323,15 @@ export function MainWindow({
       {/* ── ボトムバー ─────────────────────────────────────────── */}
       {snapshot && (
         <div style={s.bottomPad}>
-          <div style={s.bottomCard}>
+          <div style={{
+            ...s.bottomCard,
+            // ターンゲージ表示中 (!gameEnd) は左右カラムを content-fit (auto) にして
+            // 空のときは幅0にし、中央カラム (1fr) が残り幅を全て取ってゲージを画面幅
+            // いっぱいまで広げる。結果ピル表示中は左右均等な 1fr のまま (従来通り)。
+            gridTemplateColumns: gameEnd
+              ? 'minmax(0, 1fr) auto minmax(0, 1fr)'
+              : 'auto minmax(0, 1fr) auto',
+          }}>
             {/* 列1 (左): 左側チームが勝者のときだけ結果ピルを表示。それ以外は空 */}
             {gameEnd && leftIsWinner && (
               <span style={{
@@ -285,7 +345,7 @@ export function MainWindow({
 
             {/* 列2 (中央): ゲーム中はターンゲージ、引き分け時のみ引き分けピル */}
             {!gameEnd && maxTurn > 0 && (
-              <div style={{ ...s.turnGaugeGroup, width: boardW > 0 ? boardW : undefined }}>
+              <div style={s.turnGaugeGroup}>
                 <span style={s.gaugeBarTrack}>
                   <span style={{ ...s.gaugeBarFillLeft, width: `${gaugePercent}%` }} />
                 </span>
@@ -345,15 +405,27 @@ const s: Record<string, React.CSSProperties> = {
     padding: '0.5vh 14px 0', flexShrink: 0,
   },
   // gap/padding/fontSize/height はレンダー時に scoreDim (盤面サイズ連動) で上書きされる
+  // 3カラム grid (左グループ/中央アイテム数/右グループ)。左右のカラムを同じ幅の 1fr にすることで、
+  // 名前の長さや獲得スコアの桁数が左右非対称でも、中央のアイテム数は常に幾何学的中央に来る
+  // (bottomCard の 3カラム構成と同じ考え方)。
   scoreCard: {
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    flexWrap: 'wrap',
+    display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)', alignItems: 'center',
     background: BG_CARD, borderRadius: RADIUS_LG, boxShadow: SHADOW_MD,
+  },
+  // 左右グループの共通シェル。justifyContent は呼び出し側で 'flex-start'/'flex-end' を指定し、
+  // それぞれ独立して左寄せ・右寄せにする
+  scoreSide: {
+    display: 'flex', alignItems: 'center', minWidth: 0,
+  },
+  // 中央グループ (区切り線+残りアイテム数+区切り線)。幅は中身にフィットし、grid の auto
+  // カラムとして左右の 1fr カラムのちょうど中間に固定される
+  scoreCenter: {
+    display: 'flex', alignItems: 'center', flexShrink: 0,
   },
   namePill: {
     fontWeight: 700,
     borderRadius: 99, letterSpacing: '0.04em', whiteSpace: 'nowrap',
-    maxWidth: '32vw', overflow: 'hidden', textOverflow: 'ellipsis',
+    maxWidth: '32vw', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0,
   },
   scoreNum: {
     fontFamily: FONT_NUM, fontWeight: 800, lineHeight: 1,
@@ -419,12 +491,12 @@ const s: Record<string, React.CSSProperties> = {
   // 独立した2本のゲージバーで挟む。残ターン数が減ると各バーが中央側から先に埋まった
   // ぶんだけ外側から縮んでいき、中央に向かって縮む見た目になる。
   // ゲーム終了時は非表示にして結果ピルに切り替わる。
-  // 幅は盤面の実描画幅 (boardW) にインラインで合わせる。boardW が未計測の間だけ、
-  // このフォールバック幅を使う。
+  // 幅は 100% にして、親の中央カラム (試合中は bottomCard の gridTemplateColumns 側で
+  // 1fr に切り替わり残り幅を全て取る) いっぱいまで広げる。
   turnGaugeGroup: {
     gridColumn: '2',
     display: 'flex', alignItems: 'center', gap: 8,
-    width: 'clamp(160px, 30vw, 420px)', height: FOOTER_ROW_H,
+    width: '100%', height: FOOTER_ROW_H,
   },
   gaugeBarTrack: {
     position: 'relative', overflow: 'hidden',

@@ -6,7 +6,7 @@ import { TournamentOrchestrator } from './tournament/TournamentOrchestrator.js';
 
 const PORT       = Number(process.env['PORT'] ?? 8765);
 const U15_MODE   = process.env['U15_MODE'] ?? 'local';   // 'local' | 'web'
-const LOCAL_PORTS: [number, number] = [12031, 12032];
+const LOCAL_PORTS: [number, number] = [2009, 2010];
 const WEB_PORTS:  [number, number]  = [13000, 14999];    // 1000ポート = 500並列ルーム
 
 function getLocalIP(): string {
@@ -39,7 +39,7 @@ async function main() {
   if (U15_MODE === 'local') {
     const room = rm.createRoom('local', LOCAL_PORTS);
     if (!room) throw new Error('ローカルルームの作成に失敗しました');
-    console.log('U15 Server starting... (ローカルモード)');
+    console.log('CHaser Server starting... (ローカルモード)');
     console.log(`  ─────────────────────────────────────────`);
     console.log(`  ブラウザアクセス: http://${localIP}:5173         (dev / Vite)`);
     console.log(`                   http://${localIP}:${PORT}          (prod / static)`);
@@ -49,7 +49,7 @@ async function main() {
     console.log(`  HOT  AI 接続先: ${localIP}:${LOCAL_PORTS[1]}`);
     console.log(`  WebSocket:      ws://${localIP}:${PORT}`);
   } else {
-    console.log('U15 Server starting... (Webサービスモード)');
+    console.log('CHaser Server starting... (Webサービスモード)');
     console.log(`  ─────────────────────────────────────────`);
     console.log(`  ロビー:   http://${localIP}:${PORT}`);
     console.log(`  WebSocket: ws://${localIP}:${PORT}`);

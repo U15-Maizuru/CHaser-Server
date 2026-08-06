@@ -15,48 +15,60 @@ interface Props {
 
 export function FileDropZone({ endpoint, accept, label, onUploaded }: Props) {
   const { state, progress, error, upload, reset } = useFileUpload();
-  const [uploadedName, setUploadedName] = useState<string | null>(null);
-  const [dragging,     setDragging]     = useState(false);
+  const [uploadedNames, setUploadedNames] = useState<string[]>([]);
+  const [dragging,      setDragging]      = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const handleFile = async (file: File) => {
-    const ext = '.' + file.name.split('.').pop()?.toLowerCase();
-    if (!accept.includes(ext)) {
-      alert(`許可されていないファイルです。${accept.join(', ')} のみ対応しています。`);
-      return;
+  // 複数ファイルは1件ずつ順番にアップロードする (エンドポイントは単一ファイル前提のため)。
+  // 途中の1件が失敗しても残りは続行し、成功した分だけまとめて表示する。
+  const handleFiles = async (files: File[]) => {
+    const validFiles = files.filter(file => {
+      const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+      if (!accept.includes(ext)) {
+        alert(`「${file.name}」は許可されていないファイルです。${accept.join(', ')} のみ対応しています。`);
+        return false;
+      }
+      return true;
+    });
+
+    const doneNames: string[] = [];
+    for (const file of validFiles) {
+      try {
+        const { serverPath } = await upload(file, endpoint);
+        doneNames.push(file.name);
+        onUploaded(serverPath, file.name);
+      } catch {
+        /* error is shown via hook state; continue with remaining files */
+      }
     }
-    try {
-      const { serverPath } = await upload(file, endpoint);
-      setUploadedName(file.name);
-      onUploaded(serverPath, file.name);
-    } catch {
-      /* error is shown via hook state */
-    }
+    if (doneNames.length > 0) setUploadedNames(prev => [...prev, ...doneNames]);
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) void handleFile(file);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) void handleFiles(files);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) void handleFile(file);
+    const files = Array.from(e.target.files ?? []);
+    if (files.length > 0) void handleFiles(files);
     e.target.value = '';
   };
 
   const handleDelete = () => {
-    setUploadedName(null);
+    setUploadedNames([]);
     reset();
   };
 
-  if (uploadedName && state === 'done') {
+  if (uploadedNames.length > 0 && state === 'done') {
     return (
       <div style={s.done}>
         <span style={s.check}>✓</span>
-        <span style={s.filename}>{uploadedName}</span>
+        <span style={s.filename}>
+          {uploadedNames.length === 1 ? uploadedNames[0] : `${uploadedNames.length} 件アップロード済み: ${uploadedNames.join(', ')}`}
+        </span>
         <button style={s.deleteBtn} onClick={handleDelete}>削除</button>
       </div>
     );
@@ -73,6 +85,7 @@ export function FileDropZone({ endpoint, accept, label, onUploaded }: Props) {
         ref={inputRef}
         type="file"
         accept={accept.join(',')}
+        multiple
         style={{ display: 'none' }}
         onChange={handleInputChange}
       />
@@ -88,7 +101,7 @@ export function FileDropZone({ endpoint, accept, label, onUploaded }: Props) {
         <div style={s.inner}>
           <span style={s.icon}>⬆</span>
           <span style={s.mainText}>{label}</span>
-          <span style={s.hint}>または クリックして選択 ({accept.join(', ')})</span>
+          <span style={s.hint}>または クリックして選択 ({accept.join(', ')} / 複数選択可)</span>
           {error && <span style={s.errorText}>{error}</span>}
         </div>
       )}

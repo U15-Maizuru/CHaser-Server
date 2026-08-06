@@ -69,7 +69,7 @@ describe('TournamentStandby', () => {
 
     expect(screen.getByText('テスト杯')).toBeInTheDocument();
     expect(screen.getByText('まもなく開始します')).toBeInTheDocument();
-    expect(screen.queryByText('✓ 試合終了')).not.toBeInTheDocument();
+    expect(screen.queryByText('試合終了')).not.toBeInTheDocument();
   });
 
   it('トーナメント: 確定した試合のカードと勝者が分かる', () => {
@@ -81,8 +81,8 @@ describe('TournamentStandby', () => {
 
     // 見出しの結果ピルに勝者が出る
     expect(screen.getByText('B の勝ち')).toBeInTheDocument();
-    // 「✓ 試合終了」は見出しのピルと、表の中の該当カードのバッジの2か所だけ
-    expect(screen.getAllByText('✓ 試合終了')).toHaveLength(2);
+    // 「試合終了」は表の中の該当カードのバッジだけ (見出しには勝者だけを出す)
+    expect(screen.getAllByText('試合終了')).toHaveLength(1);
     expect(screen.getAllByText('準決勝 第1試合').length).toBeGreaterThan(0);
   });
 

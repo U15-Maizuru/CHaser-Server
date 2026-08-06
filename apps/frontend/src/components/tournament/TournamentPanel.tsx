@@ -228,7 +228,7 @@ export function TournamentPanel({
 
           {/* ── 次の一手 ── */}
           <section style={card}>
-            <div style={sectionTitle}>いま操作する試合</div>
+            <div style={sectionTitle}>対戦中の試合</div>
 
             {awaiting ? (
               <>

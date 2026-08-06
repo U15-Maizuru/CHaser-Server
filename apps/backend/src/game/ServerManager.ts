@@ -52,7 +52,7 @@ export class ServerManager extends EventEmitter {
   private roomId = 'local';
 
   constructor(
-    ports: [number, number] = [12031, 12032],
+    ports: [number, number] = [2009, 2010],
     startDelayMs = START_COUNTDOWN_SECONDS * 1000,
     demoDelaysMs: DemoDelaysMs = DEFAULT_DEMO_DELAYS_MS,
   ) {

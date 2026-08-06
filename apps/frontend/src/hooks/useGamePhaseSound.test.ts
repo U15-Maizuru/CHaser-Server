@@ -16,8 +16,8 @@ function status(phase: ServerStatusPayload['phase']): ServerStatusPayload {
     phase,
     localIP: '127.0.0.1',
     clients: [
-      { type: 'cpu', state: 'ready', name: 'COOL', ip: '', port: 12031 },
-      { type: 'cpu', state: 'ready', name: 'HOT',  ip: '', port: 12032 },
+      { type: 'cpu', state: 'ready', name: 'COOL', ip: '', port: 2009 },
+      { type: 'cpu', state: 'ready', name: 'HOT',  ip: '', port: 2010 },
     ],
     doubleMode: false,
     repeatMode: false,

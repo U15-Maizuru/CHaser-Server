@@ -171,7 +171,7 @@ export const DEFAULT_DISPLAY_PREFS: Readonly<DisplayPrefs> = {
   bgmMuted:     false,
   bgmTrack:     'none',
   theme:        'Jewel',
-  displayTitle: 'U15 Server Maizuru',
+  displayTitle: 'CHaser Server',
 };
 
 // --- Commands (Frontend → Backend) ---

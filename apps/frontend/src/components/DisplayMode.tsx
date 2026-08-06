@@ -1,5 +1,5 @@
-import type { InlineMapData, MapObject, ServerStatusPayload, TournamentStatePayload } from '@u15/ws-types';
-import { DEFAULT_DISPLAY_PREFS } from '@u15/ws-types';
+import type { InlineMapData, ServerStatusPayload, TournamentStatePayload } from '@u15/ws-types';
+import { DEFAULT_DISPLAY_PREFS, MapObject } from '@u15/ws-types';
 import { useGameState } from '../hooks/useGameState';
 import { useGamePhaseSound } from '../hooks/useGamePhaseSound';
 import { useStartCountdown } from '../hooks/useStartCountdown';
@@ -168,7 +168,6 @@ function SetupWaiting({ serverStatus, displayTitle, tournament, currentMap, them
             <span style={sw.recapScore}>{roundPointsFor(intermission, 1)}</span>
             <span style={sw.recapName}>{intermission.playerNames[idxForSide(1, intermission.round)]}</span>
           </div>
-          <div style={sw.recapNote}>↳ 先攻・後攻を入れ替えて第2ゲームを行います</div>
         </div>
       )}
 
@@ -188,15 +187,15 @@ function SetupWaiting({ serverStatus, displayTitle, tournament, currentMap, them
         )}
       </div>
 
-      {upcoming && (
+      {/* {upcoming && (
         <div style={sw.upcoming}>
-          <span style={sw.upcomingTag}>次の試合</span>
+          <span style={sw.upcomingTag}>対戦試合</span>
           <span style={sw.upcomingLabel}>{upcoming.label}</span>
           <span style={sw.upcomingNames}>
             {nameOfParticipant(upcoming.resolvedA)} vs {nameOfParticipant(upcoming.resolvedB)}
           </span>
         </div>
-      )}
+      )} */}
     </div>
   );
 
@@ -246,9 +245,10 @@ function MapPreview({ map, theme, flip, label }: {
   const tex = useTextures(theme);
   // 15×17 のマップでチームカードと釣り合う大きさ
   const cellSize = Math.max(4, Math.min(12, Math.floor(200 / Math.max(map.size.x, map.size.y))));
+  const itemCount = map.field.flat().filter(c => c === MapObject.ITEM).length;
   return (
     <div style={mp.card}>
-      <div style={mp.head}>マップ</div>
+      <div style={mp.name}>{label}</div>
       <MapThumbnail
         field={map.field as MapObject[][]}
         size={map.size}
@@ -257,8 +257,7 @@ function MapPreview({ map, theme, flip, label }: {
         cellSize={cellSize}
         flip={flip}
       />
-      <div style={mp.name}>{label}</div>
-      <div style={mp.meta}>{map.size.x}×{map.size.y} ・ ターン {map.turn}</div>
+      <div style={mp.meta}>ターン {map.turn} ・ アイテム {itemCount}</div>
       {flip && <div style={mp.flip}>盤面反転</div>}
     </div>
   );

@@ -55,7 +55,7 @@ export function Lobby({ wsUrl }: { wsUrl: string }) {
   if (!isConnected) {
     return (
       <div style={s.splash}>
-        <div style={s.title}>U15 Server Maizuru</div>
+        <div style={s.title}>CHaser Server</div>
         <div style={s.sub}>接続中...</div>
       </div>
     );
@@ -64,7 +64,7 @@ export function Lobby({ wsUrl }: { wsUrl: string }) {
   return (
     <div style={s.root}>
       <div style={s.header}>
-        <span style={s.title}>U15 Server Maizuru</span>
+        <span style={s.title}>CHaser Server</span>
         <span style={s.sub}>ロビー</span>
       </div>
 

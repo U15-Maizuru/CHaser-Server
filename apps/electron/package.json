@@ -20,7 +20,7 @@
   },
   "build": {
     "appId": "jp.u15.server",
-    "productName": "U15 Server Maizuru",
+    "productName": "CHaser Server",
     "npmRebuild": false,
     "directories": {
       "output": "release"

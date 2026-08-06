@@ -30,7 +30,7 @@ export function TournamentStandby({ state, displayTitle }: TournamentStandbyProp
         <div style={s.title}>{state.name}</div>
         {finished ? (
           <div style={s.result}>
-            <span style={s.resultTag}>✓ 試合終了</span>
+            {/* <span style={s.resultTag}>試合終了</span> */}
             <span style={s.resultLabel}>{finished.label}</span>
             <span style={s.resultName}>{winner ? `${winner} の勝ち` : '決着なし'}</span>
           </div>

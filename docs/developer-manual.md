@@ -1,4 +1,4 @@
-# U15 Server Maizuru — デベロッパーマニュアル
+# CHaser Server — デベロッパーマニュアル
 
 > 対象: 開発者・保守担当者
 
@@ -81,10 +81,10 @@
 │  WsServer (port 8765)                                       │
 │    ├── HttpServer — ファイルアップロード / default-room      │
 │    └── RoomManager — 部屋管理                               │
-│          └── Room "local" (ports 12031/12032)               │
+│          └── Room "local" (ports 2009/2010)                 │
 │                └── ServerManager                            │
-│                      ├── TcpClient (port 12031)             │
-│                      └── TcpClient (port 12032)             │
+│                      ├── TcpClient (port 2009)               │
+│                      └── TcpClient (port 2010)               │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -378,8 +378,8 @@ class RoomManager {
 | `RoundController` | フェーズ (`setup`/`playing`/`finished`)・2ゲーム制のゲーム進行・デモ/リピートモード・ターン表示待機時間 |
 
 ```typescript
-// ポートはコンストラクタで指定する (省略時は [12031, 12032])
-constructor(ports: [number, number] = [12031, 12032])
+// ポートはコンストラクタで指定する (省略時は [2009, 2010])
+constructor(ports: [number, number] = [2009, 2010])
 
 // 部屋削除時の安全なクリーンアップ (TCP を閉じるだけ、再起動しない)
 shutdown(): void
@@ -510,7 +510,7 @@ ws.onopen = () => {
 
 | エンドポイント | メソッド | 説明 |
 |---|---|---|
-| `/api/default-room` | GET | ローカルモード用: `{roomId: "local", ports: [12031, 12032]}` を返す |
+| `/api/default-room` | GET | ローカルモード用: `{roomId: "local", ports: [2009, 2010]}` を返す |
 | `/api/upload/program?slot=0\|1&room=<id>` | POST | AI プログラム (.py/.exe) をルームのスロットへ直接アップロード |
 | `/api/programs` | POST | プログラムライブラリへの新規アップロード (.py/.exe) — 全ルーム共通、`programCatalog.ts` |
 | `/api/programs` | GET | プログラムライブラリの一覧 (`CatalogEntry[]`) |
@@ -621,7 +621,7 @@ LOOK は 3 マスずつが同じ距離の帯になる (`cells[0..2]` が距離1�
 
 | モード | COOL ポート | HOT ポート |
 |---|---|---|
-| ローカル | 12031 (固定) | 12032 (固定) |
+| ローカル | 2009 (固定) | 2010 (固定) |
 | Web サービス | 動的 (13000〜14999) | 動的 (13000〜14999) |
 
 Web サービスモードではロビーまたはコントロール画面に表示された値を使います。
@@ -629,7 +629,7 @@ Web サービスモードではロビーまたはコントロール画面に表�
 ### Python プログラム例
 
 ```bash
-python player.py --host 192.168.x.x --port 12031  # ローカル COOL
+python player.py --host 192.168.x.x --port 2009   # ローカル COOL
 python player.py --host example.com --port 13042  # Web COOL (ルームに応じて変わる)
 ```
 
@@ -906,7 +906,7 @@ pnpm --filter @u15/electron build:win
 | 用途 | ポート範囲 |
 |---|---|
 | HTTP / WebSocket | 8765 (固定) |
-| ローカルモード AI | 12031, 12032 (固定) |
+| ローカルモード AI | 2009, 2010 (固定) |
 | Web モード AI | 13000〜14999 (動的、最大500ルーム) |
 
 PortPool は `Set<number>` ベースで O(1) alloc/release。Node.js はシングルスレッドのためロック不要。
@@ -1144,7 +1144,7 @@ server/tournament/<大会id>/
 - **実施順と表示順は別物**: `TournamentMatch.order` は「同一 stage 内の**表示**順」で、
   トーナメント表では決勝 (order 0) が上、3位決定戦 (order 1) がその下に来る。
   一方**実施順は3位決定戦が先** — 決勝を締めくくりにするためで、両者は依存関係が無いので選べる。
-  「次の試合」を出す箇所は必ず `compareByPlayOrder` (`@u15/ws-types`) を使うこと。
+  「対戦試合」を出す箇所は必ず `compareByPlayOrder` (`@u15/ws-types`) を使うこと。
   `nextReadyMatch` (backend) と `TournamentPanel` の両方がこれを共有している。
   なお `resolveMatches` / `downstreamOf` の `stage → order` ソートは依存解決のためのもので、
   同一 stage 内の順序に意味は無いのでそのままでよい。

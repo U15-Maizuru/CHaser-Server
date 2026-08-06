@@ -273,9 +273,9 @@ function MapPreviewColumn({
       <div ref={footerRef} style={s.mapFooter}>
         <div style={s.mapInfo}>
           <span style={s.mapKind}>{sourceLabel(status.mapSource)}</span>
-          {flip && <span style={s.flipBadge}>↻ 第2ゲーム — 反転表示</span>}
           <span>{currentMap.size.x}×{currentMap.size.y} ・ ターン {currentMap.turn}</span>
           <span>ブロック {blocks} ・ アイテム {items}</span>
+          {flip && <span style={s.flipBadge}>盤面反転</span>}
         </div>
         {selector}
       </div>
