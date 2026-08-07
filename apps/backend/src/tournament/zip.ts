@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { inflateRawSync } from 'node:zlib';
+import { Buffer } from 'node:buffer';
+import { crc32, deflateRawSync, inflateRawSync } from 'node:zlib';
 
-// 大会データ (.zip) の最小展開。node:zlib だけで済むので新規依存を足さない。
+// 大会データ (.zip) の最小の読み書き。node:zlib だけで済むので新規依存を足さない。
 // 対応するのは store(0) と deflate(8) のみ。ZIP64 や暗号化には対応しない
 // (大会データは tournament.json + programs/*.py の小さなアーカイブなので十分)。
 
@@ -108,6 +109,75 @@ export function readZip(buf: Buffer, limits: ZipLimits = DEFAULT_ZIP_LIMITS): Zi
   }
 
   return entries;
+}
+
+// ── 書き出し ──────────────────────────────────────────────────────────────
+
+export interface ZipWriteEntry {
+  name: string;
+  data: Buffer;
+  /** true なら無圧縮 (method=0)。既定は deflate (method=8) */
+  store?: boolean;
+}
+
+/**
+ * エントリの配列から ZIP を組み立てる。ディレクトリエントリは作らない
+ * (`programs/foo.py` のように名前へスラッシュを含めれば展開時にフォルダができる)。
+ */
+export function writeZip(entries: ZipWriteEntry[]): Buffer {
+  const locals:   Buffer[] = [];
+  const centrals: Buffer[] = [];
+  let offset = 0;
+
+  for (const e of entries) {
+    const nameBuf = Buffer.from(e.name, 'utf-8');
+    const method  = e.store ? 0 : 8;
+    const data    = e.store ? e.data : deflateRawSync(e.data);
+    const crc     = crc32(e.data);
+
+    const local = Buffer.alloc(30 + nameBuf.length);
+    local.writeUInt32LE(SIG_LOCAL, 0);
+    local.writeUInt16LE(20, 4);               // version needed
+    local.writeUInt16LE(0, 6);                // flags
+    local.writeUInt16LE(method, 8);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(data.length, 18);     // compressed size
+    local.writeUInt32LE(e.data.length, 22);   // uncompressed size
+    local.writeUInt16LE(nameBuf.length, 26);
+    local.writeUInt16LE(0, 28);               // extra len
+    nameBuf.copy(local, 30);
+
+    const central = Buffer.alloc(46 + nameBuf.length);
+    central.writeUInt32LE(SIG_CD, 0);
+    central.writeUInt16LE(20, 4);             // version made by
+    central.writeUInt16LE(20, 6);             // version needed
+    central.writeUInt16LE(0, 8);              // flags
+    central.writeUInt16LE(method, 10);
+    central.writeUInt32LE(crc, 16);
+    central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(e.data.length, 24);
+    central.writeUInt16LE(nameBuf.length, 28);
+    central.writeUInt16LE(0, 30);             // extra len
+    central.writeUInt16LE(0, 32);             // comment len
+    central.writeUInt32LE(offset, 42);        // local header offset
+    nameBuf.copy(central, 46);
+
+    locals.push(local, data);
+    centrals.push(central);
+    offset += local.length + data.length;
+  }
+
+  const cd      = Buffer.concat(centrals);
+  const cdStart = offset;
+
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(SIG_EOCD, 0);
+  eocd.writeUInt16LE(entries.length, 8);
+  eocd.writeUInt16LE(entries.length, 10);
+  eocd.writeUInt32LE(cd.length, 12);
+  eocd.writeUInt32LE(cdStart, 16);
+
+  return Buffer.concat([...locals, cd, eocd]);
 }
 
 /** 展開先の外に書き出そうとするエントリ名 (zip-slip) を弾く */

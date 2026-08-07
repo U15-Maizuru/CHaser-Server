@@ -110,6 +110,43 @@ export function TournamentPanel({
     }
   };
 
+  /**
+   * 大会データを .zip で書き出す (= この「ファイルを読み込む」に食わせられる形)。
+   *
+   * 同梱できなかったプログラムはヘッダ (X-Bundle-Skipped) で返ってくるので、
+   * <a href> ではなく fetch + Blob で受けて内容を読む。
+   */
+  const exportBundle = async (s: TournamentSummary) => {
+    setBusy(true);
+    try {
+      const res = await fetch(
+        `${httpBase}/api/tournament/${encodeURIComponent(s.id)}/export?format=bundle.zip`,
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        window.alert(`書き出しに失敗しました:\n${body.error ?? res.statusText}`);
+        return;
+      }
+
+      const url = URL.createObjectURL(await res.blob());
+      const a   = document.createElement('a');
+      a.href     = url;
+      a.download = `${s.name.replace(/[\\/:*?"<>|]/g, '_')}_大会データ.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      const raw     = res.headers.get('X-Bundle-Skipped');
+      const skipped = raw ? JSON.parse(decodeURIComponent(raw)) as string[] : [];
+      if (skipped.length > 0) {
+        window.alert(`一部のプログラムは同梱できませんでした:\n${skipped.join('\n')}`);
+      }
+    } catch (e) {
+      window.alert(`書き出しに失敗しました:\n${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div style={root}>
       <div style={head}>
@@ -146,6 +183,8 @@ export function TournamentPanel({
           <p style={hint}>
             server/tournament/&lt;大会名&gt;/ に tournament.json と programs/*.py を置くか、
             .zip / .json を読み込んでください。
+            「書き出し」で保存した .zip は、そのまま別の PC で読み込めばすぐ運営できます
+            （進行状態は引き継がれず、最初からになります）。
           </p>
 
           {scanErrors.map(e => (
@@ -165,6 +204,14 @@ export function TournamentPanel({
                     {s.participants}人 ・ {s.progress[0]}/{s.progress[1]} 試合完了
                   </div>
                 </div>
+                <button
+                  style={btnGhostSmall}
+                  disabled={busy}
+                  title="この大会データを .zip で書き出す (別の PC で読み込めばそのまま運営できます)"
+                  onClick={() => void exportBundle(s)}
+                >
+                  書き出し
+                </button>
                 <button
                   style={{ ...btnGhostSmall, ...(s.boundRoomId ? btnMuted : null) }}
                   disabled={!!s.boundRoomId}

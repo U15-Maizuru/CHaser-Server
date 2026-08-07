@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildZip } from '../test/buildZip.js';
-import { DEFAULT_ZIP_LIMITS, ZipError, extractZip, readZip, safeJoin } from './zip.js';
+import { DEFAULT_ZIP_LIMITS, ZipError, extractZip, readZip, safeJoin, writeZip } from './zip.js';
 
 const tmpDirs: string[] = [];
 function tmpDir(): string {
@@ -78,6 +78,33 @@ describe('readZip', () => {
     ]);
     expect(() => readZip(zip, { ...DEFAULT_ZIP_LIMITS, maxEntryBytes: 1000, maxTotalBytes: 1000 }))
       .toThrow(/ZIP 全体が大きすぎます/);
+  });
+});
+
+describe('writeZip', () => {
+  it('組み立てた ZIP を自分で読み戻せる', () => {
+    const entries = readZip(writeZip([
+      { name: 'tournament.json', data: Buffer.from('{"name":"杯"}', 'utf-8') },
+      { name: 'programs/舞鶴A.py', data: Buffer.from('print("A")', 'utf-8') },
+      { name: 'programs/b.py', data: Buffer.from('print("B")', 'utf-8'), store: true },
+    ]));
+
+    expect(entries.map(e => e.name)).toEqual([
+      'tournament.json', 'programs/舞鶴A.py', 'programs/b.py',
+    ]);
+    expect(entries[0]!.data.toString('utf-8')).toBe('{"name":"杯"}');
+    expect(entries[1]!.data.toString('utf-8')).toBe('print("A")');
+    expect(entries[2]!.data.toString('utf-8')).toBe('print("B")');
+  });
+
+  it('サブディレクトリ付きの名前がそのままフォルダとして展開される', () => {
+    const dest = tmpDir();
+    extractZip(writeZip([{ name: 'programs/a.py', data: Buffer.from('print(1)', 'utf-8') }]), dest);
+    expect(fs.readFileSync(path.join(dest, 'programs', 'a.py'), 'utf-8')).toBe('print(1)');
+  });
+
+  it('ZIP のシグネチャ (PK) で始まる', () => {
+    expect(writeZip([{ name: 'a.py', data: Buffer.from('x') }]).subarray(0, 2).toString()).toBe('PK');
   });
 });
 

@@ -16,9 +16,32 @@ const VENDOR_DIR    = path.join(ELECTRON_DIR, 'vendor');
 const PYTHON_DIR    = path.join(VENDOR_DIR, 'python');
 const ZIP_PATH       = path.join(VENDOR_DIR, ZIP_NAME);
 
+/**
+ * embeddable package に同梱される `python311._pth` を取り除く。
+ *
+ * `._pth` が存在すると Python は「隔離モード」で起動し、sys.path がそのファイルの
+ * 記述だけで決まる。つまり PYTHONPATH も、スクリプト自身のディレクトリも一切
+ * 無視される。対戦プログラムの `from lib.pyCHaser import *` は
+ * ProcessClient.buildEnv() が渡す PYTHONPATH に依存しているため、`._pth` を
+ * 残したままだと配布版でのみ ModuleNotFoundError: No module named 'lib' になる
+ * (開発時は PATH の通常インストール版 Python が使われるので再現しない)。
+ *
+ * 削除すると通常の path 解決に戻り、同梱の python311.zip (標準ライブラリ) は
+ * exe と同じ階層から従来どおり読まれる。
+ */
+function stripIsolationPth() {
+  for (const entry of fs.readdirSync(PYTHON_DIR)) {
+    if (!entry.endsWith('._pth')) continue;
+    fs.rmSync(path.join(PYTHON_DIR, entry));
+    console.log(`[fetch-python] removed ${entry} (PYTHONPATH を有効にするため)`);
+  }
+}
+
 async function main() {
   if (fs.existsSync(path.join(PYTHON_DIR, 'python.exe'))) {
     console.log(`[fetch-python] already present: ${PYTHON_DIR}`);
+    // 取得済みの vendor に対しても毎回適用する (旧バージョンで取得したものを救済する)
+    stripIsolationPth();
     return;
   }
 
@@ -39,6 +62,7 @@ async function main() {
   ]);
 
   fs.rmSync(ZIP_PATH);
+  stripIsolationPth();
   console.log('[fetch-python] done');
 }
 

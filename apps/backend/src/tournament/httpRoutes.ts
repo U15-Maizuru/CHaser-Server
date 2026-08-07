@@ -5,6 +5,7 @@ import { type IncomingMessage, type ServerResponse } from 'node:http';
 import { badRequest, handleUpload, json, readJsonBody, sendTextDownload } from '../network/httpUtil.js';
 import { DefinitionError } from './definition.js';
 import { ZipError } from './zip.js';
+import { buildTournamentBundle } from './bundle.js';
 import { matchesCsv, resultJson, standingsCsv } from './exporter.js';
 import {
   assignProgram,
@@ -187,7 +188,7 @@ export function handleTournamentRequest(
     return true;
   }
 
-  // GET /api/tournament/:id/export?format=json|matches.csv|standings.csv
+  // GET /api/tournament/:id/export?format=json|matches.csv|standings.csv|bundle.zip
   const exportMatch = url.pathname.match(/^\/api\/tournament\/([^/]+)\/export$/);
   if (req.method === 'GET' && exportMatch) {
     withDefinition(res, () => {
@@ -197,6 +198,16 @@ export function handleTournamentRequest(
 
       const format = url.searchParams.get('format') ?? 'json';
       const safe   = loaded.def.name.replace(/[\\/:*?"<>|]/g, '_');
+
+      // 大会データそのもの (結果ではなく定義 + プログラム)。読み込ませればそのまま運営できる。
+      // 同梱できなかったプログラムはダウンロード本文に混ぜられないのでヘッダで返す
+      if (format === 'bundle.zip') {
+        const { zip, skipped } = buildTournamentBundle(loaded);
+        sendTextDownload(res, zip, `${safe}_大会データ.zip`, 'application/zip', {
+          'X-Bundle-Skipped': encodeURIComponent(JSON.stringify(skipped)),
+        });
+        return;
+      }
 
       let body: string;
       let filename: string;
@@ -208,7 +219,7 @@ export function handleTournamentRequest(
       } else if (format === 'json') {
         body = resultJson(loaded);   filename = `${safe}.json`;         mime = 'application/json; charset=utf-8';
       } else {
-        badRequest(res, 'format は json / matches.csv / standings.csv のいずれかです');
+        badRequest(res, 'format は json / matches.csv / standings.csv / bundle.zip のいずれかです');
         return;
       }
 

@@ -59,15 +59,20 @@ export function sendFileDownload(
   if (onSent) stream.on('close', onSent);
 }
 
-/** 文字列をそのままダウンロードさせる (CSV / JSON のエクスポート用) */
+/**
+ * メモリ上の中身をそのままダウンロードさせる (CSV / JSON / ZIP のエクスポート用)。
+ * extraHeaders はダウンロードと一緒に返したい付帯情報用 (値は ASCII にしておくこと)。
+ */
 export function sendTextDownload(
-  res: ServerResponse, body: string, downloadName: string, contentType: string,
+  res: ServerResponse, body: string | Buffer, downloadName: string, contentType: string,
+  extraHeaders: Record<string, string> = {},
 ): void {
   const encoded = encodeURIComponent(downloadName);
   res.writeHead(200, {
     'Content-Type': contentType,
     'Content-Disposition':
       `attachment; filename="${asciiFallbackName(downloadName)}"; filename*=UTF-8''${encoded}`,
+    ...extraHeaders,
   });
   res.end(body);
 }

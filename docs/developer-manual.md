@@ -1222,7 +1222,7 @@ server/tournament/<大会id>/
 | `/api/tournament/:id` | GET / DELETE | 詳細プレビュー (`{ state, definition }`) / 削除 |
 | `/api/tournament/:id/reset` | POST | 進行状態のみ初期化 |
 | `/api/tournament/:id/assign` | POST | プログラムライブラリのエントリをまとめて紐付け |
-| `/api/tournament/:id/export` | GET | `?format=json / matches.csv / standings.csv` |
+| `/api/tournament/:id/export` | GET | `?format=json / matches.csv / standings.csv / bundle.zip` |
 
 > **ルーティング順序に注意**: `handleTournamentRequest` は固定セグメント (`scan` / `import` /
 > `upload`) を `:id` パターンより先に判定する。逆にすると `id === 'scan'` と解釈されてしまう。
@@ -1241,6 +1241,35 @@ participant id だけを見ていた頃は「参加者を変えずにルール�
 運営中 (bind 中) の大会に対する `import` の上書きと `assign` は **409 で拒否する**。
 オーケストレータが進行状態をメモリに握っているため、裏から `state.json` を書き換えると食い違う。
 運営中の割り当ては WS の `tournament_assign_program` を使う。
+
+#### 13-5-1. 大会データの書き出し (`format=bundle.zip`)
+
+`bundle.ts` の `buildTournamentBundle` が **取り込み口へそのまま投げ返せる `.zip`** を組む
+(`tournament.json` + `programs/*.py`)。結果の書き出し (`exporter.ts`) とは目的が別 —
+あちらは大会後の記録用で、取り込み直せない。
+
+要点:
+
+- **プログラムの実体は2箇所から拾う。** 定義の `program.file` (フォルダ/zip 由来) と、
+  `state.programs[].catalogId` → `programCatalog` (作成 UI で割り当てただけの大会)。
+  後者を拾わないと、画面で作った大会が「参加者だけの空の zip」になる。書き出す定義では
+  どちらも `{ kind:'file', file:'programs/<参加者id>.py' }` に統一する。
+- **`state.json` は入れない。** 進行状態はこの PC のライブラリ ID を握っているので、
+  持って行っても噛み合わない。移動先ではまっさらな大会として始まる。
+- **`.exe` は同梱しない。** `extractZip` の `allowedExtensions` (`.json/.py/.txt/.md`) は
+  意図的な防御線で、`zip.test.ts` / `TournamentStore.test.ts` に回帰テストがある。
+  ここを緩めて往復を完全にするより、同梱を諦めて運営に知らせる方を選ぶ。
+  512KB 超のファイルも同じ理由で外す (**自分の importer が弾く zip を作らない**)。
+- 外した理由は `BundleResult.skipped` に日本語一文で積み、`X-Bundle-Skipped` ヘッダに
+  `encodeURIComponent(JSON.stringify(...))` で載せる。ダウンロードのレスポンスなので
+  本文には混ぜられない。フロントは `<a href>` ではなく fetch + Blob で受けてこれを読む。
+- `rules.mapCatalogId` / `rules.stageMaps` はこの PC のマップ ID だが**消さずに残す**。
+  見つからない ID は黙って無視される決まり (`definition.ts`) で、消すと元の PC で
+  読み直したときに設定が飛ぶ。
+
+ZIP を書く実装 (`zip.writeZip`) は元々テスト用ヘルパー (`test/buildZip.ts`) にあったもので、
+本番へ昇格させて `buildZip` はそれに委譲する薄い包みにした。読む側と書く側が同じ
+`node:zlib` だけの実装で揃うので、外部の zip ライブラリは今も入っていない。
 
 ### 13-6. フロントエンド
 
@@ -1295,6 +1324,8 @@ participant id だけを見ていた頃は「参加者を変えずにルール�
 書くと別の PC で壊れるので、`POST /api/tournament/:id/assign` 経由で `state.json` 側へ保存する。
 一方 `{ builtin: 'cpu' }` と `{ file: ... }` は移植できるので定義に残す。
 編集時は `GET /api/tournament/:id` の `state.participants[].programCatalogId` から復元する。
+別の PC へ持ち出すときは、この割り当てを `program.file` に焼き直してプログラムの実体ごと
+固める書き出し (13-5-1) を使う。
 
 **シード配置の共有**: 「手動で指定する」の初期値は、サーバーが自動生成するのと
 寸分違わぬ並びでなければならない。そのため `seedOrder` / `bracketSizeFor` / `stageCountFor` /

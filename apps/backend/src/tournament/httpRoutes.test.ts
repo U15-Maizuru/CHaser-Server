@@ -336,6 +336,20 @@ describe('/api/tournament', () => {
       expect(await res.text()).toContain('勝ち点');
     });
 
+    it('bundle.zip は取り込み直せる大会データを返す', async () => {
+      writeTournament('cup-a', DEF);
+      const res = await fetch(`${baseUrl}/api/tournament/cup-a/export?format=bundle.zip`);
+      const buf = Buffer.from(await res.arrayBuffer());
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toBe('application/zip');
+      expect(decodeURIComponent(res.headers.get('content-disposition') ?? ''))
+        .toContain('HTTPテスト杯_大会データ.zip');
+      expect(res.headers.get('x-bundle-skipped')).toBe(encodeURIComponent('[]'));
+      // ZIP のシグネチャ。中身の検証は bundle.test.ts の往復テストが持つ
+      expect(buf.subarray(0, 2).toString()).toBe('PK');
+    });
+
     it('未知の format は 400', async () => {
       writeTournament('cup-a', DEF);
       const res = await fetch(`${baseUrl}/api/tournament/cup-a/export?format=xlsx`);
@@ -345,6 +359,48 @@ describe('/api/tournament', () => {
     it('存在しない大会は 404', async () => {
       const res = await fetch(`${baseUrl}/api/tournament/nope/export`);
       expect(res.status).toBe(404);
+    });
+
+    // 「書き出した .zip をアップロードするだけでセットできる」の通し確認。
+    // 単体テスト (bundle.test.ts) は importFromZip を直接呼ぶので、multipart の
+    // アップロード口を通る経路はここでしか押さえられない
+    it('書き出した .zip をアップロードし直すと、プログラムごと復元される', async () => {
+      // p2 は「まだ提出されていない」参加者。ライブラリから割り当てたプログラムが
+      // .zip に焼き込まれることを見たいので、builtin の DEF は使わない
+      writeTournament('cup-a', {
+        ...DEF,
+        participants: [
+          DEF.participants[0],
+          { id: 'p2', name: 'B', seed: 2, program: null },
+        ],
+      });
+      const tmp = path.join(os.tmpdir(), `u15-bundle-${Date.now()}.py`);
+      fs.writeFileSync(tmp, 'print("B")');
+      const catalogId = addCatalogEntry('Bのプログラム', tmp).id;
+      await fetch(`${baseUrl}/api/tournament/cup-a/assign`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ assignments: { p2: catalogId } }),
+      });
+
+      const zip = await (await fetch(
+        `${baseUrl}/api/tournament/cup-a/export?format=bundle.zip`,
+      )).arrayBuffer();
+
+      // 会場の PC を模して、大会もライブラリも消してからアップロードする
+      fs.rmSync(tournamentRootDir(), { recursive: true, force: true });
+      fs.rmSync(catalogDir(), { recursive: true, force: true });
+      ensureTournamentDir();
+      ensureCatalogDir();
+
+      const fd = new FormData();
+      fd.append('file', new Blob([zip]), 'HTTPテスト杯_大会データ.zip');
+      const up = await fetch(`${baseUrl}/api/tournament/upload`, { method: 'POST', body: fd });
+      const body = await up.json() as { id?: string; error?: string };
+
+      expect(body.error).toBeUndefined();
+      expect(body.id).toBe('cup-a');
+      expect(loadTournament('cup-a')!.state.programs['p2']).toBeDefined();
     });
   });
 

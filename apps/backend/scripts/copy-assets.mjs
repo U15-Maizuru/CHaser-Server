@@ -16,4 +16,10 @@ function copyDir(src, dest) {
   }
 }
 
+// Windows の copyFileSync は大文字小文字を区別しないため、既存の dist に
+// 旧名 (例: pyChaser.py) が残っていると中身だけ上書きされてファイル名の
+// 大文字小文字が古いままになる。Python の import は大文字小文字を厳密に
+// 区別するので、配布物に旧名が紛れ込むと `from lib.pyCHaser import *` が
+// 失敗する。毎回作り直して名前のズレを持ち越さない。
+fs.rmSync('dist/assets', { recursive: true, force: true });
 copyDir('src/assets', 'dist/assets');
