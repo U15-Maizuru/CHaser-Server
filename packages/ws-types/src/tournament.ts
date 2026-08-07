@@ -15,7 +15,22 @@ import type { SetResult } from './scoring.js';
 
 // --- 大会の定義 (tournament.json) ---
 
-export type TournamentFormat = 'single-elimination' | 'league';
+export type TournamentFormat = 'single-elimination' | 'league' | 'group-then-bracket';
+
+/**
+ * 予選リーグ (グループ) を持つ形式か。
+ *
+ * `format === 'league'` の三項演算子で分岐している箇所を素直に広げると、新しい形式が
+ * 黙ってトーナメント側に落ちて事故になる。判定は必ずこの述語を通すこと。
+ */
+export function hasGroupStage(format: TournamentFormat): boolean {
+  return format === 'group-then-bracket';
+}
+
+/** 勝ち上がりのトーナメント表を持つ形式か */
+export function hasBracket(format: TournamentFormat): boolean {
+  return format === 'single-elimination' || format === 'group-then-bracket';
+}
 
 export interface LeaguePoints {
   win:  number;
@@ -35,10 +50,14 @@ export interface TournamentRules {
   stageMaps:        (string | null)[];
   /** single-elimination のみ: 3位決定戦を行うか */
   thirdPlaceMatch:  boolean;
-  /** league のみ: 勝ち点 (公式ルールは 勝利3 / 引き分け1 / 敗北0) */
+  /** league / group-then-bracket: 勝ち点 (公式ルールは 勝利3 / 引き分け1 / 敗北0) */
   leaguePoints:     LeaguePoints;
-  /** league のみ: 2回総当たりにするか */
+  /** league / group-then-bracket: 2回総当たりにするか */
   doubleRoundRobin: boolean;
+  /** group-then-bracket のみ: 予選リーグの数 */
+  groupCount:       number;
+  /** group-then-bracket のみ: 各リーグから決勝トーナメントへ上がる人数 */
+  advancePerGroup:  number;
 }
 
 /** 参加プログラムの指定方法。null は「未提出」(当日 tournament_assign_program で紐付ける) */
@@ -52,6 +71,8 @@ export interface ParticipantDef {
   name:    string;
   /** 組み合わせ表の選手番号。小さいほど第1ゲームで先攻になる。省略時は記載順 */
   seed?:   number;
+  /** group-then-bracket のみ: 所属する予選リーグ (0始まり)。省略時は autoGroupAssign で振り分ける */
+  group?:  number;
   program: ParticipantProgram;
 }
 
@@ -117,13 +138,73 @@ export function stageLabel(stage: number, totalStages: number): string {
   return `${stage + 1}回戦`;
 }
 
+// --- 予選リーグの振り分け (純関数) ---
+//
+// seedOrder と同じ理由でここに置く。大会データ作成 UI が「自動で振り分け直す」で見せる並びは、
+// サーバーが tournament.json の group 省略時に作るのと寸分違わぬものでなければならない。
+
+/** 予選リーグの名前。0 → 'A', 1 → 'B' … 26個を超えたら 'AA' のように桁を増やす */
+export function groupLabel(group: number): string {
+  let n = Math.max(0, Math.trunc(group));
+  let s = '';
+  for (;;) {
+    s = String.fromCharCode(65 + (n % 26)) + s;
+    n = Math.floor(n / 26) - 1;
+    if (n < 0) return s;
+  }
+}
+
+/**
+ * 選手番号順に蛇行 (snake) 配分する。返り値の index = 選手番号-1、値 = リーグ番号。
+ *
+ * 4人2リーグなら [A, B, B, A] — 端から順に折り返すことで、強い順に並んでいる名簿を
+ * そのまま流し込んでも上位がどちらか一方のリーグへ偏らない。
+ *
+ * **人数が割り切れないときは前のリーグを多くする。** 蛇行の順番だけで決めると
+ * 5人3リーグで [A,B,C,C,B] = 1人/2人/2人 のように後ろが多くなることがあるため、
+ * 先に各リーグの定員 (前から順に1人ずつ多く配る) を決めておき、蛇行で当たった
+ * リーグが定員に達していたら、まだ空きのある一番前のリーグへ回す。
+ */
+export function autoGroupAssign(count: number, groupCount: number): number[] {
+  const g = Math.max(1, Math.trunc(groupCount));
+  const n = Math.max(0, count);
+
+  // 定員: 余りは前のリーグから1人ずつ
+  const capacity = Array.from({ length: g }, (_, k) =>
+    Math.floor(n / g) + (k < n % g ? 1 : 0));
+  const filled = new Array<number>(g).fill(0);
+
+  return Array.from({ length: n }, (_, i) => {
+    const cycle = Math.floor(i / g);
+    const pos   = i % g;
+    const snake = cycle % 2 === 0 ? pos : g - 1 - pos;
+
+    const target = filled[snake]! < capacity[snake]!
+      ? snake
+      : filled.findIndex((c, k) => c < capacity[k]!);
+    filled[target]!++;
+    return target;
+  });
+}
+
 // --- 試合グラフ ---
 
 export type MatchSlotRef =
   | { kind: 'participant'; participantId: string }
   | { kind: 'winner-of';   matchId: string }
   | { kind: 'loser-of';    matchId: string }   // 3位決定戦
+  | { kind: 'group-rank';  group: number; rank: number }   // 予選リーグの N 位 (1始まり)
   | { kind: 'bye' };
+
+/**
+ * まだ相手が決まっていない枠の表示名 (「Aリーグ 1位」)。
+ * 決まりようのある枠 (participant / winner-of など) は null を返す。
+ */
+export function slotPlaceholder(ref: MatchSlotRef): string | null {
+  return ref.kind === 'group-rank'
+    ? `${groupLabel(ref.group)}リーグ ${ref.rank}位`
+    : null;
+}
 
 export type MatchStatus =
   | 'pending'           // 対戦相手がまだ確定していない
@@ -153,10 +234,18 @@ export interface TournamentMatchResult {
 }
 
 export interface TournamentMatch {
-  id:        string;   // 'R1M1' / 'SF1' / 'FINAL' / 'THIRD' / 'L-D1M2'
+  id:        string;   // 'R1M1' / 'SF1' / 'FINAL' / 'THIRD' / 'L-D1M2' / 'G1-D1M2'
   stage:     number;   // トーナメント: 回戦 (0始まり)  リーグ: 節 (0始まり)
   label:     string;   // '1回戦 第1試合' / '準決勝' / '3位決定戦' / '第2節 第1試合'
   order:     number;   // 同一 stage 内の表示順
+  /**
+   * group-then-bracket の予選リーグの試合だけが持つリーグ番号 (0始まり)。
+   * 決勝トーナメントの試合と、予選を持たない形式の試合は undefined。
+   *
+   * 「その試合がどの順位表に効くか」「group-rank 参照がどの試合に依存するか」
+   * 「同点を引き分けのまま確定してよいか」の3つがこの1つで決まる。
+   */
+  group?:    number;
   slotA:     MatchSlotRef;   // side 0 (第1ゲームの COOL = 先攻)
   slotB:     MatchSlotRef;   // side 1 (第1ゲームの HOT  = 後攻)
   resolvedA: string | null;  // 確定した participantId。bye/未確定なら null
@@ -226,6 +315,55 @@ export interface StandingRow {
   tied:          boolean;
 }
 
+/**
+ * 観戦画面に何を出すか (group-then-bracket のみ)。
+ *
+ * `'auto'` は進行に追従する。運営が明示的に選んだときだけ固定され、
+ * **運営席の画面 (?mode=tournament) の表示とは連動しない** —
+ * 観客には見せずに手元だけで先の表を確認したい場面があるため。
+ */
+export type TournamentDisplayView = 'auto' | 'groups' | 'bracket';
+
+/** 予選リーグ1つぶんの順位表 (group-then-bracket) */
+export interface GroupStanding {
+  group:          number;
+  /** 'A' / 'B' … */
+  label:          string;
+  /**
+   * このリーグの参加者 (エントリー順 = 選手番号順)。
+   * 星取表の行・列はこの並びで固定する — 順位順に並べ替えると試合のたびに行が動く。
+   */
+  participantIds: string[];
+  /** 順位順 */
+  standings:      StandingRow[];
+}
+
+/**
+ * 決勝トーナメントの1枠。「Aリーグ1位」に誰が入るか。
+ *
+ * 自動判定 (auto) は順位表の位置から必ず決定的に埋まるので、決勝が詰まることはない。
+ * 同点で怪しいところには tied / ambiguous の印を立て、運営が manual で差し替えられる。
+ */
+export interface QualifierSlot {
+  group:  number;
+  /** 1始まり。順位表の「位置」であって StandingRow.rank (同着で飛ぶ) とは別物 */
+  rank:   number;
+  /** 順位表から機械的に決めた人。予選が終わっていなければ null */
+  autoParticipantId:   string | null;
+  /** 運営が差し替えた人。差し替えていなければ null */
+  manualParticipantId: string | null;
+  /** 実際にこの枠へ入る人 (manual ?? auto) */
+  participantId:       string | null;
+  /** 順位表でこの順位が同着 */
+  tied:      boolean;
+  /** 同着が「上がる / 上がらない」の境目をまたいでいる = 運営が決めるべき */
+  ambiguous: boolean;
+  /** 予選がまだ終わっていない */
+  pending:   boolean;
+  /** 参加者が足りずこの枠が不戦になる */
+  bye:       boolean;
+}
+
 export interface TournamentSummary {
   id:           string;
   name:         string;
@@ -244,14 +382,35 @@ export interface TournamentStatePayload {
   rules:        TournamentRules;
   participants: ResolvedParticipant[];
   matches:      TournamentMatch[];
-  /** league のときのみ */
+  /** league のときのみ。予選リーグの順位は groups[].standings 側に入る */
   standings:    StandingRow[] | null;
+  /** group-then-bracket のときのみ: 予選リーグごとの順位表 */
+  groups:       GroupStanding[] | null;
+  /** group-then-bracket のときのみ: 決勝トーナメントの枠と、そこに入る人 */
+  qualifiers:   QualifierSlot[] | null;
+  /**
+   * 決勝進出者を運営が確定したか (group-then-bracket のみ)。
+   *
+   * 予選が終わっても自動では決勝へ進まず、ここが true になるまで観戦画面は
+   * 予選の最終結果を出し続ける。**予選が終わっていない間は必ず false** なので、
+   * 予選の試合を取り消せば確定も自動で外れる。
+   */
+  qualifiersConfirmed: boolean;
+  /** 観戦画面に出すもの (運営が指定。既定は進行に追従する 'auto') */
+  displayView:  TournamentDisplayView;
   /**
    * 回戦ごとの実効マップ (index = stage)。定義の rules.stageMaps に運営中の差し替えを
    * 重ねた結果で、null は「大会の設定 (rules.mapCatalogId) に従う」。
    * 表示・判定はこれだけを見ればよく、UI 側で解決順を再現しなくてよい。
+   *
+   * **index は予選と決勝を通した stage 番号 (combined)。** 予選の節は常に null になる。
    */
   stageMaps:    (string | null)[];
+  /**
+   * stage ごとの表示名 (index = stage)。「予選 第1節」「準決勝」など。
+   * 節数の算出を frontend に二重定義しないよう、backend が試合グラフから組み立てて配る。
+   */
+  stageLabels:  string[];
   armedMatchId: string | null;
   boundRoomId:  string;
   updatedAt:    number;
@@ -269,5 +428,18 @@ export interface TournamentState {
    * 配布物である tournament.json ではなくこちら側に持つ。
    */
   stageMapOverrides?: Record<string, string | null>;
+  /**
+   * 運営が差し替えた決勝進出者 (キーは `"<group>:<rank>"`)。自動判定より優先する。
+   * 同点で機械的に決められないときの逃げ道。stageMapOverrides と同じく、配布物である
+   * tournament.json ではなくこちら側に持つ。
+   */
+  qualifierOverrides?: Record<string, string | null>;
+  /**
+   * 運営が「この顔ぶれで決勝を始める」と確定したか。
+   *
+   * 予選が終わっていない状態では意味を持たない (payload では常に false に倒す) ので、
+   * 巻き戻しのたびにこのフラグを消して回る必要はない。
+   */
+  qualifiersConfirmed?: boolean;
   updatedAt:    number;
 }

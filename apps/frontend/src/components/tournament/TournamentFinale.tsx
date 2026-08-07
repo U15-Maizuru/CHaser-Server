@@ -57,7 +57,10 @@ export function TournamentFinale({ state, displayTitle }: TournamentFinaleProps)
           />
         ) : (
           <BracketView
-            matches={state.matches}
+            // **決勝トーナメントの試合だけを渡す。** 予選リーグの試合を混ぜると
+            // 節ごとに列が増え、列見出しが「Aリーグ」になって表が壊れる。
+            // 表彰の場で見せるのは勝ち上がりの結果だけでよい (予選表は別途切り替えて出せる)
+            matches={state.matches.filter(m => m.group === undefined)}
             participants={state.participants}
             finishedId={finished?.id ?? null}
             fit

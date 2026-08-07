@@ -1,4 +1,5 @@
-import type { ResolvedParticipant, TournamentMatch } from '@u15/ws-types';
+import type { MatchSlotRef, ResolvedParticipant, TournamentMatch } from '@u15/ws-types';
+import { slotPlaceholder } from '@u15/ws-types';
 import {
   BG_CARD, BORDER_COLOR, COOL_COLOR, COOL_PALE, FONT_NUM, FONT_UI,
   GOLD_BASE, GOLD_LIGHT, HOT_COLOR, HOT_PALE, RADIUS_SM, SHADOW_SM,
@@ -47,25 +48,29 @@ export function MatchCard({
   match, participants, interactive = false, selected = false, upcoming = false,
   justFinished = false, onSelect, style,
 }: MatchCardProps) {
-  const nameOf = (id: string | null, isBye: boolean): string => {
+  // まだ相手が決まっていない枠でも、決まり方が分かるなら書く (「Aリーグ 1位」)。
+  // 予選の結果待ちの準決勝が「—」だけだと、観客にも運営にも何を待っているのか伝わらない
+  const nameOf = (id: string | null, isBye: boolean, ref: MatchSlotRef): string => {
     if (isBye) return '不戦';
-    if (!id)   return '—';
+    if (!id)   return slotPlaceholder(ref) ?? '—';
     return participants.find(p => p.id === id)?.name ?? id;
   };
 
   const winner = match.result?.winnerSide ?? null;
-  const rows: { side: 0 | 1; name: string; points: number | null; won: boolean }[] = [
+  const rows: { side: 0 | 1; name: string; points: number | null; won: boolean; pending: boolean }[] = [
     {
       side: 0,
-      name: nameOf(match.resolvedA, match.byeA),
+      name: nameOf(match.resolvedA, match.byeA, match.slotA),
       points: match.result?.set?.totals[0] ?? null,
       won: winner === 0,
+      pending: !match.resolvedA && !match.byeA,
     },
     {
       side: 1,
-      name: nameOf(match.resolvedB, match.byeB),
+      name: nameOf(match.resolvedB, match.byeB, match.slotB),
       points: match.result?.set?.totals[1] ?? null,
       won: winner === 1,
+      pending: !match.resolvedB && !match.byeB,
     },
   ];
 
@@ -101,7 +106,7 @@ export function MatchCard({
 
       {rows.map(r => (
         <div key={r.side} style={{ ...row, ...(r.side === 0 ? rowCool : rowHot) }}>
-          <span style={{ ...name, ...(r.won ? nameWon : null) }}>
+          <span style={{ ...name, ...(r.won ? nameWon : null), ...(r.pending ? namePending : null) }}>
             {r.won && <span style={crown}>🏆</span>}
             {r.name}
           </span>
@@ -189,6 +194,9 @@ const name: React.CSSProperties = {
 };
 
 const nameWon: React.CSSProperties = { fontWeight: 700 };
+
+// 「Aリーグ 1位」のような予定枠。確定した名前と見分けがつくよう控えめに出す
+const namePending: React.CSSProperties = { color: TEXT_MUTED, fontStyle: 'italic' };
 
 const crown: React.CSSProperties = { marginRight: 3, fontSize: 10 };
 

@@ -33,6 +33,8 @@ describe('parseTournamentDefinition', () => {
       thirdPlaceMatch: false,
       leaguePoints: { win: 3, draw: 1, loss: 0 },
       doubleRoundRobin: false,
+      groupCount: 2,
+      advancePerGroup: 2,
     });
   });
 
@@ -157,5 +159,56 @@ describe('parseTournamentDefinition', () => {
   it('leaguePoints を上書きできる', () => {
     const def = parse({ ...OK, rules: { leaguePoints: { win: 2, draw: 1, loss: -1 } } });
     expect(def.rules.leaguePoints).toEqual({ win: 2, draw: 1, loss: -1 });
+  });
+});
+
+describe('予選リーグ + 決勝トーナメント', () => {
+  const GROUP_OK = {
+    name: '予選あり大会',
+    format: 'group-then-bracket',
+    participants: Array.from({ length: 6 }, (_, i) => ({
+      id: `p${i + 1}`, name: `T${i + 1}`, program: null,
+    })),
+  };
+  const parseGroup = (o: Record<string, unknown>) =>
+    parseTournamentDefinition({ ...GROUP_OK, ...o }, { fallbackId: 'cup' });
+
+  it('groupCount / advancePerGroup は既定 2/2', () => {
+    const def = parseGroup({});
+    expect(def.rules.groupCount).toBe(2);
+    expect(def.rules.advancePerGroup).toBe(2);
+  });
+
+  it('participants[].group を読む', () => {
+    const def = parseGroup({
+      participants: GROUP_OK.participants.map((p, i) => (i === 0 ? { ...p, group: 1 } : p)),
+    });
+    expect(def.participants[0]!.group).toBe(1);
+    expect(def.participants[1]!.group).toBeUndefined();
+  });
+
+  it('リーグ数が2未満なら弾く', () => {
+    expect(() => parseGroup({ rules: { groupCount: 1 } })).toThrow(/groupCount/);
+  });
+
+  it('進出人数が0以下なら弾く', () => {
+    expect(() => parseGroup({ rules: { advancePerGroup: 0 } })).toThrow(/advancePerGroup/);
+  });
+
+  it('各リーグ2人に満たない人数なら弾く', () => {
+    expect(() => parseGroup({
+      participants: GROUP_OK.participants.slice(0, 3),
+    })).toThrow(/最低4人/);
+  });
+
+  it('範囲外の group を弾く', () => {
+    expect(() => parseGroup({
+      participants: GROUP_OK.participants.map((p, i) => (i === 0 ? { ...p, group: 2 } : p)),
+    })).toThrow(/group は 0〜1/);
+  });
+
+  it('1回戦は予選の結果で決まるので bracket / schedule は指定できない', () => {
+    expect(() => parseGroup({ bracket: { slots: ['p1', 'p2'] } })).toThrow(/bracket/);
+    expect(() => parseGroup({ schedule: { pairs: [['p1', 'p2']] } })).toThrow(/schedule/);
   });
 });

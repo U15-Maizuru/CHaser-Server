@@ -3,18 +3,24 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import type {
+  GroupStanding,
+  QualifierSlot,
   ResolvedParticipant,
+  TournamentDisplayView,
   TournamentDefinition,
   TournamentMatch,
   TournamentState,
   TournamentStatePayload,
   TournamentSummary,
 } from '@u15/ws-types';
+import { hasGroupStage, stageLabel } from '@u15/ws-types';
 import { addCatalogEntry, getCatalogEntry, setDemoEnabled } from '../programCatalog.js';
 import { buildBracket } from './bracket.js';
 import { buildLeague } from './league.js';
 import { orderBySeed } from './bracket.js';
-import { resolveMatches } from './progress.js';
+import { assignGroups, buildGroupStage, groupStageCountOf, isGroupStageDone } from './groupStage.js';
+import { resolveMatches, type ResolveContext } from './progress.js';
+import { computeGroupStandings, computeQualifiers, qualifierKey } from './qualifiers.js';
 import { computeStandings } from './standings.js';
 import { DefinitionError, parseTournamentDefinition } from './definition.js';
 import { extractZip } from './zip.js';
@@ -66,9 +72,69 @@ export function buildMatches(def: TournamentDefinition): TournamentMatch[] {
     if (def.schedule?.pairs) opts.pairs = def.schedule.pairs;
     return resolveMatches(buildLeague(def.participants, opts));
   }
+  if (def.format === 'group-then-bracket') {
+    const built = buildGroupStage(def.participants, {
+      groupCount:       def.rules.groupCount,
+      advancePerGroup:  def.rules.advancePerGroup,
+      doubleRoundRobin: def.rules.doubleRoundRobin,
+      thirdPlaceMatch:  def.rules.thirdPlaceMatch,
+    });
+    return resolveMatches(built, Date.now(), contextOf(def, {}));
+  }
   const opts: Parameters<typeof buildBracket>[1] = { thirdPlaceMatch: def.rules.thirdPlaceMatch };
   if (def.bracket?.slots) opts.slots = def.bracket.slots;
   return resolveMatches(buildBracket(def.participants, opts));
+}
+
+// ── group-rank の解決文脈 ──────────────────────────────────────────────────
+//
+// 「どのリーグに誰がいるか」「勝ち点は何点か」「運営が誰を差し替えたか」の3つ。
+// 組み立てをここ1箇所に閉じて、呼ぶ側が文脈を作り分けないようにする
+// (作り分けると、片方の経路だけ手動指定が効かないといった事故になる)。
+
+/** そのリーグに属する参加者 id (エントリー順)。予選を持たない形式では空 */
+export function groupsOf(def: TournamentDefinition): string[][] {
+  if (def.format !== 'group-then-bracket') return [];
+  return assignGroups(def.participants, def.rules.groupCount).map(g => g.map(p => p.id));
+}
+
+function contextOf(
+  def: TournamentDefinition, overrides: Record<string, string | null>,
+): ResolveContext {
+  if (def.format !== 'group-then-bracket') return {};
+  return {
+    groups:             groupsOf(def),
+    leaguePoints:       def.rules.leaguePoints,
+    qualifierOverrides: overrides,
+  };
+}
+
+export function resolveContextOf(loaded: LoadedTournament): ResolveContext {
+  return contextOf(loaded.def, loaded.state.qualifierOverrides ?? {});
+}
+
+/**
+ * 今の定義から見て意味を失った手動指定を捨てる。
+ *
+ * 参加者を入れ替えた・リーグ分けを変えた古い state.json を読んだとき、存在しない人を
+ * 指したままにすると armMatch が「参加者が見つかりません」で落ちる — しかも本番の
+ * 対戦直前に落ちる。読み込みの時点で黙って落としておく。
+ */
+function sanitizeQualifierOverrides(
+  def: TournamentDefinition, overrides: Record<string, string | null> | undefined,
+): Record<string, string | null> | undefined {
+  if (!overrides || def.format !== 'group-then-bracket') return undefined;
+
+  const groups = groupsOf(def);
+  const out: Record<string, string | null> = {};
+  for (let g = 0; g < groups.length; g++) {
+    for (let rank = 1; rank <= def.rules.advancePerGroup; rank++) {
+      const key = qualifierKey(g, rank);
+      const v   = overrides[key];
+      if (typeof v === 'string' && groups[g]!.includes(v)) out[key] = v;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 // ── 回戦ごとのマップ ──────────────────────────────────────────────────────
@@ -82,16 +148,43 @@ export function stageCountOf(matches: TournamentMatch[]): number {
   return matches.reduce((max, m) => Math.max(max, m.stage + 1), 0);
 }
 
-/** 回戦ごとの実効マップ (index = stage)。null は「大会の設定に従う」 */
+/**
+ * 回戦ごとの実効マップ (index = stage)。null は「大会の設定に従う」。
+ *
+ * **index は予選と決勝を通した stage 番号 (combined) で統一する。** 運営中の差し替え
+ * (stageMapOverrides) も mapForStage への引数も combined なので、ここで index 空間を
+ * 分けると必ずズレる。ゲタを当てるのは「定義に書かれた回戦ごとのマップ」の読み出しだけ —
+ * 作成画面は決勝トーナメントの回戦しか出さないので、そちらは決勝T相対で書かれている。
+ * 予選を持たない形式ではゲタが 0 なので、従来の挙動と1ミリも変わらない。
+ */
 export function resolveStageMaps(loaded: LoadedTournament): (string | null)[] {
   const count     = stageCountOf(loaded.state.matches);
   const authored  = loaded.def.rules.stageMaps;
   const overrides = loaded.state.stageMapOverrides ?? {};
+  const offset    = groupStageCountOf(loaded.state.matches);
+
   return Array.from({ length: count }, (_, stage) => {
     const o = overrides[String(stage)];
     if (o !== undefined) return o;
-    return authored[stage] ?? null;
+    const authoredIndex = stage - offset;
+    return authoredIndex < 0 ? null : authored[authoredIndex] ?? null;
   });
+}
+
+/**
+ * stage ごとの表示名 (index = stage)。節数の算出を frontend に二重定義しないよう、
+ * 試合グラフから組み立てて配信ペイロードに載せる。
+ */
+export function stageLabelsOf(matches: TournamentMatch[]): string[] {
+  const count  = stageCountOf(matches);
+  const offset = groupStageCountOf(matches);
+  const bracketStages = count - offset;
+
+  return Array.from({ length: count }, (_, stage) => (
+    stage < offset
+      ? `予選 第${stage + 1}節`
+      : stageLabel(stage - offset, bracketStages)
+  ));
 }
 
 /** その回戦のマップ (再試合の指定を除いた実効値)。null ならランダム生成のまま */
@@ -104,16 +197,34 @@ export function mapForMatch(loaded: LoadedTournament, match: TournamentMatch): s
   return match.rematchMapCatalogId ?? mapForStage(loaded, match.stage);
 }
 
-/** 保存済みの進行状態が今の定義とまだ噛み合っているか */
+/** 試合グラフの骨組みを1本の文字列にする (結果は含めない) */
+function slotKey(ref: TournamentMatch['slotA']): string {
+  switch (ref.kind) {
+    case 'participant': return `p:${ref.participantId}`;
+    case 'winner-of':   return `w:${ref.matchId}`;
+    case 'loser-of':    return `l:${ref.matchId}`;
+    case 'group-rank':  return `g:${ref.group}:${ref.rank}`;
+    case 'bye':         return 'bye';
+  }
+}
+
+function fingerprint(matches: TournamentMatch[]): string {
+  return matches
+    .map(m => [m.id, m.stage, m.order, m.group ?? '-', slotKey(m.slotA), slotKey(m.slotB)].join('|'))
+    .sort()
+    .join('\n');
+}
+
+/**
+ * 保存済みの進行状態が今の定義とまだ噛み合っているか。
+ *
+ * 定義から組み直したグラフと骨組みを突き合わせる。participant id だけを見ていた頃は
+ * 「参加者はそのままでルールだけ変えた上書き」を検知できず、リーグ分けの入れ替えや
+ * advancePerGroup の変更も素通りしていた。骨組み比較ならその全部が引っかかる。
+ */
 function stateMatchesDefinition(def: TournamentDefinition, state: TournamentState): boolean {
   if (state.matches.length === 0) return false;
-  const ids = new Set(def.participants.map(p => p.id));
-  for (const m of state.matches) {
-    for (const ref of [m.slotA, m.slotB]) {
-      if (ref.kind === 'participant' && !ids.has(ref.participantId)) return false;
-    }
-  }
-  return true;
+  return fingerprint(state.matches) === fingerprint(buildMatches(def));
 }
 
 // ── プログラムライブラリへの取り込み ──────────────────────────────────────
@@ -210,9 +321,16 @@ export function loadTournament(id: string): LoadedTournament | null {
   const prev = readState(id);
   const { programs } = syncPrograms(def, prev?.programs ?? {});
 
-  const state: TournamentState = prev && stateMatchesDefinition(def, prev)
-    ? { ...prev, programs, matches: resolveMatches(prev.matches) }
-    : { tournamentId: id, matches: buildMatches(def), programs, updatedAt: Date.now() };
+  let state: TournamentState;
+  if (prev && stateMatchesDefinition(def, prev)) {
+    const overrides = sanitizeQualifierOverrides(def, prev.qualifierOverrides);
+    state = { ...prev, programs, matches: prev.matches };
+    if (overrides === undefined) delete state.qualifierOverrides;
+    else state.qualifierOverrides = overrides;
+    state.matches = resolveMatches(prev.matches, Date.now(), contextOf(def, overrides ?? {}));
+  } else {
+    state = { tournamentId: id, matches: buildMatches(def), programs, updatedAt: Date.now() };
+  }
 
   saveState(state);
   return { def, state };
@@ -413,8 +531,39 @@ export function resolveParticipants(loaded: LoadedTournament): ResolvedParticipa
   });
 }
 
+/** 予選リーグごとの順位表。予選を持たない形式では null */
+export function groupStandingsOf(loaded: LoadedTournament): GroupStanding[] | null {
+  if (loaded.def.format !== 'group-then-bracket') return null;
+  return computeGroupStandings(
+    groupsOf(loaded.def), loaded.state.matches, loaded.def.rules.leaguePoints,
+  );
+}
+
+/** 決勝トーナメントの枠と、そこに入る人。予選を持たない形式では null */
+export function qualifiersOf(loaded: LoadedTournament): QualifierSlot[] | null {
+  const groups = groupStandingsOf(loaded);
+  if (!groups) return null;
+  return computeQualifiers(
+    groups, loaded.state.matches, loaded.def.rules.advancePerGroup,
+    loaded.state.qualifierOverrides ?? {},
+  );
+}
+
+/**
+ * 決勝進出者が運営に確定されているか。
+ *
+ * **予選が終わっていない間は必ず false に倒す。** 予選の試合を1つ取り消せば確定も
+ * 自動で外れるので、巻き戻しの経路 (reopen / discard / setQualifier / cascade) の
+ * すべてでフラグを消して回る必要がなくなる。
+ */
+export function qualifiersConfirmedOf(loaded: LoadedTournament): boolean {
+  if (!hasGroupStage(loaded.def.format)) return false;
+  return loaded.state.qualifiersConfirmed === true && isGroupStageDone(loaded.state.matches);
+}
+
 export function buildStatePayload(
   loaded: LoadedTournament, boundRoomId: string, armedMatchId: string | null,
+  displayView: TournamentDisplayView = 'auto',
 ): TournamentStatePayload {
   const participants = resolveParticipants(loaded);
   return {
@@ -427,7 +576,12 @@ export function buildStatePayload(
     standings:    loaded.def.format === 'league'
       ? computeStandings(participants.map(p => p.id), loaded.state.matches, loaded.def.rules.leaguePoints)
       : null,
+    groups:       groupStandingsOf(loaded),
+    qualifiers:   qualifiersOf(loaded),
+    qualifiersConfirmed: qualifiersConfirmedOf(loaded),
     stageMaps:    resolveStageMaps(loaded),
+    stageLabels:  stageLabelsOf(loaded.state.matches),
+    displayView,
     armedMatchId,
     boundRoomId,
     updatedAt:    loaded.state.updatedAt,

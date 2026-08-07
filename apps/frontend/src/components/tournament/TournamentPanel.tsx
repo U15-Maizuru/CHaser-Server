@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import type {
-  CatalogEntry, MapCatalogEntry, TournamentStatePayload, TournamentSummary,
+  CatalogEntry, MapCatalogEntry, TournamentDisplayView,
+  TournamentStatePayload, TournamentSummary,
 } from '@u15/ws-types';
-import { compareByPlayOrder, stageLabel } from '@u15/ws-types';
+import { compareByPlayOrder, hasBracket, hasGroupStage } from '@u15/ws-types';
 import type { TournamentCommands } from '../../hooks/useGameState';
 import { MatchCard } from './MatchCard';
 import { ResultConfirmDialog } from './ResultConfirmDialog';
+import { QualifierSection } from './QualifierSection';
 import { TournamentEditorDialog } from './TournamentEditorDialog';
 import {
   BG_CARD, BG_ROOT, BORDER_COLOR, COOL_COLOR, FONT_UI, GOLD_BASE, HOT_COLOR,
@@ -13,6 +15,30 @@ import {
 } from '../../styles/tokens';
 
 // 運営操作パネル。コントロール画面のダイアログとしても、専用ウィンドウの一部としても使う。
+
+const DISPLAY_VIEWS: [TournamentDisplayView, string][] = [
+  ['auto',    '進行に合わせる'],
+  ['groups',  '予選リーグ表'],
+  ['bracket', '決勝トーナメント表'],
+];
+
+const FORMAT_LABEL: Record<TournamentStatePayload['format'], string> = {
+  'single-elimination': 'トーナメント',
+  'league':             'リーグ',
+  'group-then-bracket': '予選リーグ + 決勝トーナメント',
+};
+
+/**
+ * 決勝進出者の確定待ちで、その試合をまだ準備できないか。
+ *
+ * バックエンドの armMatch も同じ条件で弾く。ここで出し分けるのは、押してから
+ * エラーで跳ね返されるより「まず確定してください」と見えている方が分かるため。
+ */
+function blockedByQualifiers(
+  state: TournamentStatePayload, match: TournamentStatePayload['matches'][number],
+): boolean {
+  return hasGroupStage(state.format) && match.group === undefined && !state.qualifiersConfirmed;
+}
 
 export interface TournamentPanelProps {
   state:      TournamentStatePayload | null;
@@ -64,6 +90,11 @@ export function TournamentPanel({
   }, [state]);
 
   const unassigned = state?.participants.filter(p => !p.builtinCpu && !p.programCatalogId) ?? [];
+
+  // 予選の節数 = 決勝トーナメントの stage のゲタ。予選を持たない形式では 0
+  const groupStageCount = state
+    ? state.matches.reduce((max, m) => (m.group === undefined ? max : Math.max(max, m.stage + 1)), 0)
+    : 0;
 
   const upload = async (file: File) => {
     setBusy(true);
@@ -130,7 +161,7 @@ export function TournamentPanel({
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={cupName}>{s.name}</div>
                   <div style={cupMeta}>
-                    {s.format === 'league' ? 'リーグ' : 'トーナメント'} ・
+                    {FORMAT_LABEL[s.format]} ・
                     {s.participants}人 ・ {s.progress[0]}/{s.progress[1]} 試合完了
                   </div>
                 </div>
@@ -194,32 +225,75 @@ export function TournamentPanel({
             </section>
           )}
 
-          {/* ── 回戦ごとのマップ (トーナメントのみ) ── */}
-          {state.format === 'single-elimination' && state.stageMaps.length > 0 && (
+          {/* ── 観戦画面の表示 (予選リーグがあるときだけ) ── */}
+          {hasGroupStage(state.format) && (
+            <section style={card}>
+              <div style={sectionTitle}>閲覧画面の表示</div>
+              <p style={hint}>
+                観客席の画面 (対戦画面) に出すものを選びます。
+                <strong>この運営画面の表示とは連動しません</strong> —
+                観客には予選表を出したまま、手元で決勝の組み合わせを確認できます。
+                対戦中は盤面が優先されます。
+              </p>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {DISPLAY_VIEWS.map(([view, label]) => (
+                  <button
+                    key={view}
+                    style={{ ...btnChoice, ...(state.displayView === view ? btnChoiceOn : null) }}
+                    onClick={() => commands.setDisplayView(view)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {state.displayView === 'auto' && (
+                <p style={hint}>
+                  進行に追従します。予選が終わっても自動では切り替わらず、
+                  下の「決勝進出者」を<strong>確定するまで予選の最終結果を出し続けます</strong>。
+                </p>
+              )}
+            </section>
+          )}
+
+          {/* ── 決勝進出者 (予選リーグがあるときだけ) ── */}
+          {hasGroupStage(state.format) && (
+            <QualifierSection
+              state={state}
+              onChange={commands.setQualifier}
+              onConfirm={commands.confirmQualifiers}
+            />
+          )}
+
+          {/* ── 回戦ごとのマップ (勝ち上がりがある形式のみ) ── */}
+          {hasBracket(state.format) && state.stageMaps.length > 0 && (
             <section style={card}>
               <div style={sectionTitle}>回戦ごとのマップ</div>
               <p style={hint}>
                 ここでの変更はこの大会の進行状態に保存され、次に「この試合を準備」したときから使われます。
                 準備済みの試合が同じ回戦なら、その場で読み直します。
               </p>
-              {state.stageMaps.map((mapId, stage) => (
-                <div key={stage} style={assignRow}>
-                  <span style={{ width: 68, flexShrink: 0 }}>
-                    {stageLabel(stage, state.stageMaps.length)}
-                  </span>
-                  <select
-                    style={{ ...select, flex: 1, minWidth: 0 }}
-                    aria-label={`${stageLabel(stage, state.stageMaps.length)} のマップ`}
-                    value={mapId ?? ''}
-                    onChange={e => commands.setStageMap(stage, e.target.value || null)}
-                  >
-                    <option value="">
-                      大会の設定に従う（{state.rules.mapCatalogId ? '固定マップ' : '毎回ランダム生成'}）
-                    </option>
-                    {maps.map(m => <option key={m.id} value={m.id}>{m.displayName}</option>)}
-                  </select>
-                </div>
-              ))}
+              {/* 予選の節は「大会の設定」に従うだけなので出さない。回戦名はバックエンドが
+                  組み立てた stageLabels を使う (UI 側で節数を数え直さない) */}
+              {state.stageMaps.map((mapId, stage) => {
+                if (stage < groupStageCount) return null;
+                const label = state.stageLabels[stage] ?? `第${stage + 1}回戦`;
+                return (
+                  <div key={stage} style={assignRow}>
+                    <span style={{ width: 68, flexShrink: 0 }}>{label}</span>
+                    <select
+                      style={{ ...select, flex: 1, minWidth: 0 }}
+                      aria-label={`${label} のマップ`}
+                      value={mapId ?? ''}
+                      onChange={e => commands.setStageMap(stage, e.target.value || null)}
+                    >
+                      <option value="">
+                        大会の設定に従う（{state.rules.mapCatalogId ? '固定マップ' : '毎回ランダム生成'}）
+                      </option>
+                      {maps.map(m => <option key={m.id} value={m.id}>{m.displayName}</option>)}
+                    </select>
+                  </div>
+                );
+              })}
               {state.rules.thirdPlaceMatch && (
                 <p style={hint}>3位決定戦は決勝と同じ回戦なので、決勝と同じマップになります。</p>
               )}
@@ -244,9 +318,20 @@ export function TournamentPanel({
               </>
             ) : nextReady ? (
               <>
-                <p style={hint}>次の試合です。「この試合を準備」でプログラムを自動割り当てします。</p>
+                {blockedByQualifiers(state, nextReady) ? (
+                  <p style={hint}>
+                    予選リーグが終わりました。上の「決勝進出者」で顔ぶれを確定すると、
+                    決勝トーナメントの試合を準備できます。
+                  </p>
+                ) : (
+                  <p style={hint}>次の試合です。「この試合を準備」でプログラムを自動割り当てします。</p>
+                )}
                 <MatchCard match={nextReady} participants={state.participants} style={{ width: '100%' }} />
-                <button style={btnPrimaryWide} onClick={() => commands.arm(nextReady.id)}>
+                <button
+                  style={{ ...btnPrimaryWide, ...(blockedByQualifiers(state, nextReady) ? btnMuted : null) }}
+                  disabled={blockedByQualifiers(state, nextReady)}
+                  onClick={() => commands.arm(nextReady.id)}
+                >
                   この試合を準備 ▶
                 </button>
               </>
@@ -276,7 +361,9 @@ export function TournamentPanel({
         <ResultConfirmDialog
           match={awaiting}
           participants={state.participants}
-          isLeague={state.format === 'league'}
+          // 予選リーグの試合は引き分けをそのまま確定できる。1つの大会に予選と決勝が
+          // 同居するので、形式ではなくその試合が予選かどうかで決める
+          isLeague={awaiting.group !== undefined || state.format === 'league'}
           httpBase={httpBase}
           // 回戦ごとのマップも「固定マップ運用」— リセットしても引き直されないので
           // 同点の再試合では別マップを選ばせる (バックエンドの discardResult と同じ判定)
@@ -368,6 +455,17 @@ const btnPrimaryWide: React.CSSProperties = {
 
 const btnDanger: React.CSSProperties = {
   ...btnBase, background: HOT_COLOR, fontSize: 11, padding: '6px 14px', flexShrink: 0,
+};
+
+// 3択のトグル。選択中だけ塗る
+const btnChoice: React.CSSProperties = {
+  ...btnBase, background: 'transparent', color: TEXT_SECONDARY,
+  border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM,
+  fontSize: 11, padding: '6px 12px',
+};
+
+const btnChoiceOn: React.CSSProperties = {
+  background: COOL_COLOR, borderColor: COOL_COLOR, color: '#fff',
 };
 
 const btnGhost: React.CSSProperties = {

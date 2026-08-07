@@ -14,7 +14,10 @@ export class DefinitionError extends Error {}
 
 const DEFAULT_LEAGUE_POINTS: LeaguePoints = { win: 3, draw: 1, loss: 0 };
 
-const FORMATS: TournamentFormat[] = ['single-elimination', 'league'];
+const FORMATS: TournamentFormat[] = ['single-elimination', 'league', 'group-then-bracket'];
+
+const DEFAULT_GROUP_COUNT       = 2;
+const DEFAULT_ADVANCE_PER_GROUP = 2;
 
 function asRecord(v: unknown, where: string): Record<string, unknown> {
   if (typeof v !== 'object' || v === null || Array.isArray(v)) {
@@ -87,6 +90,8 @@ function parseRules(v: unknown): TournamentRules {
     thirdPlaceMatch:  asBool(o['thirdPlaceMatch'], false),
     leaguePoints:     lp,
     doubleRoundRobin: asBool(o['doubleRoundRobin'], false),
+    groupCount:       asNumber(o['groupCount'],      DEFAULT_GROUP_COUNT),
+    advancePerGroup:  asNumber(o['advancePerGroup'], DEFAULT_ADVANCE_PER_GROUP),
   };
 }
 
@@ -146,9 +151,51 @@ function parseParticipants(v: unknown): ParticipantDef[] {
       seed = o['seed'];
     }
 
+    // 所属する予選リーグ。groupCount との突き合わせは rules を読んだあと (validateGroups)
+    let group: number | undefined;
+    if (o['group'] !== undefined && o['group'] !== null) {
+      if (typeof o['group'] !== 'number' || !Number.isInteger(o['group']) || o['group'] < 0) {
+        throw new DefinitionError(`participants[${i}].group は0以上の整数である必要があります`);
+      }
+      group = o['group'];
+    }
+
     const program = parseProgram(o['program'], `participants[${i}].program`);
-    return seed === undefined ? { id, name, program } : { id, name, seed, program };
+    const base: ParticipantDef = { id, name, program };
+    if (seed  !== undefined) base.seed  = seed;
+    if (group !== undefined) base.group = group;
+    return base;
   });
+}
+
+/**
+ * 予選リーグの設定を検証する。
+ *
+ * リーグ分けそのもの (group 省略時の自動振り分け) は groupStage.ts の仕事なので、
+ * ここでは「そもそも大会として成立するか」だけを見る。
+ */
+function validateGroupStage(participants: ParticipantDef[], rules: TournamentRules): void {
+  const { groupCount, advancePerGroup } = rules;
+
+  if (!Number.isInteger(groupCount) || groupCount < 2) {
+    throw new DefinitionError(`rules.groupCount は2以上の整数である必要があります (実際の値: ${groupCount})`);
+  }
+  if (!Number.isInteger(advancePerGroup) || advancePerGroup < 1) {
+    throw new DefinitionError(`rules.advancePerGroup は1以上の整数である必要があります (実際の値: ${advancePerGroup})`);
+  }
+  if (participants.length < groupCount * 2) {
+    throw new DefinitionError(
+      `予選${groupCount}リーグには最低${groupCount * 2}人の参加者が必要です (実際の人数: ${participants.length})`,
+    );
+  }
+
+  for (const [i, p] of participants.entries()) {
+    if (p.group !== undefined && p.group >= groupCount) {
+      throw new DefinitionError(
+        `participants[${i}].group は 0〜${groupCount - 1} の範囲で指定してください (実際の値: ${p.group})`,
+      );
+    }
+  }
 }
 
 export interface ParseOptions {
@@ -183,6 +230,19 @@ export function parseTournamentDefinition(raw: unknown, opts: ParseOptions = {})
     formatVersion: asNumber(o['formatVersion'], 1),
     id, name, format: format as TournamentFormat, rules, participants,
   };
+
+  if (def.format === 'group-then-bracket') {
+    validateGroupStage(participants, rules);
+    // 1回戦の顔ぶれは予選の結果で決まるので、明示的な組み合わせ指定は意味を持たない。
+    // 黙って無視すると「指定したのに効かない」になるため、はっきり断る
+    if (o['bracket'] !== undefined && o['bracket'] !== null) {
+      throw new DefinitionError('予選リーグ + 決勝トーナメントでは bracket を指定できません (1回戦は予選の順位で決まります)');
+    }
+    if (o['schedule'] !== undefined && o['schedule'] !== null) {
+      throw new DefinitionError('予選リーグ + 決勝トーナメントでは schedule を指定できません (対戦カードはリーグごとに自動生成されます)');
+    }
+    return def;
+  }
 
   if (o['bracket'] !== undefined && o['bracket'] !== null) {
     const b     = asRecord(o['bracket'], 'bracket');

@@ -1,5 +1,7 @@
 import type { TournamentStatePayload } from '@u15/ws-types';
+import { hasGroupStage } from '@u15/ws-types';
 import { BracketView } from './BracketView';
+import { GroupStageView, type GroupStagePhase } from './GroupStageView';
 import { LeagueTable } from './LeagueTable';
 import { lastConfirmedMatch, winnerNameOf } from '../../lib/tournamentResult';
 import {
@@ -17,9 +19,15 @@ import {
 export interface TournamentStandbyProps {
   state:        TournamentStatePayload;
   displayTitle: string;
+  /** 予選ありのとき、いま出すもの (運営パネルの指定 + 自動追従の結果) */
+  groupPhase?:  GroupStagePhase;
+  /** 予選が終わった直後の据え置き中。見出しを「予選リーグ 最終結果」に差し替える */
+  holdingGroupResult?: boolean;
 }
 
-export function TournamentStandby({ state, displayTitle }: TournamentStandbyProps) {
+export function TournamentStandby({
+  state, displayTitle, groupPhase, holdingGroupResult = false,
+}: TournamentStandbyProps) {
   const finished = lastConfirmedMatch(state);
   const winner   = finished ? winnerNameOf(state, finished) : null;
 
@@ -28,7 +36,12 @@ export function TournamentStandby({ state, displayTitle }: TournamentStandbyProp
       <div style={s.titleWrap}>
         <div style={s.eyebrow}>{displayTitle}</div>
         <div style={s.title}>{state.name}</div>
-        {finished ? (
+        {holdingGroupResult ? (
+          <div style={s.result}>
+            <span style={s.resultLabel}>予選リーグ</span>
+            <span style={s.resultName}>最終結果</span>
+          </div>
+        ) : finished ? (
           <div style={s.result}>
             {/* <span style={s.resultTag}>試合終了</span> */}
             <span style={s.resultLabel}>{finished.label}</span>
@@ -40,7 +53,9 @@ export function TournamentStandby({ state, displayTitle }: TournamentStandbyProp
       </div>
 
       <div style={s.figure}>
-        {state.format === 'league' ? (
+        {hasGroupStage(state.format) ? (
+          <GroupStageView state={state} finishedMatchId={finished?.id ?? null} phase={groupPhase} />
+        ) : state.format === 'league' ? (
           <LeagueTable
             matches={state.matches}
             participants={state.participants}

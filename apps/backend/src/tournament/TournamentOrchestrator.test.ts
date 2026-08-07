@@ -69,6 +69,14 @@ describe('TournamentOrchestrator', () => {
     fs.rmSync(catalogDir(), { recursive: true, force: true });
   });
 
+  describe('観戦画面の表示 (予選なしの大会)', () => {
+    it('切り替える表が無い形式では拒否する', () => {
+      writeCup(cupDef());
+      orch.bind(ROOM, CUP);
+      expect(() => orch.setDisplayView(ROOM, 'groups')).toThrow(TournamentError);
+    });
+  });
+
   describe('bind / unbind', () => {
     it('bind すると状態が配信される', () => {
       writeCup(cupDef());
@@ -529,6 +537,203 @@ describe('TournamentOrchestrator', () => {
 
       const reloaded = loadTournament(CUP)!;
       expect(reloaded.state.matches.find(m => m.id === 'SF1')!.status).toBe('done');
+    });
+  });
+
+  // ── 予選リーグ + 決勝トーナメント ────────────────────────────────────────
+  describe('予選リーグ + 決勝トーナメント', () => {
+    /**
+     * 6人2リーグ×上位2。蛇行配分で A=[p1,p4,p5] / B=[p2,p3,p6]、各リーグ3試合。
+     * 3人リーグにするのは、上位2枠の「外」に控えを1人置いて差し替えを試せるようにするため。
+     */
+    const groupCup = (overrides: Record<string, unknown> = {}) => cupDef({
+      format: 'group-then-bracket',
+      rules: { doubleMode: false, groupCount: 2, advancePerGroup: 2 },
+      participants: Array.from({ length: 6 }, (_, i) => ({
+        id: `p${i + 1}`, name: `T${i + 1}`, seed: i + 1, program: { builtin: 'cpu' },
+      })),
+      ...overrides,
+    });
+
+    /** 予選を全部 slotA の勝ちで終わらせる → 順位は選手番号順に決まる */
+    const finishGroups = () => {
+      for (const m of lastState()!.matches.filter(x => x.group !== undefined)) {
+        orch.setWalkover(ROOM, m.id, 0);
+      }
+    };
+
+    it('予選が終わると決勝進出者が自動で埋まり、1回戦がクロス配置になる', () => {
+      writeCup(groupCup());
+      orch.bind(ROOM, CUP);
+      expect(lastState()!.qualifiers!.every(q => q.pending)).toBe(true);
+      expect(matchOf('SF1').status).toBe('pending');
+
+      finishGroups();
+
+      const qs = lastState()!.qualifiers!;
+      expect(qs.every(q => !q.pending)).toBe(true);
+      expect(qs.map(q => q.participantId)).toEqual(['p1', 'p4', 'p2', 'p3']);
+      // A1 vs B2 / B1 vs A2
+      expect([matchOf('SF1').resolvedA, matchOf('SF1').resolvedB]).toEqual(['p1', 'p3']);
+      expect([matchOf('SF2').resolvedA, matchOf('SF2').resolvedB]).toEqual(['p2', 'p4']);
+      expect(matchOf('SF1').status).toBe('ready');
+    });
+
+    it('予選の引き分けはそのまま確定できる (決勝の引き分けは拒否する)', () => {
+      writeCup(groupCup());
+      orch.bind(ROOM, CUP);
+
+      orch.setWalkover(ROOM, 'G1-D1M1', null);
+      expect(() => orch.confirmResult(ROOM, 'G1-D1M1')).not.toThrow();
+
+      finishGroups();
+      orch.setWalkover(ROOM, 'SF1', null);
+      expect(() => orch.confirmResult(ROOM, 'SF1')).toThrow(TournamentError);
+    });
+
+    it('決勝進出者を差し替えるとトーナメント表の顔ぶれが変わり、null で自動に戻る', () => {
+      writeCup(groupCup());
+      orch.bind(ROOM, CUP);
+      finishGroups();
+      expect(matchOf('SF1').resolvedA).toBe('p1');
+
+      orch.setQualifier(ROOM, 0, 1, 'p5');
+      expect(matchOf('SF1').resolvedA).toBe('p5');
+      expect(lastState()!.qualifiers![0]!.manualParticipantId).toBe('p5');
+      expect(lastState()!.qualifiers![0]!.autoParticipantId).toBe('p1');
+
+      orch.setQualifier(ROOM, 0, 1, null);
+      expect(matchOf('SF1').resolvedA).toBe('p1');
+    });
+
+    it('そのリーグの所属でない人は指定できない', () => {
+      writeCup(groupCup());
+      orch.bind(ROOM, CUP);
+      finishGroups();
+      expect(() => orch.setQualifier(ROOM, 0, 1, 'p2')).toThrow(TournamentError);
+    });
+
+    it('同じ人を2つの枠に入れられない', () => {
+      writeCup(groupCup());
+      orch.bind(ROOM, CUP);
+      finishGroups();
+      // 2位の枠には自動で p4 が入っている
+      expect(() => orch.setQualifier(ROOM, 0, 1, 'p4')).toThrow(TournamentError);
+    });
+
+    it('準備中の試合が使う枠は差し替えられない', async () => {
+      writeCup(groupCup());
+      orch.bind(ROOM, CUP);
+      finishGroups();
+      orch.confirmQualifiers(ROOM, true);
+      await orch.armMatch(ROOM, 'SF1');
+
+      expect(() => orch.setQualifier(ROOM, 0, 1, 'p5')).toThrow(TournamentError);
+    });
+
+    it('実施済みの試合が使う枠は cascade なしでは差し替えられない', () => {
+      writeCup(groupCup());
+      orch.bind(ROOM, CUP);
+      finishGroups();
+      orch.setWalkover(ROOM, 'SF1', 0);
+
+      expect(() => orch.setQualifier(ROOM, 0, 1, 'p5')).toThrow(TournamentError);
+
+      // cascade を付ければ結果ごと巻き戻して差し替わる
+      orch.setQualifier(ROOM, 0, 1, 'p5', true);
+      expect(matchOf('SF1').result).toBeUndefined();
+      expect(matchOf('SF1').resolvedA).toBe('p5');
+    });
+
+    it('予選をやり直すと決勝トーナメントも巻き戻る', () => {
+      writeCup(groupCup());
+      orch.bind(ROOM, CUP);
+      finishGroups();
+      orch.setWalkover(ROOM, 'SF1', 0);
+
+      expect(() => orch.reopenMatch(ROOM, 'G1-D1M1')).toThrow(TournamentError);
+      orch.reopenMatch(ROOM, 'G1-D1M1', true);
+
+      expect(matchOf('SF1').status).toBe('pending');
+      expect(lastState()!.qualifiers!.slice(0, 2).every(q => q.pending)).toBe(true);
+    });
+
+    it('予選が終わるまで決勝進出者は確定できない', () => {
+      writeCup(groupCup());
+      orch.bind(ROOM, CUP);
+      expect(lastState()!.qualifiersConfirmed).toBe(false);
+      expect(() => orch.confirmQualifiers(ROOM, true)).toThrow(TournamentError);
+    });
+
+    it('確定するまで決勝トーナメントの試合は準備できない', async () => {
+      writeCup(groupCup());
+      orch.bind(ROOM, CUP);
+      finishGroups();
+      expect(matchOf('SF1').status).toBe('ready');
+
+      await expect(orch.armMatch(ROOM, 'SF1')).rejects.toThrow(TournamentError);
+
+      orch.confirmQualifiers(ROOM, true);
+      expect(lastState()!.qualifiersConfirmed).toBe(true);
+      await expect(orch.armMatch(ROOM, 'SF1')).resolves.toBeUndefined();
+    });
+
+    it('予選の試合は確定前でも準備できる (確定は決勝の手前の関門)', async () => {
+      writeCup(groupCup());
+      orch.bind(ROOM, CUP);
+      await expect(orch.armMatch(ROOM, 'G1-D1M1')).resolves.toBeUndefined();
+    });
+
+    it('予選をやり直すと確定も外れる', () => {
+      writeCup(groupCup());
+      orch.bind(ROOM, CUP);
+      finishGroups();
+      orch.confirmQualifiers(ROOM, true);
+
+      orch.reopenMatch(ROOM, 'G1-D1M1', true);
+      // 予選が終わっていない状態では確定は意味を持たない (payload で false に倒す)
+      expect(lastState()!.qualifiersConfirmed).toBe(false);
+
+      // やり直した試合を入れ直せば、また確定できる
+      orch.setWalkover(ROOM, 'G1-D1M1', 0);
+      expect(lastState()!.qualifiersConfirmed).toBe(false);
+      orch.confirmQualifiers(ROOM, true);
+      expect(lastState()!.qualifiersConfirmed).toBe(true);
+    });
+
+    it('確定は取り消せる', () => {
+      writeCup(groupCup());
+      orch.bind(ROOM, CUP);
+      finishGroups();
+      orch.confirmQualifiers(ROOM, true);
+      orch.confirmQualifiers(ROOM, false);
+      expect(lastState()!.qualifiersConfirmed).toBe(false);
+    });
+
+    it('観戦画面の表示を切り替えられる (既定は進行に追従)', () => {
+      writeCup(groupCup());
+      orch.bind(ROOM, CUP);
+      expect(lastState()!.displayView).toBe('auto');
+
+      orch.setDisplayView(ROOM, 'bracket');
+      expect(lastState()!.displayView).toBe('bracket');
+
+      // 予選の試合を進めても運営の指定は残る (勝手に戻らない)
+      orch.setWalkover(ROOM, 'G1-D1M1', 0);
+      expect(lastState()!.displayView).toBe('bracket');
+
+      orch.setDisplayView(ROOM, 'auto');
+      expect(lastState()!.displayView).toBe('auto');
+    });
+
+    it('予選の節にはマップを個別指定できない', () => {
+      writeCup(groupCup());
+      orch.bind(ROOM, CUP);
+
+      expect(() => orch.setStageMap(ROOM, 0, 'some-map')).toThrow(TournamentError);
+      // 決勝トーナメントの回戦は指定できる (index は予選ぶんを含めた通し番号)
+      const bracketStage = lastState()!.stageLabels.findIndex(l => l === '準決勝');
+      expect(() => orch.setStageMap(ROOM, bracketStage, null)).not.toThrow();
     });
   });
 });

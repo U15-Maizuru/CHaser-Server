@@ -4,30 +4,39 @@ import type {
   ResolvedParticipant,
   ServerStatusPayload,
   TournamentMatch,
+  TournamentDisplayView,
+  TournamentFormat,
   TournamentMatchResult,
   TournamentStatePayload,
   WsMessage,
 } from '@u15/ws-types';
-import { computeSetResult } from '@u15/ws-types';
+import { computeSetResult, groupLabel, hasBracket, hasGroupStage } from '@u15/ws-types';
 import type { RoomManager } from '../RoomManager.js';
 import { buildProcessConfig } from '../game/processConfig.js';
 import { getCatalogEntry } from '../programCatalog.js';
 import {
   assignProgram,
   buildStatePayload,
+  groupsOf,
   loadTournament,
   mapForMatch,
   mapForStage,
+  qualifiersConfirmedOf,
+  qualifiersOf,
+  resolveContextOf,
   resolveParticipants,
   saveState,
   scanTournaments,
   stageCountOf,
   type LoadedTournament,
 } from './TournamentStore.js';
+import { groupStageCountOf, isGroupStageDone } from './groupStage.js';
+import { qualifierKey } from './qualifiers.js';
 import {
   captureResult,
   confirmResult as confirmInGraph,
   discardResult as discardInGraph,
+  downstreamOf,
   hasConfirmedDownstream,
   reopenMatch as reopenInGraph,
   setWalkover as walkoverInGraph,
@@ -49,6 +58,8 @@ interface Binding {
   tournamentId: string;
   loaded:       LoadedTournament;
   armedMatchId: string | null;
+  /** 観戦画面に出すもの。運営席の表示とは独立 (armedMatchId と同じくプロセス内の状態) */
+  displayView:  TournamentDisplayView;
   listener:     (st: ServerStatusPayload) => void;
   keepalive:    ReturnType<typeof setInterval>;
 }
@@ -108,6 +119,7 @@ export class TournamentOrchestrator {
       tournamentId,
       loaded,
       armedMatchId: null,
+      displayView:  'auto',
       listener,
       keepalive: setInterval(() => this.deps.rm.touchRoom(roomId), KEEPALIVE_MS),
     };
@@ -170,6 +182,13 @@ export class TournamentOrchestrator {
     if (!match.resolvedA || !match.resolvedB) {
       throw new TournamentError('対戦相手がまだ確定していません');
     }
+    // 予選ありの大会では、決勝進出者を運営が確定するまで決勝トーナメントを始めない。
+    // 自動判定は必ず枠を埋めるので、確認を挟まないと同点の枠を誰も見ないまま
+    // 決勝が始まってしまう
+    if (isKnockoutMatch(b.loaded.def.format, match) && hasGroupStage(b.loaded.def.format)
+      && !qualifiersConfirmedOf(b.loaded)) {
+      throw new TournamentError('先に決勝進出者を確定してください');
+    }
 
     const participants = resolveParticipants(b.loaded);
     const a  = this.requireParticipant(participants, match.resolvedA);
@@ -219,8 +238,9 @@ export class TournamentOrchestrator {
     if (!match.result) throw new TournamentError('確定できる結果がありません');
 
     const decided = winnerSide !== undefined ? winnerSide : match.result.winnerSide;
-    if (decided === null && b.loaded.def.format !== 'league') {
-      // トーナメントで勝者不在のまま確定すると勝ち上がりが決まらず詰む
+    // **判定は形式ではなく試合ごと。** 予選リーグの引き分けは正当な結果で勝ち点1が付くが、
+    // 勝ち上がりの試合で勝者不在のまま確定すると次の対戦が決まらず詰む
+    if (decided === null && isKnockoutMatch(b.loaded.def.format, match)) {
       throw new TournamentError('同点です。再試合するか、勝者を指定してください');
     }
 
@@ -231,7 +251,7 @@ export class TournamentOrchestrator {
     }
     if (note !== undefined) patch.note = note;
 
-    this.commit(b, confirmInGraph(b.loaded.state.matches, matchId, patch));
+    this.commit(b, confirmInGraph(b.loaded.state.matches, matchId, patch, Date.now(), this.ctx(b)));
     if (b.armedMatchId === matchId) b.armedMatchId = null;
     this.publish(roomId);
   }
@@ -256,8 +276,8 @@ export class TournamentOrchestrator {
       throw new TournamentError('同点の再試合ではマップを変更してください (別のマップを選んでから実行してください)');
     }
 
-    this.commit(b, discardInGraph(b.loaded.state.matches, matchId, rematchMapCatalogId));
-    if (b.armedMatchId === matchId) b.armedMatchId = null;
+    this.commit(b, discardInGraph(b.loaded.state.matches, matchId, rematchMapCatalogId, this.ctx(b)));
+    this.disarmIfCleared(b, matchId);
     this.publish(roomId);
   }
 
@@ -268,8 +288,8 @@ export class TournamentOrchestrator {
     if (!cascade && hasConfirmedDownstream(b.loaded.state.matches, matchId)) {
       throw new TournamentError('この試合より後の結果も取り消されます。確認のうえ実行してください');
     }
-    this.commit(b, reopenInGraph(b.loaded.state.matches, matchId));
-    if (b.armedMatchId === matchId) b.armedMatchId = null;
+    this.commit(b, reopenInGraph(b.loaded.state.matches, matchId, this.ctx(b)));
+    this.disarmIfCleared(b, matchId);
     this.publish(roomId);
   }
 
@@ -277,7 +297,7 @@ export class TournamentOrchestrator {
   setWalkover(roomId: string, matchId: string, winnerSide: 0 | 1 | null): void {
     const b = this.require(roomId);
     this.requireMatch(b, matchId);
-    this.commit(b, walkoverInGraph(b.loaded.state.matches, matchId, winnerSide));
+    this.commit(b, walkoverInGraph(b.loaded.state.matches, matchId, winnerSide, Date.now(), this.ctx(b)));
     if (b.armedMatchId === matchId) b.armedMatchId = null;
     this.publish(roomId);
   }
@@ -296,8 +316,11 @@ export class TournamentOrchestrator {
     if (!Number.isInteger(stage) || stage < 0 || stage >= count) {
       throw new TournamentError('その回戦は存在しません');
     }
-    if (b.loaded.def.format !== 'single-elimination') {
+    if (!hasBracket(b.loaded.def.format)) {
       throw new TournamentError('回戦ごとのマップはトーナメント (勝ち上がり) でのみ設定できます');
+    }
+    if (stage < groupStageCountOf(b.loaded.state.matches)) {
+      throw new TournamentError('予選リーグの節にはマップを個別指定できません (大会の設定が使われます)');
     }
 
     const overrides = { ...(b.loaded.state.stageMapOverrides ?? {}), [String(stage)]: mapCatalogId };
@@ -318,6 +341,131 @@ export class TournamentOrchestrator {
       if (manager && mapId) manager.loadMap(mapId);
     }
 
+    this.publish(roomId);
+  }
+
+  /**
+   * 決勝進出者を運営が差し替える。`participantId: null` で自動判定に戻す。
+   *
+   * 公式ルールの同点処理 (勝ち点 → 合計ポイント → 直接対決) でも並びが決まらないことは
+   * 通常運用で起こる。自動判定は必ず枠を埋めるので決勝は始められるが、その中身を人が
+   * 最終的に決め直せるようにするための操作。
+   */
+  setQualifier(
+    roomId: string, group: number, rank: number,
+    participantId: string | null, cascade = false,
+  ): void {
+    const b = this.require(roomId);
+    if (b.loaded.def.format !== 'group-then-bracket') {
+      throw new TournamentError('この大会には予選リーグがありません');
+    }
+
+    const slots = qualifiersOf(b.loaded) ?? [];
+    const slot  = slots.find(s => s.group === group && s.rank === rank);
+    if (!slot) throw new TournamentError('その枠は存在しません');
+
+    if (participantId !== null) {
+      const groupIds = groupsOf(b.loaded.def)[group] ?? [];
+      if (!groupIds.includes(participantId)) {
+        throw new TournamentError(`${this.nameOf(b, participantId)} は${groupLabel(group)}リーグの参加者ではありません`);
+      }
+      // 差し替えた「あと」の顔ぶれで重複を見る。自動判定は順位表の位置で埋まるので、
+      // 手動で1人繰り上げると別の枠の自動値と衝突することがある
+      const after = slots.map(s => (
+        s.group === group && s.rank === rank ? participantId : s.participantId
+      ));
+      const dup = after.filter(id => id === participantId).length > 1;
+      if (dup) {
+        throw new TournamentError(
+          `${this.nameOf(b, participantId)} は既に別の枠に入っています。先にそちらを変更してください`,
+        );
+      }
+    }
+
+    // その枠を使う1回戦が動いていたら、結果と食い違うので先に巻き戻す必要がある
+    const first = this.firstRoundMatchOf(b, group, rank);
+    if (first && first.status !== 'pending' && first.status !== 'ready') {
+      const playedByHand = first.status === 'done' && !(first.byeA || first.byeB);
+      if (first.status === 'armed' || first.status === 'in_progress' || first.status === 'awaiting_confirm') {
+        throw new TournamentError(
+          `「${first.label}」が準備中・対戦中です。先にリセットしてから変更してください`,
+        );
+      }
+      if (playedByHand && !cascade) {
+        throw new TournamentError(
+          `「${first.label}」は実施済みです。この変更でその結果も取り消されます。確認のうえ実行してください`,
+        );
+      }
+    }
+
+    const overrides = { ...(b.loaded.state.qualifierOverrides ?? {}) };
+    if (participantId === null) delete overrides[qualifierKey(group, rank)];
+    else overrides[qualifierKey(group, rank)] = participantId;
+
+    b.loaded = {
+      ...b.loaded,
+      state: { ...b.loaded.state, qualifierOverrides: overrides, updatedAt: Date.now() },
+    };
+
+    // 差し替えで顔ぶれが変わる試合と、その下流の結果は捨てる。
+    // 残すと「戦っていない相手に勝った」という記録ができてしまう
+    const matches = first
+      ? reopenInGraph(b.loaded.state.matches, first.id, this.ctx(b))
+      : b.loaded.state.matches;
+    this.commit(b, matches);
+    if (first) this.disarmIfCleared(b, first.id);
+    this.publish(roomId);
+  }
+
+  /** その枠 (リーグ・順位) を参照している1回戦の試合 */
+  private firstRoundMatchOf(
+    b: Binding, group: number, rank: number,
+  ): TournamentMatch | undefined {
+    return b.loaded.state.matches.find(m =>
+      [m.slotA, m.slotB].some(r =>
+        r.kind === 'group-rank' && r.group === group && r.rank === rank));
+  }
+
+  private nameOf(b: Binding, participantId: string): string {
+    return b.loaded.def.participants.find(p => p.id === participantId)?.name ?? participantId;
+  }
+
+  /**
+   * 決勝進出者を「この顔ぶれで始める」と確定する / 確定を取り消す。
+   *
+   * 予選が終わっても自動では決勝へ進ませない。観戦画面はここが true になるまで
+   * 予選の最終結果を出し続けるので、観客が順位と勝ち上がりを見る時間になり、
+   * 同時に運営が同点の枠を見直す機会にもなる。
+   */
+  confirmQualifiers(roomId: string, confirmed: boolean): void {
+    const b = this.require(roomId);
+    if (!hasGroupStage(b.loaded.def.format)) {
+      throw new TournamentError('この大会には予選リーグがありません');
+    }
+    if (confirmed && !isGroupStageDone(b.loaded.state.matches)) {
+      throw new TournamentError('予選リーグがまだ終わっていません');
+    }
+
+    b.loaded = {
+      ...b.loaded,
+      state: { ...b.loaded.state, qualifiersConfirmed: confirmed, updatedAt: Date.now() },
+    };
+    saveState(b.loaded.state);
+    this.publish(roomId);
+  }
+
+  /**
+   * 観戦画面に出すものを切り替える。
+   *
+   * **運営席 (?mode=tournament) の表示とは連動しない。** 観客には予選表を出したまま、
+   * 手元では決勝の組み合わせを確認したい、という場面があるため別々に持つ。
+   */
+  setDisplayView(roomId: string, view: TournamentDisplayView): void {
+    const b = this.require(roomId);
+    if (!hasGroupStage(b.loaded.def.format)) {
+      throw new TournamentError('この大会には切り替える表がありません');
+    }
+    b.displayView = view;
     this.publish(roomId);
   }
 
@@ -374,6 +522,7 @@ export class TournamentOrchestrator {
         // (この時点で state.json に保存するので、以降にリセットされても結果は失われない)
         this.commit(b, captureResult(
           b.loaded.state.matches, armedId, buildMatchResult(st.roundResults.slice(0, expected)),
+          this.ctx(b),
         ));
         this.publish(roomId);
         return;
@@ -435,19 +584,57 @@ export class TournamentOrchestrator {
     this.commit(b, b.loaded.state.matches.map(m => (m.id === matchId ? fn(m) : m)));
   }
 
+  /** group-rank を解くための文脈 (予選を持たない大会では空) */
+  private ctx(b: Binding) {
+    return resolveContextOf(b.loaded);
+  }
+
+  /**
+   * 巻き戻しで準備済みの試合まで消えたら、armed の記録も落とす。
+   *
+   * armedMatchId は ServerManager のスロット割り当てと対になっている。グラフ側だけ
+   * pending に戻ると、onServerStatus が「pending の試合を対戦中にする」という
+   * 辻褄の合わない遷移をしてしまう。
+   */
+  private disarmIfCleared(b: Binding, matchId: string): void {
+    if (!b.armedMatchId) return;
+    if (b.armedMatchId === matchId
+      || downstreamOf(b.loaded.state.matches, matchId).has(b.armedMatchId)) {
+      b.armedMatchId = null;
+    }
+  }
+
   private commit(b: Binding, matches: TournamentMatch[]): void {
-    b.loaded = { ...b.loaded, state: { ...b.loaded.state, matches, updatedAt: Date.now() } };
+    const state = { ...b.loaded.state, matches, updatedAt: Date.now() };
+    // 予選が「終わっていない」状態に戻ったら確定も外す。取り消して入れ直せば順位が
+    // 変わっているかもしれないので、確定はやり直してもらう。
+    // **試合を書き換える経路はすべてここを通る**ので、巻き戻しの種類ごとに書かなくてよい
+    if (state.qualifiersConfirmed && !isGroupStageDone(matches)) state.qualifiersConfirmed = false;
+
+    b.loaded = { ...b.loaded, state };
     saveState(b.loaded.state);
   }
 
   private payloadFor(roomId: string): TournamentStatePayload | null {
     const b = this.byRoom.get(roomId);
-    return b ? buildStatePayload(b.loaded, roomId, b.armedMatchId) : null;
+    return b ? buildStatePayload(b.loaded, roomId, b.armedMatchId, b.displayView) : null;
   }
 
   private publish(roomId: string): void {
     this.deps.broadcast(roomId, { type: 'tournament_state', payload: this.payloadFor(roomId) });
   }
+}
+
+/**
+ * 勝ち上がりの試合か (= 勝者不在のまま確定できない試合か)。
+ *
+ * 形式**と**試合の両方を見る:
+ *   league             … 勝ち上がりが無いので常に false (引き分けはそのまま確定できる)
+ *   single-elimination … 常に true
+ *   group-then-bracket … 1つの大会に予選と決勝が同居するので、group の有無で分ける
+ */
+function isKnockoutMatch(format: TournamentFormat, m: TournamentMatch): boolean {
+  return hasBracket(format) && m.group === undefined;
 }
 
 /** 完了したゲーム結果から、試合の結果レコードを組み立てる */

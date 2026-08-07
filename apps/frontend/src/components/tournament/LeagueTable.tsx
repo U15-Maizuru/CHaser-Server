@@ -15,9 +15,25 @@ import {
 // 順位で並ぶのは下段の順位表だけ。
 
 export interface LeagueTableProps {
+  /**
+   * この表に出す試合。予選リーグでは**そのリーグのぶんだけ**渡すこと —
+   * cellOf は対戦相手の組み合わせで試合を引くので、他リーグや決勝トーナメントの
+   * 試合が混ざると同じ顔合わせを拾ってしまう。
+   */
   matches:      TournamentMatch[];
+  /** この表の軸 (エントリー順)。予選リーグではそのリーグの参加者だけ */
   participants: ResolvedParticipant[];
   standings:    StandingRow[];
+  /** 「Aリーグ」のような見出し。予選リーグが複数あるときに要る */
+  title?:       string;
+  /**
+   * 見出し・星取表・順位表を「囲みの無い3つの塊」として並べて返す。
+   *
+   * 予選リーグを横に並べるとき、リーグごとにチーム数が違うと星取表の高さが変わり、
+   * その下の順位表の位置がリーグ間でずれてしまう。呼び出し側で CSS グリッドの
+   * 行にそろえられるよう、まとめる div を外して個々の塊を直接返す。
+   */
+  gridCells?:   boolean;
   interactive?: boolean;
   onSelect?:    (matchId: string) => void;
   /** 「この試合を準備」で確定した、これから行う試合 */
@@ -31,7 +47,8 @@ export interface LeagueTableProps {
 }
 
 export function LeagueTable({
-  matches, participants, standings, interactive = false, onSelect,
+  matches, participants, standings, title, gridCells = false,
+  interactive = false, onSelect,
   upcomingMatchId = null, finishedMatchId = null, fit = false, maxScale = 3,
 }: LeagueTableProps) {
   const nameOf = (id: string) => participants.find(p => p.id === id)?.name ?? id;
@@ -58,12 +75,10 @@ export function LeagueTable({
     return { text: aWon ? '○' : '●', match: m, tone: aWon ? 'win' : 'loss' };
   };
 
-  const body = (
-    <div style={wrap}>
-      {/* fit のときは2つの表を横に並べる。縦に積むと高さで頭打ちになり、
-          横長の画面では拡大できる余地を捨ててしまう */}
-      <div style={fit ? tablesRow : tablesColumn}>
-      {/* ── 星取表 ── */}
+  // ── 星取表 (凡例つき) ──
+  // 凡例は星取表のすぐ下に置く。順位表の下に置くと、何の記号の説明なのかが離れて分かりにくい
+  const crossTable = (
+    <div style={crossWrap}>
       <div style={scroller}>
         <table style={table}>
           <thead>
@@ -120,10 +135,16 @@ export function LeagueTable({
           </tbody>
         </table>
       </div>
+      <div style={legend}>
+        ○ 勝ち ・ △ 引き分け ・ ● 負け{upcoming ? ' ・ ▶ 次の試合' : ''}
+      </div>
+    </div>
+  );
 
-      {/* ── 順位表 ── */}
-      <div style={scroller}>
-        <table style={table}>
+  // ── 順位表 ──
+  const standingsTable = (
+    <div style={scroller}>
+      <table style={table}>
           <thead>
             <tr>
               <th style={th}>順位</th>
@@ -152,12 +173,26 @@ export function LeagueTable({
               </tr>
             ))}
           </tbody>
-        </table>
-      </div>
-      </div>
+      </table>
+    </div>
+  );
 
-      <div style={legend}>
-        ○ 勝ち ・ △ 引き分け ・ ● 負け ・ ・ 未消化{upcoming ? ' ・ ▶ 次の試合' : ''}
+  const heading = title ? <div style={tableTitle}>{title}</div> : <div />;
+
+  // グリッドの行にそろえる場合は、まとめる div を外して3つの塊をそのまま返す。
+  // 呼び出し側が同じ行に並べることで、星取表の高さが違っても順位表の上端がそろう
+  if (gridCells) {
+    return <>{heading}{crossTable}{standingsTable}</>;
+  }
+
+  const body = (
+    <div style={wrap}>
+      {title && <div style={tableTitle}>{title}</div>}
+      {/* fit のときは2つの表を横に並べる。縦に積むと高さで頭打ちになり、
+          横長の画面では拡大できる余地を捨ててしまう */}
+      <div style={fit ? tablesRow : tablesColumn}>
+        {crossTable}
+        {standingsTable}
       </div>
     </div>
   );
@@ -177,6 +212,14 @@ const wrap: React.CSSProperties = {
 };
 
 const scroller: React.CSSProperties = { overflowX: 'auto', maxWidth: '100%' };
+
+const crossWrap: React.CSSProperties = {
+  display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, alignItems: 'flex-start',
+};
+
+const tableTitle: React.CSSProperties = {
+  fontSize: 14, fontWeight: 700, color: TEXT_PRIMARY,
+};
 
 const tablesColumn: React.CSSProperties = {
   display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0,

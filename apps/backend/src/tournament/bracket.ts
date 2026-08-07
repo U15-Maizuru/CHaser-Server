@@ -61,6 +61,18 @@ export interface BuildBracketOptions {
   thirdPlaceMatch: boolean;
   /** 明示的な1回戦の並び。長さは2の冪、null は bye */
   slots?: (string | null)[];
+  /**
+   * 1回戦の中身を参照で直接指定する (予選リーグの順位から勝ち上がる場合)。
+   * これを渡すと participants は使わない — 決勝トーナメントの出場者は組み立て時点では未定だから。
+   */
+  firstRoundRefs?: MatchSlotRef[];
+  /**
+   * stage 番号に足すゲタ (予選のうしろに置くとき)。
+   *
+   * **id と label は決勝トーナメント内の相対 stage のまま**にすること —
+   * ゲタを混ぜると matchId が 'SF1' ではなく 'R3M1' になってしまう。
+   */
+  stageOffset?: number;
 }
 
 /**
@@ -75,18 +87,27 @@ export function buildBracket(
   opts: BuildBracketOptions,
 ): TournamentMatch[] {
   const ordered = orderBySeed(participants);
-  if (ordered.length === 0) return [];
+  // 1回戦を参照で渡された場合は participants が空でも組み立てる
+  // (決勝トーナメントの出場者は予選が終わるまで決まらない)
+  if (ordered.length === 0 && !opts.firstRoundRefs) return [];
 
-  let firstRound: (string | null)[];
-  if (opts.slots && opts.slots.length > 0) {
-    firstRound = [...opts.slots];
-    // 長さを2の冪に切り上げ (足りない分は bye)
+  const offset = opts.stageOffset ?? 0;
+
+  let firstRound: MatchSlotRef[];
+  if (opts.firstRoundRefs && opts.firstRoundRefs.length > 0) {
+    firstRound = [...opts.firstRoundRefs];
     const size = bracketSizeFor(firstRound.length);
-    while (firstRound.length < size) firstRound.push(null);
+    while (firstRound.length < size) firstRound.push({ kind: 'bye' });
+  } else if (opts.slots && opts.slots.length > 0) {
+    const slots = [...opts.slots];
+    // 長さを2の冪に切り上げ (足りない分は bye)
+    const size = bracketSizeFor(slots.length);
+    while (slots.length < size) slots.push(null);
+    firstRound = slots.map(s => slotRef(s));
   } else {
     const size  = bracketSizeFor(ordered.length);
     const order = seedOrder(size);
-    firstRound  = order.map(seedNo => ordered[seedNo - 1]?.id ?? null);
+    firstRound  = order.map(seedNo => slotRef(ordered[seedNo - 1]?.id ?? null));
   }
 
   const size = firstRound.length;
@@ -105,9 +126,9 @@ export function buildBracket(
     const id = matchId(0, i, totalStages);
     firstIds.push(id);
     matches.push(emptyMatch(
-      id, 0, i, matchLabel(0, i, firstCount, totalStages),
-      slotRef(firstRound[i * 2] ?? null),
-      slotRef(firstRound[i * 2 + 1] ?? null),
+      id, 0 + offset, i, matchLabel(0, i, firstCount, totalStages),
+      firstRound[i * 2] ?? { kind: 'bye' },
+      firstRound[i * 2 + 1] ?? { kind: 'bye' },
     ));
   }
 
@@ -120,7 +141,7 @@ export function buildBracket(
       const id = matchId(stage, i, totalStages);
       ids.push(id);
       matches.push(emptyMatch(
-        id, stage, i, matchLabel(stage, i, count, totalStages),
+        id, stage + offset, i, matchLabel(stage, i, count, totalStages),
         { kind: 'winner-of', matchId: prevIds[i * 2]! },
         { kind: 'winner-of', matchId: prevIds[i * 2 + 1]! },
       ));
@@ -130,10 +151,11 @@ export function buildBracket(
 
   // 3位決定戦: 準決勝2つの敗者。準決勝が存在する (4人以上) ときだけ
   if (opts.thirdPlaceMatch && totalStages >= 2) {
-    const semis = matches.filter(m => m.stage === totalStages - 2);
+    // m.stage はゲタ込みなので、比較する側もゲタを足す
+    const semis = matches.filter(m => m.stage === totalStages - 2 + offset);
     if (semis.length === 2) {
       matches.push(emptyMatch(
-        'THIRD', totalStages - 1, 1, '3位決定戦',
+        'THIRD', totalStages - 1 + offset, 1, '3位決定戦',
         { kind: 'loser-of', matchId: semis[0]!.id },
         { kind: 'loser-of', matchId: semis[1]!.id },
       ));

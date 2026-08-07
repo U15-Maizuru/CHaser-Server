@@ -1,6 +1,9 @@
 import type { StandingRow, TournamentMatch } from '@u15/ws-types';
+import { groupLabel } from '@u15/ws-types';
 import { computeStandings } from './standings.js';
-import { resolveParticipants, type LoadedTournament } from './TournamentStore.js';
+import {
+  groupStandingsOf, qualifiersOf, resolveParticipants, type LoadedTournament,
+} from './TournamentStore.js';
 
 // 大会結果の書き出し。大会後の記録・表彰に使う。
 
@@ -45,7 +48,7 @@ export function matchesCsv(loaded: LoadedTournament): string {
   const nameOf = (id: string | null) => (id ? ps.find(p => p.id === id)?.name ?? id : '');
 
   const header = [
-    '試合ID', '回戦', '試合名', '状態',
+    '試合ID', '区分', '回戦', '試合名', '状態',
     'チームA', 'チームB',
     'A勝利数', 'B勝利数', '引分',
     'A合計ポイント', 'B合計ポイント',
@@ -60,8 +63,12 @@ export function matchesCsv(loaded: LoadedTournament): string {
     const r    = m.result;
     const set  = r?.set ?? null;
     const win  = r?.winnerSide;
+    // 予選と決勝トーナメントは stage 番号が地続きなので、区分を出さないと
+    // 「予選 第1節」と「決勝T 1回戦」が同じ数字で並んで見分けられない
     const base: unknown[] = [
-      m.id, m.stage + 1, m.label, statusLabel(m),
+      m.id,
+      m.group === undefined ? '決勝T' : `予選${groupLabel(m.group)}`,
+      m.stage + 1, m.label, statusLabel(m),
       m.byeA ? '(不戦)' : nameOf(m.resolvedA),
       m.byeB ? '(不戦)' : nameOf(m.resolvedB),
       set?.wins[0] ?? '', set?.wins[1] ?? '', set?.draws ?? '',
@@ -92,20 +99,38 @@ export function matchesCsv(loaded: LoadedTournament): string {
   return toCsv(rows);
 }
 
-/** リーグ順位表の CSV */
+const STANDINGS_HEADER = [
+  '順位', 'チーム', '試合数', '勝', '分', '敗', '勝ち点', '合計ポイント', '同順位',
+];
+
+/**
+ * リーグ順位表の CSV。
+ *
+ * 予選リーグがある大会ではリーグごとに見出し行を挟んで続けて出す。1つのファイルに
+ * まとめるのは、運営が「予選の結果」として1枚で持ち帰れるようにするため。
+ */
 export function standingsCsv(loaded: LoadedTournament): string {
   const ps     = resolveParticipants(loaded);
   const nameOf = (id: string) => ps.find(p => p.id === id)?.name ?? id;
-  const rows: unknown[][] = [
-    ['順位', 'チーム', '試合数', '勝', '分', '敗', '勝ち点', '合計ポイント', '同順位'],
+
+  const row = (s: StandingRow): unknown[] => [
+    s.rank, nameOf(s.participantId), s.played, s.wins, s.draws, s.losses,
+    s.points, s.totalPoints, s.tied ? 'はい' : '',
   ];
-  for (const s of standingsOf(loaded)) {
-    rows.push([
-      s.rank, nameOf(s.participantId), s.played, s.wins, s.draws, s.losses,
-      s.points, s.totalPoints, s.tied ? 'はい' : '',
-    ]);
+
+  const groups = groupStandingsOf(loaded);
+  if (groups) {
+    const rows: unknown[][] = [];
+    for (const g of groups) {
+      rows.push([`${g.label}リーグ`]);
+      rows.push(STANDINGS_HEADER);
+      for (const s of g.standings) rows.push(row(s));
+      rows.push([]);
+    }
+    return toCsv(rows);
   }
-  return toCsv(rows);
+
+  return toCsv([STANDINGS_HEADER, ...standingsOf(loaded).map(row)]);
 }
 
 function standingsOf(loaded: LoadedTournament): StandingRow[] {
@@ -124,6 +149,8 @@ export function resultJson(loaded: LoadedTournament): string {
     participants: ps,
     matches:      loaded.state.matches,
     standings:    loaded.def.format === 'league' ? standingsOf(loaded) : null,
+    groups:       groupStandingsOf(loaded),
+    qualifiers:   qualifiersOf(loaded),
     exportedAt:   new Date().toISOString(),
   }, null, 2);
 }

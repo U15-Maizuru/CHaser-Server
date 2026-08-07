@@ -357,3 +357,150 @@ describe('TournamentStore', () => {
     });
   });
 });
+
+// ── 予選リーグ + 決勝トーナメント ──────────────────────────────────────────
+
+describe('TournamentStore (予選リーグ + 決勝トーナメント)', () => {
+  const GID = 'group-cup';
+
+  /** 8人2リーグ×上位2。決勝トーナメントは準決勝2試合 + 決勝 */
+  const DEF_GROUP = {
+    name: '予選リーグ大会',
+    format: 'group-then-bracket',
+    rules: { doubleMode: true, groupCount: 2, advancePerGroup: 2 },
+    participants: Array.from({ length: 8 }, (_, i) => ({
+      id: `p${i + 1}`, name: `T${i + 1}`, seed: i + 1, program: { builtin: 'cpu' },
+    })),
+  };
+
+  beforeEach(() => {
+    ensureCatalogDir();
+    ensureTournamentDir();
+    deleteTournament(GID);
+  });
+
+  afterEach(() => {
+    deleteTournament(GID);
+  });
+
+  it('予選と決勝が1本の試合グラフになる', () => {
+    writeTournament(DEF_GROUP, {}, GID);
+    const loaded = loadTournament(GID)!;
+
+    const groupMatches = loaded.state.matches.filter(m => m.group !== undefined);
+    const bracket      = loaded.state.matches.filter(m => m.group === undefined);
+
+    expect(groupMatches).toHaveLength(12);   // 各リーグ4人 = 6試合 × 2
+    expect(bracket.map(m => m.id).sort()).toEqual(['FINAL', 'SF1', 'SF2']);
+  });
+
+  it('準決勝は予選が終わるまで pending', () => {
+    writeTournament(DEF_GROUP, {}, GID);
+    const loaded = loadTournament(GID)!;
+    expect(loaded.state.matches.find(m => m.id === 'SF1')!.status).toBe('pending');
+  });
+
+  it('回戦ごとのマップは決勝トーナメント相対で書き、予選の節には効かない', () => {
+    writeTournament({
+      ...DEF_GROUP,
+      rules: { ...DEF_GROUP.rules, stageMaps: ['sf-map', 'final-map'] },
+    }, {}, GID);
+    const loaded = loadTournament(GID)!;
+    const payload = buildStatePayload(loaded, 'room', null);
+
+    // 予選3節 + 決勝T2回戦。予選ぶんは常に null になる
+    expect(payload.stageMaps).toEqual([null, null, null, 'sf-map', 'final-map']);
+  });
+
+  it('stage ごとの表示名を配信する (UI が節数を数え直さなくてよい)', () => {
+    writeTournament(DEF_GROUP, {}, GID);
+    const payload = buildStatePayload(loadTournament(GID)!, 'room', null);
+    expect(payload.stageLabels).toEqual([
+      '予選 第1節', '予選 第2節', '予選 第3節', '準決勝', '決勝',
+    ]);
+  });
+
+  it('リーグごとの順位表と決勝進出枠を配信する', () => {
+    writeTournament(DEF_GROUP, {}, GID);
+    const payload = buildStatePayload(loadTournament(GID)!, 'room', null);
+
+    expect(payload.groups!.map(g => g.label)).toEqual(['A', 'B']);
+    expect(payload.groups!.map(g => g.participantIds.length)).toEqual([4, 4]);
+    expect(payload.qualifiers!).toHaveLength(4);
+    expect(payload.qualifiers!.every(q => q.pending)).toBe(true);
+    // 予選を持たない形式の口 (standings) は使わない
+    expect(payload.standings).toBeNull();
+  });
+
+  it('リーグ分けを変えると進行状態を作り直す', () => {
+    writeTournament(DEF_GROUP, {}, GID);
+    const before = loadTournament(GID)!;
+    const target = before.state.matches.find(m => m.group === 0)!;
+    saveState({
+      ...before.state,
+      matches: captureResult(before.state.matches, target.id, {
+        roundResults: [], set: null, decidedBy: 'walkover', winnerSide: 0, capturedAt: 1,
+      }),
+    });
+
+    // p2 を A リーグへ移す
+    writeTournament({
+      ...DEF_GROUP,
+      participants: DEF_GROUP.participants.map(p => (p.id === 'p2' ? { ...p, group: 0 } : p)),
+    }, {}, GID);
+
+    const after = loadTournament(GID)!;
+    expect(after.state.matches.every(m => !m.result)).toBe(true);
+  });
+
+  it('存在しない人を指した手動指定は読み込み時に捨てる', () => {
+    writeTournament(DEF_GROUP, {}, GID);
+    const loaded = loadTournament(GID)!;
+    saveState({
+      ...loaded.state,
+      qualifierOverrides: { '0:1': 'nobody', '0:2': 'p1' },
+    });
+
+    const after = loadTournament(GID)!;
+    expect(after.state.qualifierOverrides).toEqual({ '0:2': 'p1' });
+  });
+});
+
+// ── 既存2形式の退行チェック ────────────────────────────────────────────────
+
+describe('TournamentStore (既存形式に影響していないこと)', () => {
+  beforeEach(() => {
+    ensureCatalogDir();
+    ensureTournamentDir();
+    deleteTournament(ID);
+  });
+  afterEach(() => deleteTournament(ID));
+
+  it('format 未指定はトーナメントのままで、予選の設定は試合グラフに現れない', () => {
+    writeTournament({ ...DEF_4, format: undefined });
+    const loaded = loadTournament(ID)!;
+
+    expect(loaded.def.format).toBe('single-elimination');
+    expect(loaded.state.matches.every(m => m.group === undefined)).toBe(true);
+    expect(loaded.state.matches.some(m => m.slotA.kind === 'group-rank')).toBe(false);
+  });
+
+  it('トーナメントの回戦ごとのマップはゲタ無しで解決される', () => {
+    writeTournament({ ...DEF_4, rules: { stageMaps: ['sf', 'final'] } });
+    const payload = buildStatePayload(loadTournament(ID)!, 'room', null);
+
+    expect(payload.stageMaps).toEqual(['sf', 'final']);
+    expect(payload.stageLabels).toEqual(['準決勝', '決勝']);
+    expect(payload.groups).toBeNull();
+    expect(payload.qualifiers).toBeNull();
+  });
+
+  it('リーグは従来どおり standings を配信し、groups は使わない', () => {
+    writeTournament({ ...DEF_4, format: 'league' });
+    const payload = buildStatePayload(loadTournament(ID)!, 'room', null);
+
+    expect(payload.standings).not.toBeNull();
+    expect(payload.groups).toBeNull();
+    expect(payload.stageLabels.every(l => !l.startsWith('予選'))).toBe(true);
+  });
+});

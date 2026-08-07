@@ -19,7 +19,7 @@
 10. [マルチルーム / Web サービスモード](#10-マルチルーム--web-サービスモード)
 11. [テスト](#11-テスト)
 12. [拡張ガイド](#12-拡張ガイド)
-13. [大会運営 (トーナメント / リーグ)](#13-大会運営-トーナメント--リーグ)
+13. [大会運営 (トーナメント / リーグ / 予選リーグ)](#13-大会運営-トーナメント--リーグ--予選リーグ)
 
 ---
 
@@ -216,7 +216,7 @@ U15-server-maizuru/
 
 ---
 
-> 上記に加えて、大会運営機能のファイルがある (詳細は [13章](#13-大会運営-トーナメント--リーグ)):
+> 上記に加えて、大会運営機能のファイルがある (詳細は [13章](#13-大会運営-トーナメント--リーグ--予選リーグ)):
 > `apps/backend/src/tournament/` (試合グラフ・永続化・オーケストレータ) /
 > `apps/frontend/src/components/tournament/` + `lib/bracketLayout.ts` (トーナメント表) /
 > `packages/ws-types/src/{protocol,scoring,tournament,messages}.ts` (共有型とルール計算) /
@@ -1078,7 +1078,7 @@ const WEB_PORTS: [number, number] = [13000, 14999]; // デフォルト: 最大50
 
 ---
 
-## 13. 大会運営 (トーナメント / リーグ)
+## 13. 大会運営 (トーナメント / リーグ / 予選リーグ)
 
 大会当日の進行 (組み合わせの読み込み → 対戦カードの割り当て → 結果の反映 → 勝ち上がり) を
 サポートする。**トーナメントの1カード = 公式ルールの「試合」= 2ゲーム制の1セット**なので、
@@ -1095,6 +1095,8 @@ const WEB_PORTS: [number, number] = [13000, 14999]; // デフォルト: 最大50
 | `definition.ts` | `tournament.json` の手書きバリデータ (日本語のエラーメッセージを返す) |
 | `bracket.ts` | 【純関数】参加者 → トーナメントの試合グラフ (標準シード順 / bye / 3位決定戦) |
 | `league.ts` | 【純関数】参加者 → リーグの試合グラフ (円卓法で節に分割) |
+| `groupStage.ts` | 【純関数】参加者 → 予選リーグ N 本 + 決勝トーナメントの試合グラフ |
+| `qualifiers.ts` | 【純関数】予選の順位表 → 決勝トーナメントの枠 (同点の印つき) |
 | `standings.ts` | 【純関数】順位表 (勝ち点 → 合計ポイント → 直接対決) |
 | `progress.ts` | 【純関数】slot の解決・bye の自動確定・確定の取り消し |
 | `TournamentStore.ts` | 永続化・フォルダ検出・プログラムライブラリへの取り込み |
@@ -1110,7 +1112,7 @@ server/tournament/<大会id>/
 ├── tournament.json   ← 人が書く。アプリは読むだけで絶対に書き戻さない
 ├── programs/*.py     ← 参加プログラムの原本
 └── state.json        ← アプリが書く進行状態。消せば大会をやり直せる
-                        (matches / programs / stageMapOverrides)
+                        (matches / programs / stageMapOverrides / qualifierOverrides)
 ```
 
 `server/program-catalog` / `server/map-catalog` と同じグローバル層に置く。ルームは 30分 TTL で
@@ -1136,37 +1138,71 @@ server/tournament/<大会id>/
 - **`addCatalogEntry` は渡したファイルを rename する**: 大会フォルダの原本を直接渡さず、
   一時ファイルへコピーしてから渡すこと。登録直後に `setDemoEnabled(id, false)` でデモ抽選から外す。
 - **マップの解決順**: `match.rematchMapCatalogId` → `state.stageMapOverrides[stage]` (運営中の差し替え)
-  → `def.rules.stageMaps[stage]` (回戦ごとの指定) → `def.rules.mapCatalogId` (大会全体)。
+  → `def.rules.stageMaps[stage - 予選の節数]` (回戦ごとの指定) → `def.rules.mapCatalogId` (大会全体)。
+  **`stage` は予選と決勝を通した通し番号 (combined) で統一する。** 運営中の差し替えも
+  `mapForStage` への引数も配信ペイロードの `stageMaps` も全て combined。ゲタを当てるのは
+  「定義に書かれた回戦ごとのマップ」の読み出しだけで、そこだけが決勝トーナメント相対
+  (作成画面が決勝Tの回戦しか出さないため)。予選を持たない形式ではゲタが 0 なので従来と同じ。
   `TournamentStore.mapForMatch()` / `mapForStage()` に一本化してあるので、判定を各所で書き直さないこと。
   配信ペイロードには解決済みの `stageMaps` を載せるため、UI 側でこの順序を再現する必要はない。
   `catalogId` はこの PC でしか通じないので、運営中の差し替えは配布物 (`tournament.json`) ではなく
   `state.json` に書く (`programs` と同じ二層構造)。
+- **`group` の有無が「予選か決勝か」を決める**: `TournamentMatch.group` を持つのは
+  `group-then-bracket` の予選リーグの試合だけ。1つの大会に予選と決勝が同居するので、
+  「引き分けを確定してよいか」「どの順位表に効くか」「マップを個別指定できるか」は
+  **形式ではなく試合ごと**に判定する (`isKnockoutMatch` を参照)。
+- **`group-rank` 参照は「そのリーグの全試合」に依存する**: `downstreamOf` はこれを数える。
+  数えないと、予選をやり直したときに確定済みの準決勝の `resolvedA/B` だけが別人に
+  書き換わり、「戦っていない相手に勝った」という記録ができてしまう。
+  巻き戻しで準備済み (`armed`) の試合まで消えたら `armedMatchId` も落とすこと
+  (`disarmIfCleared`) — グラフだけ `pending` に戻ると、`onServerStatus` が
+  「pending の試合を対戦中にする」という辻褄の合わない遷移をする。
+- **解決文脈 (`ResolveContext`) は末尾の省略可能引数**: `resolveMatches` は
+  `captureResult` / `confirmResult` / `discardResult` / `setWalkover` / `reopenMatch` から
+  内部で呼ばれる。途中に差し込むと既存の呼び出しとテストを軒並み書き換えることになるので、
+  必ず末尾に足す。文脈を渡さない呼び出しは従来どおり動く。
+  なお `ctx.groups` が未指定のとき `group-rank` は **known:false** (まだ分からない) に倒す —
+  空配列として扱うと参加者0人と読めてしまい、不戦勝として勝手に確定してしまう。
+- **自動判定は必ず枠を埋める**: 公式ルールの同点処理でも並びが決まらないことは通常運用で
+  起こるが、そこで枠を空けると決勝が始められなくなる。順位表の「位置」で機械的に埋めたうえで
+  `tied` / `ambiguous` の印を立て、運営が `tournament_set_qualifier` で差し替えられるようにする。
 - **実施順と表示順は別物**: `TournamentMatch.order` は「同一 stage 内の**表示**順」で、
   トーナメント表では決勝 (order 0) が上、3位決定戦 (order 1) がその下に来る。
   一方**実施順は3位決定戦が先** — 決勝を締めくくりにするためで、両者は依存関係が無いので選べる。
   「対戦試合」を出す箇所は必ず `compareByPlayOrder` (`@u15/ws-types`) を使うこと。
   `nextReadyMatch` (backend) と `TournamentPanel` の両方がこれを共有している。
-  なお `resolveMatches` / `downstreamOf` の `stage → order` ソートは依存解決のためのもので、
-  同一 stage 内の順序に意味は無いのでそのままでよい。
+  なお `resolveMatches` / `downstreamOf` の `stage → order` ソートは依存解決のためのもの。
+  ただし**予選リーグでは同一 stage に全リーグの試合が並ぶ**ため、`groupStage.ts` は
+  `order = リーグ内の順 × リーグ数 + リーグ番号` としてリーグ間で衝突しないようにしている
+  (衝突すると `compareByPlayOrder` が同値を返し、次に実施する試合が不定になる)。
 
 ### 13-4. 同点 (`winnerSide === null`) の扱い
 
 `calculateBonusBreakdown` は勝者が定まらない決着では加点しないため、引き分けゲームのポイントは
 アイテム×10 のみになる。1勝1敗や2引き分けで合計が並ぶのは**通常運用の範囲**で起こる。
 
-- **リーグ**: 引き分けは正当な結果。そのまま確定できる。
-- **トーナメント**: `confirmResult` は勝者不在のままの確定を**拒否する** (詰み防止)。UI では
+- **リーグ / 予選リーグの試合**: 引き分けは正当な結果。そのまま確定でき、勝ち点1が付く。
+- **勝ち上がりの試合**: `confirmResult` は勝者不在のままの確定を**拒否する** (詰み防止)。UI では
   ①マップを変更して再試合 ②審判裁定で勝者を指定 ③両者敗退 の3択を出す。
   固定マップ運用 (その試合の実効マップが `null` でない = `mapForStage()` が返す) では、
   公式ルール「マップを変更して再試合」に従い別マップを指定しないと `discardResult` が通らない。
   大会全体はランダムでも、その回戦だけマップを指定していれば同じ扱いになる。
+
+  **判定は形式ではなく試合ごと** (`isKnockoutMatch`)。`group-then-bracket` では1つの大会に
+  予選 (引き分けOK) と決勝 (引き分け不可) が同居する。frontend も同じで、
+  `ResultConfirmDialog` の `isLeague` は `awaiting.group !== undefined` で決める。
+
+  **予選の同点は別の問題**: 試合の勝敗ではなく「順位が決まらない」ケース
+  (勝ち点・合計ポイント・直接対決まで並ぶ) は再試合の対象ではなく、
+  運営が決勝進出者を指名して解決する (13-8)。
 
 ### 13-5. WebSocket / HTTP
 
 `FrontendMessage` に `tournament_bind` / `tournament_unbind` / `tournament_arm_match` /
 `tournament_confirm_result` / `tournament_discard_result` / `tournament_reopen_match` /
 `tournament_set_walkover` / `tournament_assign_program` / `tournament_set_stage_map` /
-`tournament_rescan` を追加。失敗は握りつぶさず `error` メッセージで理由を返す。
+`tournament_set_qualifier` / `tournament_set_display_view` / `tournament_rescan` を追加。
+失敗は握りつぶさず `error` メッセージで理由を返す。
 
 `tournament_set_stage_map` は運営中に回戦のマップを差し替える (`state.json` へ保存)。
 準備済み (`armed`) の試合が同じ回戦なら、その場で `loadMap` し直す — 次の `arm` まで待つと
@@ -1195,8 +1231,11 @@ server/tournament/<大会id>/
 これが無いと編集画面が元の指定を復元できない。
 
 `POST /api/tournament/import` は `?reset=1` で取り込み後に進行状態を作り直す。
-`loadTournament` の噛み合わせ判定 (`stateMatchesDefinition`) は participant id しか見ないので、
-**参加者を変えずに形式やルールだけ変えた上書き**を検知できない。上書き保存では必ず付けること。
+`loadTournament` の噛み合わせ判定 (`stateMatchesDefinition`) は、定義から組み直した試合グラフと
+**骨組みの指紋** (`id | stage | order | group | slotA種別 | slotB種別`) を突き合わせる。
+participant id だけを見ていた頃は「参加者を変えずにルールだけ変えた上書き」も
+「予選のリーグ分けの入れ替え」も素通りしていたが、指紋比較ならその全部が引っかかる。
+それでも上書き保存では `?reset=1` を付けること (意図が明示される)。
 
 運営中 (bind 中) の大会に対する `import` の上書きと `assign` は **409 で拒否する**。
 オーケストレータが進行状態をメモリに握っているため、裏から `state.json` を書き換えると食い違う。
@@ -1210,7 +1249,9 @@ server/tournament/<大会id>/
 | `lib/bracketSlots.ts` | 【純関数】組み合わせ編集のスロット操作 (`autoSlots` / `fitSlots` / 試合数の見積り) |
 | `components/FitArea.tsx` | 中身を親の空きいっぱいまで拡大・縮小して中央に置く入れ物 (`useFitScale`) |
 | `components/tournament/BracketView.tsx` | トーナメント表。接続線は SVG、カードは絶対配置の DOM |
-| `components/tournament/LeagueTable.tsx` | リーグの星取表 + 順位表 (素の DOM) |
+| `components/tournament/LeagueTable.tsx` | リーグの星取表 + 順位表 (素の DOM)。予選では**そのリーグの試合・参加者だけ**を渡す |
+| `components/tournament/GroupStageView.tsx` | 予選リーグ表 N 枚 ⇄ 決勝トーナメント表の切り替え。観戦画面の出し分け (`displayGroupPhase`) もここ |
+| `components/tournament/QualifierSection.tsx` | 決勝進出者の一覧と差し替え (`QualifierPicker` は表のカードからも使う) |
 | `components/tournament/MatchCard.tsx` | 1試合のカード。3画面で共用 (`interactive` で操作の有無を切替) |
 | `components/tournament/TournamentPanel.tsx` | 運営パネル (大会の選択・取り込み・回戦ごとのマップ・次の一手) |
 | `components/tournament/ResultConfirmDialog.tsx` | 結果確定。同点時の3択を出す |
@@ -1256,12 +1297,17 @@ server/tournament/<大会id>/
 
 **シード配置の共有**: 「手動で指定する」の初期値は、サーバーが自動生成するのと
 寸分違わぬ並びでなければならない。そのため `seedOrder` / `bracketSizeFor` / `stageCountFor` /
-`stageLabel` は `@u15/ws-types` (`tournament.ts`) に置き、
+`stageLabel` / `autoGroupAssign` / `groupLabel` / `slotPlaceholder` は
+`@u15/ws-types` (`tournament.ts`) に置き、
 `apps/backend/src/tournament/bracket.ts` はそこから re-export している。二重定義すると必ずズレる。
 
 **回戦ごとのマップ**: 「ルール」欄の下に回戦ぶんのセレクトを出し、`rules.stageMaps`
-(index = stage、`null` は大会の設定に従う) として保存する。回戦数は参加者数だけで決まる
-(`stageCountFor`) ので、参加者を減らして回戦が減ったら余った指定は保存しない。
+(`null` は大会の設定に従う) として保存する。回戦数はトーナメントなら参加者数
+(`stageCountFor(参加者数)`)、予選ありなら進出者数 (`stageCountFor(groupCount × advancePerGroup)`)
+で決まるので、人数を減らして回戦が減ったら余った指定は保存しない。
+**予選ありのとき index は決勝トーナメント相対** (0 = 決勝Tの1回戦)。予選の節は
+「大会の設定」に従うだけなので画面に出さない (節数の算出を frontend に二重定義しないため —
+運営画面では backend が配る `stageLabels` を使う)。
 3位決定戦は決勝と同じ stage なので決勝と同じマップになる。
 運営中は編集画面が開けないため、差し替えは運営パネル (`tournament_set_stage_map`) から行う。
 リーグの節には用意していない (節数の算出を frontend に二重定義することになるため)。
@@ -1269,3 +1315,127 @@ server/tournament/<大会id>/
 **参加者 id の扱い**: 表示順がそのまま `seed` (選手番号 = 第1ゲームの先攻順) になる。
 新しい行には `p01`, `p02`, … を採番するが、**既存の大会を編集するときは元の id を必ず保つ**。
 `state.json` の `programs` マップと `bracket.slots` が id で参照しているため。
+
+### 13-8. 予選リーグ + 決勝トーナメント (`group-then-bracket`)
+
+予選を N リーグ (既定2) の総当たりで行い、各リーグの上位 M 名 (既定2) が決勝トーナメントへ
+勝ち上がる形式。**予選をやらない大会もあるので、既存2形式はそのまま残してある** —
+これは3つ目の選択肢を足しただけで、`single-elimination` / `league` の挙動は変わっていない。
+
+#### 試合グラフは1本にまとめる
+
+```
+stage 0 … g-1     予選の各節 (全リーグが同じ stage を共有。group を持つ)
+stage g … g+b-1   決勝トーナメントの各回戦 (group は undefined)
+```
+
+id は予選が `G1-D1M1` (Gリーグ番号-D節-M試合)、決勝が従来どおり `SF1` / `FINAL` / `THIRD`。
+**予選が必ず先の stage に来る**ことが、`resolveMatches` が `group-rank` を単一パスで
+解ける根拠になっている。この並びを崩さないこと。
+
+#### 拡張点は `MatchSlotRef`
+
+```ts
+| { kind: 'group-rank'; group: number; rank: number }   // 「Aリーグ 1位」
+```
+
+これ1種類を足すだけで、既存の slot 解決・bye の自動確定・下流の巻き戻しがそのまま効く。
+`resolveSlot` は `ResolveContext`（リーグの顔ぶれ・勝ち点・運営の差し替え）を見て解く。
+**リーグの試合は `byId` から取ること** — 引数の配列をそのまま見ると、このパスで bye が
+自動確定したぶんや、組み立て直後で `resolvedA/B` がまだ空の状態を読んでしまう。
+
+#### 1回戦のクロス配置
+
+決勝の1回戦は「(順位昇順, リーグ番号昇順) をシード1..N として `seedOrder` で並べる」だけ。
+2リーグ×上位2なら シードは `A1,B1,A2,B2` → `seedOrder(4)=[1,4,2,3]` → `A1,B2,B1,A2` と並び、
+準決勝が **A1-B2 / B1-A2** という定石の配置になる。専用の組み合わせロジックは持たない。
+
+> 3リーグ以上では1回戦で同リーグ同士が当たる組み合わせが出うる。既定の2リーグでは起きない。
+> 起きた場合は運営が枠を入れ替えて回避できるので、専用の回避ロジックは入れていない。
+
+その順位に届く人数がいないリーグの枠は、**組み立ての時点で `bye` にする**。
+`group-rank` のまま残すと順位表に行が無く、`loadTournament` の中で落ちる。
+
+#### 決勝進出者の自動判定と手動差し替え
+
+`qualifiers.ts` が `QualifierSlot[]` を作り、配信ペイロードに載せる。
+
+| フラグ | 意味 |
+|---|---|
+| `pending` | 予選がまだ終わっていない |
+| `tied` | 順位表でこの順位が同着 |
+| `ambiguous` | 同着が「上がる/上がらない」の境目をまたいでいる = 運営が決めるべき |
+| `bye` | 参加者が足りずこの枠は不戦 |
+
+`ambiguous` は「最後の枠と、その次の人が並んでいる」ときだけ立てる。上位内だけで
+並んでいる (両方上がる) のは運営が決めることが無いので `tied` だけ。
+
+手動指定は `state.json` の `qualifierOverrides`（キーは `"<group>:<rank>"`）へ。
+`stageMapOverrides` と同じ二層構造で、配布物の `tournament.json` は書き換えない。
+`tournament_set_qualifier` は次を拒否する:
+
+- そのリーグの所属でない人
+- 差し替えた**あと**の顔ぶれで重複が出る場合 (自動判定は位置で埋まるので玉突きが起きる)
+- その枠を使う1回戦が準備中・対戦中のとき (先にリセットしてもらう)
+- 実施済みのとき (`cascade` を付ければ結果ごと巻き戻して差し替える)
+
+読み込み時に、今の定義から見て意味を失った指定は黙って捨てる。残すと `armMatch` が
+「参加者が見つかりません」で落ちる — しかも本番の対戦直前に落ちる。
+
+#### 観戦画面に何を出すか
+
+`displayView` (`'auto' | 'groups' | 'bracket'`) を運営パネルから切り替える。
+`armedMatchId` と同じくプロセス内の状態で、`state.json` には残さない。
+
+**運営席 (`?mode=tournament`) のタブとは連動させない。** 観客には予選表を出したまま、
+手元で決勝の組み合わせを確認したい場面があるため、運営席のタブはローカル state のまま、
+観戦画面はサーバー配信の `displayView` だけを見る。`GroupStageView` は `phase` を
+渡されたらそれに従い、渡されなければ自前のタブと自動追従で動く。
+
+`'auto'` の解決は `displayGroupPhase` (純関数。配信された state だけで決まるので、
+どの窓で開いても・いつ開いても同じ画面になる):
+
+- 予選が終わっていない → 予選表
+- **予選が終わっても自動では決勝表へ移らない。運営が決勝進出者を確定する
+  (`qualifiersConfirmed`) まで予選の最終結果を出し続ける** (`holdingResult: true` →
+  `TournamentStandby` の見出しが「予選リーグ 最終結果」になる)
+- 確定済み → 決勝トーナメント表
+- 全工程が終わったうえで決勝側を見ていれば表彰画面 (`shouldShowFinale`)
+
+> 以前は時間 (`GROUP_RESULT_HOLD_MS`) で切り替えていたが廃止した。運営が同点の枠を
+> 見直す前に画面が進んでしまい、確認の意味が無かったため。
+
+#### 決勝進出者の確定
+
+`tournament_confirm_qualifiers` → `TournamentOrchestrator.confirmQualifiers`。
+`state.json` の `qualifiersConfirmed` に持つ (運営の判断なので `armedMatchId` のような
+プロセス内状態ではなく、再起動しても残す)。
+
+不変条件が2つ:
+
+- **予選が終わっていない間は必ず false。** 配信時に `qualifiersConfirmedOf` が
+  `isGroupStageDone` と AND を取り、`commit()` は予選が未完了に戻った時点で
+  保存値も落とす。**試合を書き換える経路はすべて `commit()` を通る**ので、
+  巻き戻しの種類 (reopen / discard / walkover / cascade) ごとに書かなくてよい。
+- **確定するまで決勝トーナメントの試合は `armMatch` できない** (日本語エラー)。
+  自動判定は必ず枠を埋めるので、関門が無いと同点の枠を誰も見ないまま決勝が始まる。
+  予選の試合は確定前でも準備できる。
+
+確定後の `setQualifier` は確定を外さない — 決勝表を出したまま差し替えを反映させたい
+場面 (組み合わせを見て気づく) があり、そこで観客席が予選表へ戻ると混乱するため。
+
+**表彰画面は決勝トーナメントだけを出す** (`TournamentFinale`)。予選の試合を混ぜると
+`bracketLayout` が節ごとに列を作り、列見出しが「Aリーグ」になって表が壊れる。
+予選の最終結果は運営パネルから `'groups'` を選べばいつでも出せる。
+
+#### リーグ表の並べ方
+
+予選リーグを横に並べるとき、**リーグごとにチーム数が違うと星取表の高さが変わり、
+その下の順位表の位置がずれる。** `LeagueTable` に `gridCells` を渡すと、まとめる div を
+外して「見出し / 星取表 / 順位表」の3つの塊をそのまま返すので、呼び出し側の CSS グリッド
+(3行 × リーグ数列、`grid-auto-flow: column`) の行にそろう。
+**`grid-auto-flow` を `column` にすること** — 既定の `row` だと1リーグぶんの3つが
+横に並んでしまい、見出しと表が入り乱れる。
+
+凡例 (○ 勝ち / △ 引き分け / ● 負け) は星取表のすぐ下に置く。順位表の下だと何の記号の
+説明なのか離れて分かりにくい。「未消化」は表の `・` を見れば分かるので載せない。

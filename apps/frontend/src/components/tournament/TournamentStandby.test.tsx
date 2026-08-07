@@ -52,10 +52,11 @@ function state(
     rules: {
       doubleMode: false, mapCatalogId: null, stageMaps: [],
       thirdPlaceMatch: false, leaguePoints: { win: 3, draw: 1, loss: 0 },
-      doubleRoundRobin: false,
+      doubleRoundRobin: false, groupCount: 2, advancePerGroup: 2,
     },
-    participants, matches, standings, stageMaps: [],
-    armedMatchId: null, boundRoomId: 'room', updatedAt: 0,
+    participants, matches, standings, groups: null, qualifiers: null, stageMaps: [], stageLabels: [],
+    qualifiersConfirmed: false,
+    displayView: 'auto', armedMatchId: null, boundRoomId: 'room', updatedAt: 0,
   };
 }
 

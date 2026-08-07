@@ -1,12 +1,32 @@
 import type {
+  LeaguePoints,
   MatchSlotRef,
   TournamentMatch,
   TournamentMatchResult,
 } from '@u15/ws-types';
 import { compareByPlayOrder } from '@u15/ws-types';
+import { qualifierKey, resolveGroupRank } from './qualifiers.js';
 
 // 試合グラフの進行 (slot の解決・bye の自動確定・確定の取り消し) を行う純関数。
 // 入力の配列は破壊せず、常に新しい配列を返す。
+
+/**
+ * `group-rank` (予選リーグの N 位) を解く材料。予選を持たない大会では空でよく、
+ * 渡さなければ従来どおりの挙動になる。
+ *
+ * **引数は必ず末尾に足すこと** — resolveMatches は captureResult / confirmResult /
+ * discardResult / setWalkover / reopenMatch から内部で呼ばれており、途中に差し込むと
+ * 既存の呼び出しとテストを軒並み書き換えることになる。
+ */
+export interface ResolveContext {
+  /** group番号 → 参加者id (エントリー順)。順位計算の決定性はこの並びに依存する */
+  groups?:             string[][];
+  leaguePoints?:       LeaguePoints;
+  /** 運営が差し替えた決勝進出者 (キーは `"<group>:<rank>"`) */
+  qualifierOverrides?: Record<string, string | null>;
+}
+
+const DEFAULT_LEAGUE_POINTS: LeaguePoints = { win: 3, draw: 1, loss: 0 };
 
 /** 確定済みの試合の勝者 participantId。両者棄権・bye 同士なら null */
 function winnerOf(m: TournamentMatch): string | null {
@@ -26,12 +46,29 @@ function loserOf(m: TournamentMatch): string | null {
 
 interface Resolved { id: string | null; bye: boolean; known: boolean }
 
-function resolveSlot(ref: MatchSlotRef, byId: Map<string, TournamentMatch>): Resolved {
+function resolveSlot(
+  ref: MatchSlotRef, byId: Map<string, TournamentMatch>, ctx: ResolveContext,
+): Resolved {
   switch (ref.kind) {
     case 'participant':
       return { id: ref.participantId, bye: false, known: true };
     case 'bye':
       return { id: null, bye: true, known: true };
+    case 'group-rank': {
+      const groupIds = ctx.groups?.[ref.group];
+      // 文脈が無いなら「まだ分からない」に倒す。空配列として扱うと参加者0人と読めてしまい、
+      // 不戦勝として勝手に確定してしまう (文脈を渡し忘れた経路で静かに大会が壊れる)
+      if (groupIds === undefined) return { id: null, bye: false, known: false };
+      // **byId から取ること。** 引数の matches をそのまま見ると、このパスで bye が
+      // 自動確定したぶんや、まだ resolvedA/B が埋まっていない組み立て直後の状態を読んでしまう。
+      // 予選の stage は決勝トーナメントより必ず前なので、ここに来た時点で
+      // そのリーグの試合は全て byId に入っている (単一パスで解ける根拠)。
+      const groupMatches = [...byId.values()].filter(m => m.group === ref.group);
+      return resolveGroupRank(
+        groupIds, groupMatches, ctx.leaguePoints ?? DEFAULT_LEAGUE_POINTS, ref.rank,
+        ctx.qualifierOverrides?.[qualifierKey(ref.group, ref.rank)],
+      );
+    }
     case 'winner-of': {
       const src = byId.get(ref.matchId);
       if (!src || src.status !== 'done') return { id: null, bye: false, known: false };
@@ -57,16 +94,19 @@ const RUNTIME_STATUSES = new Set(['armed', 'in_progress']);
  * 上流の結果が下流へ伝播するので、stage 昇順・order 昇順に1パスで解ける
  * (winner-of / loser-of は必ず自分より前の stage を指す)。
  * 3位決定戦だけは決勝と同じ stage に置いてあるが、参照先は準決勝 (前の stage) なので問題ない。
+ * `group-rank` も同じ — 予選リーグは決勝トーナメントより前の stage に置かれる。
  */
-export function resolveMatches(matches: TournamentMatch[], now = Date.now()): TournamentMatch[] {
+export function resolveMatches(
+  matches: TournamentMatch[], now = Date.now(), ctx: ResolveContext = {},
+): TournamentMatch[] {
   const sorted = [...matches].sort((a, b) => a.stage - b.stage || a.order - b.order);
   const byId   = new Map<string, TournamentMatch>();
   const out    = new Map<string, TournamentMatch>();
 
   for (const src of sorted) {
     const m: TournamentMatch = { ...src };
-    const ra = resolveSlot(m.slotA, byId);
-    const rb = resolveSlot(m.slotB, byId);
+    const ra = resolveSlot(m.slotA, byId, ctx);
+    const rb = resolveSlot(m.slotB, byId, ctx);
 
     m.resolvedA = ra.id;
     m.resolvedB = rb.id;
@@ -111,9 +151,11 @@ export function resolveMatches(matches: TournamentMatch[], now = Date.now()): To
 /** 試合に結果を書き込む (確定はしない)。confirmResult を経て done になる */
 export function captureResult(
   matches: TournamentMatch[], matchId: string, result: TournamentMatchResult,
+  ctx: ResolveContext = {},
 ): TournamentMatch[] {
   return resolveMatches(
     matches.map(m => (m.id === matchId ? { ...m, result, status: 'awaiting_confirm' as const } : m)),
+    Date.now(), ctx,
   );
 }
 
@@ -126,6 +168,7 @@ export function confirmResult(
   matchId: string,
   patch: { winnerSide?: 0 | 1 | null; decidedBy?: TournamentMatchResult['decidedBy']; note?: string },
   now = Date.now(),
+  ctx: ResolveContext = {},
 ): TournamentMatch[] {
   return resolveMatches(matches.map(m => {
     if (m.id !== matchId || !m.result) return m;
@@ -137,12 +180,13 @@ export function confirmResult(
       confirmedAt: now,
     };
     return { ...m, result, status: 'done' as const };
-  }), now);
+  }), now, ctx);
 }
 
 /** 運営裁定で不戦勝・両者棄権にする (対戦を行わずに確定させる) */
 export function setWalkover(
   matches: TournamentMatch[], matchId: string, winnerSide: 0 | 1 | null, now = Date.now(),
+  ctx: ResolveContext = {},
 ): TournamentMatch[] {
   return resolveMatches(matches.map(m => {
     if (m.id !== matchId) return m;
@@ -155,32 +199,47 @@ export function setWalkover(
       confirmedAt:  now,
     };
     return { ...m, result, status: 'done' as const };
-  }), now);
+  }), now, ctx);
 }
 
 /** 結果を捨てて未実施に戻す (やり直し / 同点の再試合)。下流も巻き戻す */
 export function discardResult(
   matches: TournamentMatch[], matchId: string, rematchMapCatalogId?: string,
+  ctx: ResolveContext = {},
 ): TournamentMatch[] {
   const cleared = clearFrom(matches, matchId, true);
   return resolveMatches(cleared.map(m => (
     m.id === matchId && rematchMapCatalogId ? { ...m, rematchMapCatalogId } : m
-  )));
+  )), Date.now(), ctx);
 }
 
-/** ある試合に (推移的に) 依存する試合の ID 集合。自分自身は含まない */
+/**
+ * ある試合に (推移的に) 依存する試合の ID 集合。自分自身は含まない。
+ *
+ * **`group-rank` 参照は「そのリーグの全試合」に依存している。** 予選の1試合が動けば順位表が
+ * 変わり、決勝トーナメントの1回戦の顔ぶれが変わりうるため。これを数えないと、確定済みの
+ * 準決勝の resolvedA/B だけが別人に書き換わり、「戦っていない相手に勝ったこと」になってしまう。
+ */
 export function downstreamOf(matches: TournamentMatch[], matchId: string): Set<string> {
   const sorted = [...matches].sort((a, b) => a.stage - b.stage || a.order - b.order);
   const hit    = new Set<string>([matchId]);
   const out    = new Set<string>();
 
+  // 巻き込まれた試合が属する予選リーグ。予選の試合しか group を持たないので、
+  // 同じリーグの他の試合が芋づるで入ることはない (リーグの試合は participant 参照しか持たない)
+  const groupHit = new Set<number>();
+  const start = matches.find(m => m.id === matchId);
+  if (start?.group !== undefined) groupHit.add(start.group);
+
   for (const m of sorted) {
     const refs = [m.slotA, m.slotB];
     const depends = refs.some(r =>
-      (r.kind === 'winner-of' || r.kind === 'loser-of') && hit.has(r.matchId));
+      ((r.kind === 'winner-of' || r.kind === 'loser-of') && hit.has(r.matchId))
+      || (r.kind === 'group-rank' && groupHit.has(r.group)));
     if (depends && m.id !== matchId) {
       hit.add(m.id);
       out.add(m.id);
+      if (m.group !== undefined) groupHit.add(m.group);
     }
   }
   return out;
@@ -199,8 +258,10 @@ export function hasConfirmedDownstream(matches: TournamentMatch[], matchId: stri
 }
 
 /** 確定を取り消す。下流の結果もまとめて消す */
-export function reopenMatch(matches: TournamentMatch[], matchId: string): TournamentMatch[] {
-  return resolveMatches(clearFrom(matches, matchId, true));
+export function reopenMatch(
+  matches: TournamentMatch[], matchId: string, ctx: ResolveContext = {},
+): TournamentMatch[] {
+  return resolveMatches(clearFrom(matches, matchId, true), Date.now(), ctx);
 }
 
 function clearFrom(

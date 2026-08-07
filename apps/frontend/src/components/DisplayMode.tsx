@@ -1,5 +1,5 @@
 import type { InlineMapData, ServerStatusPayload, TournamentStatePayload } from '@u15/ws-types';
-import { DEFAULT_DISPLAY_PREFS, MapObject } from '@u15/ws-types';
+import { DEFAULT_DISPLAY_PREFS, hasGroupStage, MapObject } from '@u15/ws-types';
 import { useGameState } from '../hooks/useGameState';
 import { useGamePhaseSound } from '../hooks/useGamePhaseSound';
 import { useStartCountdown } from '../hooks/useStartCountdown';
@@ -11,6 +11,8 @@ import { FitArea } from './FitArea';
 import { MapThumbnail } from './MapThumbnail';
 import { sourceLabel } from './MapSourceSection';
 import { BracketView } from './tournament/BracketView';
+import { GroupStageView, displayGroupPhase } from './tournament/GroupStageView';
+import type { GroupStagePhase } from './tournament/GroupStageView';
 import { LeagueTable } from './tournament/LeagueTable';
 import { TournamentFinale } from './tournament/TournamentFinale';
 import { TournamentStandby } from './tournament/TournamentStandby';
@@ -35,6 +37,8 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
   const { serverStatus, snapshot, turnInfo, gameEnd, isConnected, tournamentState } = state;
   const prefs = serverStatus?.displayPrefs ?? DEFAULT_DISPLAY_PREFS;
   const phase = serverStatus?.phase ?? 'setup';
+  // 大会中でなければ結果は使われない
+  const groupView = displayGroupPhase(tournamentState);
 
   useGamePhaseSound(snapshot, serverStatus, gameEnd, turnInfo, prefs.muted, true);
   const countdown = useStartCountdown(serverStatus?.phase, turnInfo);
@@ -60,12 +64,22 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
   //
   // 確定しても phase は 'finished' のまま (バックエンドはルームに触れない) なので、
   // armedMatchId を見ないと結果画面から抜けられない。最後の試合には次の arm も無い。
+  //
+  // 予選ありの大会では「予選表 / 決勝表 のどちらを出すか」を運営パネルが決める
+  // (運営席の表示とは連動しない)。全工程が終わったうえで決勝側を見ていれば表彰画面。
   if (tournamentState && phase !== 'playing') {
-    if (isTournamentComplete(tournamentState)) {
+    if (groupView.phase === 'bracket' && isTournamentComplete(tournamentState)) {
       return <TournamentFinale state={tournamentState} displayTitle={prefs.displayTitle} />;
     }
     if (!tournamentState.armedMatchId) {
-      return <TournamentStandby state={tournamentState} displayTitle={prefs.displayTitle} />;
+      return (
+        <TournamentStandby
+          state={tournamentState}
+          displayTitle={prefs.displayTitle}
+          groupPhase={groupView.phase}
+          holdingGroupResult={groupView.holdingResult}
+        />
+      );
     }
   }
 
@@ -75,6 +89,7 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
         serverStatus={serverStatus}
         displayTitle={prefs.displayTitle}
         tournament={tournamentState}
+        groupPhase={groupView.phase}
         currentMap={currentMap}
         theme={prefs.theme}
       />
@@ -121,11 +136,13 @@ const TEAM_COLORS = [
   { label: 'HOT',  color: HOT_COLOR,  dark: HOT_DARK,  pale: HOT_PALE  },
 ] as const;
 
-function SetupWaiting({ serverStatus, displayTitle, tournament, currentMap, theme }: {
+function SetupWaiting({ serverStatus, displayTitle, tournament, groupPhase, currentMap, theme }: {
   serverStatus: ServerStatusPayload | null;
   displayTitle: string;
   /** 大会運営中なら、待機中にトーナメント表 / リーグ表を見せる */
   tournament?: TournamentStatePayload | null;
+  /** 予選ありのとき、いま出すもの */
+  groupPhase?: GroupStagePhase;
   /** これから戦うマップ。取得前は null */
   currentMap?: InlineMapData | null;
   theme: string;
@@ -216,7 +233,9 @@ function SetupWaiting({ serverStatus, displayTitle, tournament, currentMap, them
       {/* 大会運営中は勝ち上がりを観客に見せる (待機中の間だけ) */}
       {tournament && (
         <div style={sw.bracket}>
-          {tournament.format === 'league' ? (
+          {hasGroupStage(tournament.format) ? (
+            <GroupStageView state={tournament} phase={groupPhase} />
+          ) : tournament.format === 'league' ? (
             <LeagueTable
               matches={tournament.matches}
               participants={tournament.participants}

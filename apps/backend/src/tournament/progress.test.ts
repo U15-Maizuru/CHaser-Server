@@ -257,3 +257,113 @@ describe('nextReadyMatch', () => {
     expect(nextReadyMatch(ms)!.id).toBe('FINAL');
   });
 });
+
+// ── 予選リーグ → 決勝トーナメント (group-rank) ─────────────────────────────
+
+describe('group-rank の解決', () => {
+  const GROUPS = [['a1', 'a2'], ['b1', 'b2']];
+  const CTX = {
+    groups: GROUPS,
+    leaguePoints: { win: 3, draw: 1, loss: 0 },
+  };
+
+  /** 各リーグ2人 (1試合ずつ) + 決勝1試合 の最小構成 */
+  function cup(): TournamentMatch[] {
+    const league = (group: number, a: string, b: string): TournamentMatch => ({
+      id: `G${group + 1}-D1M1`, stage: 0, order: group, label: `第1節`, group,
+      slotA: { kind: 'participant', participantId: a },
+      slotB: { kind: 'participant', participantId: b },
+      resolvedA: null, resolvedB: null, byeA: false, byeB: false, status: 'pending',
+    });
+    const final: TournamentMatch = {
+      id: 'FINAL', stage: 1, order: 0, label: '決勝',
+      slotA: { kind: 'group-rank', group: 0, rank: 1 },
+      slotB: { kind: 'group-rank', group: 1, rank: 1 },
+      resolvedA: null, resolvedB: null, byeA: false, byeB: false, status: 'pending',
+    };
+    return resolveMatches([league(0, 'a1', 'a2'), league(1, 'b1', 'b2'), final], Date.now(), CTX);
+  }
+
+  const playIn = (ms: TournamentMatch[], id: string, side: 0 | 1) =>
+    confirmResult(captureResult(ms, id, result(side), CTX), id, {}, Date.now(), CTX);
+
+  it('予選が終わるまで決勝は pending', () => {
+    let ms = cup();
+    expect(ms.find(m => m.id === 'FINAL')!.status).toBe('pending');
+
+    ms = playIn(ms, 'G1-D1M1', 0);
+    expect(ms.find(m => m.id === 'FINAL')!.status).toBe('pending');   // B リーグが未消化
+  });
+
+  it('両リーグが終われば決勝の顔ぶれが決まって ready になる', () => {
+    let ms = cup();
+    ms = playIn(ms, 'G1-D1M1', 0);
+    ms = playIn(ms, 'G2-D1M1', 1);
+
+    const final = ms.find(m => m.id === 'FINAL')!;
+    expect(final.status).toBe('ready');
+    expect([final.resolvedA, final.resolvedB]).toEqual(['a1', 'b2']);
+  });
+
+  it('手動指定が自動判定を上書きする', () => {
+    let ms = cup();
+    ms = playIn(ms, 'G1-D1M1', 0);
+    ms = playIn(ms, 'G2-D1M1', 0);
+
+    const overridden = resolveMatches(ms, Date.now(), {
+      ...CTX, qualifierOverrides: { '0:1': 'a2' },
+    });
+    expect(overridden.find(m => m.id === 'FINAL')!.resolvedA).toBe('a2');
+  });
+
+  it('予選の試合は決勝の上流として扱われる', () => {
+    const ms = cup();
+    expect(downstreamOf(ms, 'G1-D1M1').has('FINAL')).toBe(true);
+    // 同じリーグの他の試合を巻き込まない (リーグの試合は participant 参照しか持たない)
+    expect(downstreamOf(ms, 'G1-D1M1').has('G2-D1M1')).toBe(false);
+  });
+
+  it('予選をやり直すと決勝の結果も巻き戻る', () => {
+    let ms = cup();
+    ms = playIn(ms, 'G1-D1M1', 0);
+    ms = playIn(ms, 'G2-D1M1', 0);
+    ms = playIn(ms, 'FINAL', 0);
+    expect(ms.find(m => m.id === 'FINAL')!.status).toBe('done');
+
+    expect(hasConfirmedDownstream(ms, 'G1-D1M1')).toBe(true);
+
+    const reopened = reopenMatch(ms, 'G1-D1M1', CTX);
+    expect(reopened.find(m => m.id === 'FINAL')!.status).toBe('pending');
+    expect(reopened.find(m => m.id === 'FINAL')!.result).toBeUndefined();
+  });
+
+  it('確定済みの試合の対戦相手が、あとから別人にすり替わらない', () => {
+    // 予選をやり直したあと順位が変わっても、既に確定した決勝の resolvedA/B が
+    // 「戦っていない相手」に書き換わってはいけない (巻き戻しで結果ごと消えるのが正しい)
+    let ms = cup();
+    ms = playIn(ms, 'G1-D1M1', 0);
+    ms = playIn(ms, 'G2-D1M1', 0);
+    ms = playIn(ms, 'FINAL', 0);
+
+    // A リーグの結果をひっくり返す
+    let after = reopenMatch(ms, 'G1-D1M1', CTX);
+    after = playIn(after, 'G1-D1M1', 1);
+
+    for (const m of after) {
+      if (m.status !== 'done' || !m.result || m.byeA || m.byeB) continue;
+      expect(m.resolvedA).not.toBeNull();
+      expect(m.resolvedB).not.toBeNull();
+    }
+    // 決勝は巻き戻っているので、勝者を名乗る記録は残っていない
+    expect(after.find(m => m.id === 'FINAL')!.result).toBeUndefined();
+  });
+
+  it('文脈を渡さなければ group-rank は解決されない (既存形式に影響しない)', () => {
+    let ms = cup();
+    ms = playIn(ms, 'G1-D1M1', 0);
+    ms = playIn(ms, 'G2-D1M1', 0);
+
+    const noCtx = resolveMatches(ms);
+    expect(noCtx.find(m => m.id === 'FINAL')!.status).toBe('pending');
+  });
+});

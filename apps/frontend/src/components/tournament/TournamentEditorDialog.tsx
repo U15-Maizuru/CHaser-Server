@@ -3,7 +3,7 @@ import type {
   CatalogEntry, MapCatalogEntry, ParticipantDef, TournamentDefinition,
   TournamentFormat, TournamentStatePayload, TournamentSummary,
 } from '@u15/ws-types';
-import { stageCountFor, stageLabel } from '@u15/ws-types';
+import { autoGroupAssign, bracketSizeFor, groupLabel, stageCountFor, stageLabel } from '@u15/ws-types';
 import { autoSlots, fitSlots, matchCountOf, slotPairs } from '../../lib/bracketSlots';
 import {
   BG_CARD, BG_ROOT, BORDER_COLOR, COOL_COLOR, FONT_UI, GOLD_BASE, HOT_COLOR,
@@ -38,6 +38,42 @@ interface DraftParticipant {
   program: string;
   /** program==='file' のときの元指定。編集で失わないよう保持する */
   file?: { file: string; displayName?: string };
+  /** 所属する予選リーグ。undefined は「自動で振り分ける」 */
+  group?: number;
+}
+
+/**
+ * 予選ありの試合数の見積り。
+ *
+ * 予選は各リーグの総当たり (n人なら nC2)、決勝は勝ち上がりのぶん。
+ * bracketSlots.matchCountOf は予選を知らないのでここで数える。
+ */
+function groupPreview(
+  count: number, groupCount: number, advancePerGroup: number,
+  opts: { thirdPlaceMatch: boolean; doubleRoundRobin: boolean },
+): number {
+  const sizes = Array.from({ length: groupCount }, (_, g) =>
+    autoGroupAssign(count, groupCount).filter(x => x === g).length);
+  const league = sizes.reduce((sum, n) => sum + (n * (n - 1)) / 2, 0)
+    * (opts.doubleRoundRobin ? 2 : 1);
+
+  const qualifiers = groupCount * advancePerGroup;
+  const size = bracketSizeFor(qualifiers);
+  const bracket = size < 2 ? 0 : size - 1;
+  return league + bracket + (opts.thirdPlaceMatch && size >= 4 ? 1 : 0);
+}
+
+const FORMAT_CHIP: Record<TournamentFormat, string> = {
+  'single-elimination': 'トーナメント (勝ち上がり)',
+  'league':             'リーグ (総当たり)',
+  'group-then-bracket': '予選リーグ + 決勝トーナメント',
+};
+
+/** 数値入力を範囲に収める (空欄・非数値は既定値へ) */
+function clampInt(raw: string, min: number, max: number, fallback: number): number {
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
 }
 
 const ID_RE = /^[A-Za-z0-9._-]+$/;
@@ -75,6 +111,8 @@ export function TournamentEditorDialog({
   /** 回戦ごとのマップ。index が stage、'' は「大会の設定に従う」 */
   const [stageMaps, setStageMaps]               = useState<string[]>([]);
   const [leaguePoints, setLeaguePoints]         = useState({ win: 3, draw: 1, loss: 0 });
+  const [groupCount, setGroupCount]             = useState(2);
+  const [advancePerGroup, setAdvancePerGroup]   = useState(2);
 
   const [participants, setParticipants] = useState<DraftParticipant[]>([]);
   const [manualBracket, setManualBracket] = useState(false);
@@ -140,6 +178,8 @@ export function TournamentEditorDialog({
     setMapCatalogId(def.rules.mapCatalogId ?? '');
     setStageMaps((def.rules.stageMaps ?? []).map(m => m ?? ''));
     setLeaguePoints(def.rules.leaguePoints);
+    setGroupCount(def.rules.groupCount);
+    setAdvancePerGroup(def.rules.advancePerGroup);
 
     // 表示順 = 選手番号順 (小さいほど第1ゲームで先攻)。seed 未指定は記載順で後ろへ
     const ordered = [...def.participants]
@@ -153,7 +193,8 @@ export function TournamentEditorDialog({
     );
 
     setParticipants(ordered.map((p): DraftParticipant => {
-      const base = { key: p.id, id: p.id, name: p.name };
+      const base: Omit<DraftParticipant, 'program'> = { key: p.id, id: p.id, name: p.name };
+      if (p.group !== undefined) base.group = p.group;
       if (p.program?.kind === 'builtin') return { ...base, program: 'cpu' };
       if (p.program?.kind === 'file') {
         const file = p.program.displayName === undefined
@@ -232,6 +273,32 @@ export function TournamentEditorDialog({
     });
   };
 
+  // 表示順 = 選手番号順なので、蛇行配分はその並びにそのまま当たる。
+  // **バックエンドの group 省略時と同じ関数を使うこと** — 二重定義するとズレる
+  const autoGroups = useMemo(
+    () => autoGroupAssign(participants.length, groupCount),
+    [participants.length, groupCount],
+  );
+  const groupOf = (i: number) => participants[i]?.group ?? autoGroups[i] ?? 0;
+
+  const setGroupAt = (i: number, group: number | undefined) => {
+    setParticipants(prev => prev.map((p, k) => {
+      if (k !== i) return p;
+      const next = { ...p };
+      if (group === undefined) delete next.group;
+      else next.group = group;
+      return next;
+    }));
+  };
+
+  const reassignGroups = () => {
+    setParticipants(prev => prev.map(p => {
+      const next = { ...p };
+      delete next.group;
+      return next;
+    }));
+  };
+
   // ── 検証 ──
   const validation = useMemo((): string | null => {
     if (name.trim() === '') return '大会名を入力してください';
@@ -254,14 +321,41 @@ export function TournamentEditorDialog({
         return '組み合わせに未配置または重複した参加者がいます';
       }
     }
-    return null;
-  }, [name, id, editId, existingIds, participants, format, manualBracket, slots]);
 
-  const preview = matchCountOf(format, participants.length, { thirdPlaceMatch, doubleRoundRobin });
+    if (format === 'group-then-bracket') {
+      // バックエンドの validateGroupStage と同じ条件。保存してから弾かれるより
+      // ここで気づける方がよい
+      if (participants.length < groupCount * 2) {
+        return `予選${groupCount}リーグには最低${groupCount * 2}人の参加者が必要です`;
+      }
+      const sizes = Array.from({ length: groupCount }, (_, g) =>
+        participants.filter((_, i) => groupOf(i) === g).length);
+      const empty = sizes.findIndex(n => n < 2);
+      if (empty >= 0) {
+        return `${groupLabel(empty)}リーグの参加者が2人未満です`;
+      }
+      const short = sizes.findIndex(n => n < advancePerGroup);
+      if (short >= 0) {
+        return `${groupLabel(short)}リーグの人数 (${sizes[short]}人) が進出人数 ${advancePerGroup} に足りません`;
+      }
+    }
+    return null;
+  }, [name, id, editId, existingIds, participants, format, manualBracket, slots,
+      groupCount, advancePerGroup]);
+
+  const preview = format === 'group-then-bracket'
+    ? groupPreview(participants.length, groupCount, advancePerGroup,
+                   { thirdPlaceMatch, doubleRoundRobin })
+    : matchCountOf(format, participants.length, { thirdPlaceMatch, doubleRoundRobin });
 
   // 回戦の数は参加者数だけで決まる (bracketSizeFor の log2)。参加者を足し引きすると増減するので
   // 保存時に切り詰める
-  const stageCount = format === 'single-elimination' ? stageCountFor(participants.length) : 0;
+  // 予選ありのときは「決勝トーナメントの回戦」だけを対象にする (index も決勝T相対)。
+  // 予選の節数は参加者数だけでは決まらないので、ここで数えない (backend が解決する)
+  const stageCount =
+      format === 'single-elimination' ? stageCountFor(participants.length)
+    : format === 'group-then-bracket' ? stageCountFor(groupCount * advancePerGroup)
+    : 0;
   const stageMapAt = (stage: number) => stageMaps[stage] ?? '';
   const setStageMapAt = (stage: number, value: string) => {
     setStageMaps(prev => {
@@ -277,6 +371,7 @@ export function TournamentEditorDialog({
       id:      p.id,
       name:    p.name.trim(),
       seed:    i + 1,
+      ...(format === 'group-then-bracket' ? { group: groupOf(i) } : {}),
       program: p.program === 'cpu'
         ? { kind: 'builtin', builtin: 'cpu' }
         : p.program === 'file' && p.file
@@ -297,6 +392,8 @@ export function TournamentEditorDialog({
         thirdPlaceMatch,
         leaguePoints,
         doubleRoundRobin,
+        groupCount,
+        advancePerGroup,
       },
       participants: defs,
     };
@@ -394,13 +491,13 @@ export function TournamentEditorDialog({
               </p>
 
               <div style={chips}>
-                {(['single-elimination', 'league'] as TournamentFormat[]).map(f => (
+                {(['single-elimination', 'league', 'group-then-bracket'] as TournamentFormat[]).map(f => (
                   <button
                     key={f}
                     style={{ ...chip, ...(format === f ? chipOn : null) }}
                     onClick={() => setFormat(f)}
                   >
-                    {f === 'league' ? 'リーグ (総当たり)' : 'トーナメント (勝ち上がり)'}
+                    {FORMAT_CHIP[f]}
                   </button>
                 ))}
               </div>
@@ -417,13 +514,43 @@ export function TournamentEditorDialog({
               </label>
               <p style={hint}>公式ルールの試合形式です。外すと1ゲームで決着します（練習用）。</p>
 
-              {format === 'single-elimination' ? (
+              {format !== 'league' && (
                 <label style={check}>
                   <input type="checkbox" checked={thirdPlaceMatch}
                          onChange={e => setThirdPlaceMatch(e.target.checked)} />
                   <span>3位決定戦を行う</span>
                 </label>
-              ) : (
+              )}
+
+              {format === 'group-then-bracket' && (
+                <>
+                  <div style={{ ...field, alignItems: 'center' }}>
+                    <span style={label}>予選リーグ数</span>
+                    <input
+                      type="number" min={2} max={4} style={{ ...input, width: 72 }}
+                      aria-label="予選リーグ数"
+                      value={groupCount}
+                      onChange={e => setGroupCount(clampInt(e.target.value, 2, 4, 2))}
+                    />
+                  </div>
+                  <div style={{ ...field, alignItems: 'center' }}>
+                    <span style={label}>各リーグの進出人数</span>
+                    <input
+                      type="number" min={1} max={4} style={{ ...input, width: 72 }}
+                      aria-label="各リーグの進出人数"
+                      value={advancePerGroup}
+                      onChange={e => setAdvancePerGroup(clampInt(e.target.value, 1, 4, 2))}
+                    />
+                  </div>
+                  <p style={hint}>
+                    予選は各リーグの総当たり。上位 {advancePerGroup} 名ずつ、
+                    合計 {groupCount * advancePerGroup} 名が決勝トーナメントへ進みます。
+                    同点で順位が決まらないときは、運営画面で進出者を選び直せます。
+                  </p>
+                </>
+              )}
+
+              {format !== 'single-elimination' && (
                 <>
                   <label style={check}>
                     <input type="checkbox" checked={doubleRoundRobin}
@@ -464,7 +591,7 @@ export function TournamentEditorDialog({
               </p>
 
               {/* 回戦ごとのマップ (トーナメントのみ) */}
-              {format === 'single-elimination' && stageCount > 0 && (
+              {format !== 'league' && stageCount > 0 && (
                 <>
                   <div style={{ ...sectionTitle, fontSize: 12, marginTop: 4 }}>回戦ごとのマップ</div>
                   {Array.from({ length: stageCount }, (_, stage) => (
@@ -497,12 +624,17 @@ export function TournamentEditorDialog({
               <div style={sectionHead}>
                 <span style={sectionTitle}>参加者 ({participants.length}人)</span>
                 <div style={{ display: 'flex', gap: 6 }}>
+                  {format === 'group-then-bracket' && (
+                    <button style={btnSmall} onClick={reassignGroups}>自動で振り分け直す</button>
+                  )}
                   <button style={btnSmall} onClick={addParticipant}>+ 1人追加</button>
                   <button style={btnSmall} onClick={() => setShowBulk(v => !v)}>まとめて追加</button>
                 </div>
               </div>
               <p style={hint}>
                 上から順が選手番号です。番号の小さい方が第1ゲームで先攻になります。
+                {format === 'group-then-bracket'
+                  && ' 予選リーグは選手番号順に蛇行 (A,B,B,A…) で振り分けます。個別に変えられます。'}
               </p>
 
               {showBulk && (
@@ -539,6 +671,20 @@ export function TournamentEditorDialog({
                       <option key={pr.id} value={`lib:${pr.id}`}>{pr.displayName}</option>
                     ))}
                   </select>
+                  {format === 'group-then-bracket' && (
+                    <select
+                      style={{ ...select, width: 84 }}
+                      aria-label={`参加者${i + 1} の予選リーグ`}
+                      value={p.group ?? ''}
+                      onChange={e => setGroupAt(
+                        i, e.target.value === '' ? undefined : Number(e.target.value))}
+                    >
+                      <option value="">自動（{groupLabel(autoGroups[i] ?? 0)}）</option>
+                      {Array.from({ length: groupCount }, (_, g) => (
+                        <option key={g} value={g}>{groupLabel(g)}リーグ</option>
+                      ))}
+                    </select>
+                  )}
                   <button style={btnIcon} aria-label={`参加者${i + 1} を上へ`}
                           disabled={i === 0} onClick={() => moveAt(i, -1)}>↑</button>
                   <button style={btnIcon} aria-label={`参加者${i + 1} を下へ`}

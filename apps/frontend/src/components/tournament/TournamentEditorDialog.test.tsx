@@ -254,6 +254,53 @@ describe('TournamentEditorDialog — 新規作成', () => {
     expect(def.rules.doubleRoundRobin).toBe(true);
   });
 
+  it('予選リーグ + 決勝トーナメントを作れる', async () => {
+    renderNew();
+    fireEvent.change(screen.getByLabelText('大会名'), { target: { value: '予選あり杯' } });
+    addParticipants(['A', 'B', 'C', 'D', 'E', 'F']);
+    fireEvent.click(screen.getByText('予選リーグ + 決勝トーナメント'));
+
+    // 予選 (3人リーグ×2 = 6試合) + 決勝T (4人 = 3試合)
+    expect(screen.getByTestId('editor-preview')).toHaveTextContent('全 9 試合');
+
+    fireEvent.click(screen.getByText('この内容で作成'));
+    await waitFor(() => expect(calls.some(c => c.url.includes('/import'))).toBe(true));
+
+    const def = sentDefinition();
+    expect(def.format).toBe('group-then-bracket');
+    expect(def.rules.groupCount).toBe(2);
+    expect(def.rules.advancePerGroup).toBe(2);
+    // 選手番号順に蛇行 (A,B,B,A,A,B)
+    expect(def.participants.map(p => p.group)).toEqual([0, 1, 1, 0, 0, 1]);
+  });
+
+  it('参加者のリーグを個別に変えられる', async () => {
+    renderNew();
+    fireEvent.change(screen.getByLabelText('大会名'), { target: { value: '予選あり杯' } });
+    addParticipants(['A', 'B', 'C', 'D']);
+    fireEvent.click(screen.getByText('予選リーグ + 決勝トーナメント'));
+
+    // 2人目 (既定は B リーグ) を A リーグへ移すと、B リーグが1人になって弾かれる
+    fireEvent.change(screen.getByLabelText('参加者2 の予選リーグ'), { target: { value: '0' } });
+    fireEvent.click(screen.getByText('この内容で作成'));
+    expect(screen.getByText(/Bリーグの参加者が2人未満です/)).toBeTruthy();
+
+    // 自動に戻せば保存できる
+    fireEvent.click(screen.getByText('自動で振り分け直す'));
+    fireEvent.click(screen.getByText('この内容で作成'));
+    await waitFor(() => expect(calls.some(c => c.url.includes('/import'))).toBe(true));
+    expect(sentDefinition().participants.map(p => p.group)).toEqual([0, 1, 1, 0]);
+  });
+
+  it('リーグ数が足りない人数では作成できない', () => {
+    renderNew();
+    fireEvent.change(screen.getByLabelText('大会名'), { target: { value: '予選あり杯' } });
+    addParticipants(['A', 'B', 'C']);
+    fireEvent.click(screen.getByText('予選リーグ + 決勝トーナメント'));
+    fireEvent.click(screen.getByText('この内容で作成'));
+    expect(screen.getByText(/最低4人の参加者が必要です/)).toBeTruthy();
+  });
+
   it('試合数のプレビューが3位決定戦を織り込む', () => {
     renderNew();
     addParticipants(['A', 'B', 'C', 'D']);
@@ -347,7 +394,7 @@ describe('TournamentEditorDialog — 編集', () => {
     format: 'single-elimination',
     rules: {
       doubleMode: true, mapCatalogId: null, stageMaps: [], thirdPlaceMatch: true,
-      leaguePoints: { win: 3, draw: 1, loss: 0 }, doubleRoundRobin: false,
+      leaguePoints: { win: 3, draw: 1, loss: 0 }, doubleRoundRobin: false, groupCount: 2, advancePerGroup: 2,
     },
     participants: [
       { id: 'x1', name: '舞鶴A', seed: 2, program: { kind: 'builtin', builtin: 'cpu' } },

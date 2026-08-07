@@ -14,7 +14,7 @@ import type {
   ServerStatusPayload,
   TurnStartPayload,
 } from './protocol.js';
-import type { TournamentStatePayload } from './tournament.js';
+import type { TournamentDisplayView, TournamentStatePayload } from './tournament.js';
 
 // --- Commands (Frontend → Backend) ---
 
@@ -53,6 +53,12 @@ export type FrontendMessage =
   | { type: 'tournament_assign_program';  payload: { participantId: string; catalogId: string | null } }
   /** 回戦 (stage) ごとのマップ差し替え。null は「大会の設定に従う」 */
   | { type: 'tournament_set_stage_map';   payload: { stage: number; mapCatalogId: string | null } }
+  /** 決勝進出者の手動差し替え。participantId: null は「自動判定に戻す」 */
+  | { type: 'tournament_set_qualifier';   payload: { group: number; rank: number; participantId: string | null; cascade?: boolean } }
+  /** 決勝進出者の確定。true になるまで観戦画面は予選の最終結果を出し続ける */
+  | { type: 'tournament_confirm_qualifiers'; payload: { confirmed: boolean } }
+  /** 観戦画面に出すものを切り替える (運営席の表示とは連動しない) */
+  | { type: 'tournament_set_display_view'; payload: { view: TournamentDisplayView } }
   | { type: 'tournament_rescan' };
 
 // --- Room / lobby ---

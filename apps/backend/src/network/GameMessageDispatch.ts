@@ -123,6 +123,19 @@ export class GameMessageDispatch {
         this.tournament(ws, t =>
           t.setStageMap(roomId, msg.payload.stage, msg.payload.mapCatalogId));
         break;
+      case 'tournament_set_qualifier':
+        this.tournament(ws, t =>
+          t.setQualifier(
+            roomId, msg.payload.group, msg.payload.rank,
+            msg.payload.participantId, msg.payload.cascade ?? false,
+          ));
+        break;
+      case 'tournament_confirm_qualifiers':
+        this.tournament(ws, t => t.confirmQualifiers(roomId, msg.payload.confirmed));
+        break;
+      case 'tournament_set_display_view':
+        this.tournament(ws, t => t.setDisplayView(roomId, msg.payload.view));
+        break;
       case 'tournament_rescan':
         this.tournament(ws, t => t.rescan(roomId));
         break;

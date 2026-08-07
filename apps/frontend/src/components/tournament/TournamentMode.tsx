@@ -1,7 +1,10 @@
 import { useState } from 'react';
+import { hasGroupStage } from '@u15/ws-types';
 import { useGameState } from '../../hooks/useGameState';
 import { BracketView } from './BracketView';
+import { GroupStageView } from './GroupStageView';
 import { LeagueTable } from './LeagueTable';
+import { QualifierPicker } from './QualifierSection';
 import { TournamentPanel } from './TournamentPanel';
 import {
   BG_CARD, BG_ROOT, BORDER_COLOR, FONT_UI, RADIUS_MD, SHADOW_MD,
@@ -44,7 +47,7 @@ export function TournamentMode({ wsUrl, roomId, httpBase }: TournamentModeProps)
             <div style={{ display: 'flex', gap: 6 }}>
               <button style={btn} onClick={() => download('json')}>JSON</button>
               <button style={btn} onClick={() => download('matches.csv')}>試合CSV</button>
-              {t.format === 'league' && (
+              {(t.format === 'league' || hasGroupStage(t.format)) && (
                 <button style={btn} onClick={() => download('standings.csv')}>順位CSV</button>
               )}
             </div>
@@ -56,6 +59,11 @@ export function TournamentMode({ wsUrl, roomId, httpBase }: TournamentModeProps)
             <div style={empty}>
               右のパネルで大会を選ぶと、ここにトーナメント表が表示されます。
             </div>
+          ) : hasGroupStage(t.format) ? (
+            <GroupStageView
+              state={t} interactive selectedId={selected} onSelect={setSelected}
+              showTabs maxScale={1.6}
+            />
           ) : t.format === 'league' ? (
             <LeagueTable
               matches={t.matches}
@@ -81,17 +89,35 @@ export function TournamentMode({ wsUrl, roomId, httpBase }: TournamentModeProps)
           )}
         </div>
 
-        {t && selected && (
-          <div style={selectedBar}>
-            <span style={{ flex: 1 }}>
-              選択中: {t.matches.find(m => m.id === selected)?.label}
-            </span>
-            <button style={btn} onClick={() => state.tournament.arm(selected)}>
-              この試合を準備 ▶
-            </button>
-            <button style={btnGhost} onClick={() => setSelected(null)}>解除</button>
-          </div>
-        )}
+        {t && selected && (() => {
+          const m = t.matches.find(x => x.id === selected);
+          // 決勝トーナメントの1回戦を選んだら、その場で進出者を差し替えられるようにする。
+          // 運営パネルの一覧と、表のカードと、どちらからでも直せるのが要件
+          const swaps = [m?.slotA, m?.slotB].filter(
+            (r): r is Extract<NonNullable<typeof m>['slotA'], { kind: 'group-rank' }> =>
+              r?.kind === 'group-rank');
+
+          return (
+            <div style={selectedBar}>
+              <span style={{ flex: 1 }}>選択中: {m?.label}</span>
+              {swaps.map(r => (
+                <QualifierPicker
+                  key={`${r.group}:${r.rank}`}
+                  state={t}
+                  group={r.group}
+                  rank={r.rank}
+                  compact
+                  onChange={(pid: string | null, cascade?: boolean) =>
+                    state.tournament.setQualifier(r.group, r.rank, pid, cascade)}
+                />
+              ))}
+              <button style={btn} onClick={() => state.tournament.arm(selected)}>
+                この試合を準備 ▶
+              </button>
+              <button style={btnGhost} onClick={() => setSelected(null)}>解除</button>
+            </div>
+          );
+        })()}
       </div>
 
       <aside style={side}>
