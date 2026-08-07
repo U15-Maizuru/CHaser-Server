@@ -182,6 +182,29 @@ describe('GroupStageView', () => {
     expect(grid.children).toHaveLength(6);
   });
 
+  it('順位表は決勝トーナメントへ上がる順位まで強調する (予選の途中でも)', () => {
+    render(<GroupStageView state={state(false)} />);
+    // リーグごとに「上位2名が進出」を出す
+    expect(screen.getAllByText(/上位 2 名が決勝トーナメントへ進出/)).toHaveLength(2);
+
+    // A リーグ (3人) の順位表 = 2つ目の table。上位2行だけ色がつく
+    const rows = [...screen.getAllByRole('table')[1]!.querySelectorAll('tbody tr')];
+    expect(rows.map(r => (r as HTMLElement).style.background !== ''))
+      .toEqual([true, true, false]);
+  });
+
+  it('運営が枠を差し替えたら、順位表の強調もその人に移る', () => {
+    const s = state(true);
+    // A リーグ2位の枠を、順位表3位の p5 に差し替えた
+    s.qualifiers = (s.qualifiers ?? []).map(q => (q.group === 0 && q.rank === 2
+      ? { ...q, manualParticipantId: 'p5', participantId: 'p5' } : q));
+    render(<GroupStageView state={s} />);
+
+    const rows = [...screen.getAllByRole('table')[1]!.querySelectorAll('tbody tr')];
+    expect(rows.map(r => (r as HTMLElement).style.background !== ''))
+      .toEqual([true, false, true]);
+  });
+
   it('決勝進出者を確定すると決勝トーナメント表に切り替わる', () => {
     // 確定前は予選表のまま (運営席のタブも進行に追従する)
     render(<GroupStageView state={state(true)} />);

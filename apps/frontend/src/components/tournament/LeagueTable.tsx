@@ -10,6 +10,10 @@ import {
 // 順位は公式ルールどおり「勝ち点(3-1-0) → 全試合の合計ポイント → 直接対決」で決まる。
 // そこまで並んだ場合は同順位として出す (tied)。
 //
+// 予選リーグでは**決勝トーナメントへ上がる順位までを強調する** (advanceCount)。
+// 1位だけを金色にすると、観客にも運営にも「あと1つ上がれば通過」の境目が見えない —
+// 予選で本当に知りたいのは優勝者ではなく通過ラインなので、そこに線を引く。
+//
 // **星取表の行・列はエントリー順 (選手番号順) で固定する。** 順位順に並べ替えると
 // 試合が確定するたびに表の行が動き、観客も運営も同じチームを目で追えなくなる。
 // 順位で並ぶのは下段の順位表だけ。
@@ -34,6 +38,17 @@ export interface LeagueTableProps {
    * 行にそろえられるよう、まとめる div を外して個々の塊を直接返す。
    */
   gridCells?:   boolean;
+  /**
+   * 決勝トーナメントへ上がる人数 (予選リーグのみ)。順位表の上位この人数までを金色にし、
+   * 直下に通過ラインを引く。0 / 省略時は「1位だけ金色」の従来どおり (単独リーグの優勝者)。
+   */
+  advanceCount?: number;
+  /**
+   * 実際に上がる人。**運営が枠を手で差し替えたときだけ**渡すこと。
+   * 省略すれば順位表の位置 (上位 advanceCount 人) で塗るので、予選の途中でも
+   * 「いまの通過圏」が見える — 差し替えの有無で通過ラインの位置は動かさない。
+   */
+  qualifiedIds?: string[] | null;
   interactive?: boolean;
   onSelect?:    (matchId: string) => void;
   /** 「この試合を準備」で確定した、これから行う試合 */
@@ -48,6 +63,7 @@ export interface LeagueTableProps {
 
 export function LeagueTable({
   matches, participants, standings, title, gridCells = false,
+  advanceCount = 0, qualifiedIds = null,
   interactive = false, onSelect,
   upcomingMatchId = null, finishedMatchId = null, fit = false, maxScale = 3,
 }: LeagueTableProps) {
@@ -142,9 +158,16 @@ export function LeagueTable({
   );
 
   // ── 順位表 ──
+  /** その行が決勝トーナメントへ上がるか。差し替えが無ければ順位表の「位置」で決める */
+  const advances = (participantId: string, index: number): boolean => {
+    if (advanceCount <= 0) return false;
+    return qualifiedIds ? qualifiedIds.includes(participantId) : index < advanceCount;
+  };
+
   const standingsTable = (
-    <div style={scroller}>
-      <table style={table}>
+    <div style={standingsWrap}>
+      <div style={scroller}>
+        <table style={table}>
           <thead>
             <tr>
               <th style={th}>順位</th>
@@ -158,22 +181,38 @@ export function LeagueTable({
             </tr>
           </thead>
           <tbody>
-            {standings.map(s => (
-              <tr key={s.participantId} style={s.rank === 1 ? rowTop : undefined}>
-                <td style={{ ...td, fontWeight: 700 }}>
-                  {s.rank}{s.tied ? '=' : ''}
-                </td>
-                <td style={{ ...td, textAlign: 'left' }}>{nameOf(s.participantId)}</td>
-                <td style={tdNum}>{s.played}</td>
-                <td style={tdNum}>{s.wins}</td>
-                <td style={tdNum}>{s.draws}</td>
-                <td style={tdNum}>{s.losses}</td>
-                <td style={{ ...tdNum, fontWeight: 700 }}>{s.points}</td>
-                <td style={tdNum}>{s.totalPoints}</td>
-              </tr>
-            ))}
+            {standings.map((s, i) => {
+              // 予選リーグは通過圏を、単独リーグは優勝者だけを金色にする
+              const up = advanceCount > 0 ? advances(s.participantId, i) : s.rank === 1;
+              // 通過ラインは位置で引く。最下位の下には引かない (全員通過なら線に意味が無い)
+              const cut = advanceCount > 0
+                && i === advanceCount - 1 && i < standings.length - 1;
+              const cell    = { ...td,    ...(cut ? cutLine : null) };
+              const cellNum = { ...tdNum, ...(cut ? cutLine : null) };
+              return (
+                <tr key={s.participantId} style={up ? rowTop : undefined}>
+                  <td style={{ ...cell, fontWeight: 700 }}>
+                    {s.rank}{s.tied ? '=' : ''}
+                  </td>
+                  <td style={{ ...cell, textAlign: 'left' }}>{nameOf(s.participantId)}</td>
+                  <td style={cellNum}>{s.played}</td>
+                  <td style={cellNum}>{s.wins}</td>
+                  <td style={cellNum}>{s.draws}</td>
+                  <td style={cellNum}>{s.losses}</td>
+                  <td style={{ ...cellNum, fontWeight: 700 }}>{s.points}</td>
+                  <td style={cellNum}>{s.totalPoints}</td>
+                </tr>
+              );
+            })}
           </tbody>
-      </table>
+        </table>
+      </div>
+      {/* 色だけでは「金色が何なのか」が伝わらないので、言葉でも添える */}
+      {advanceCount > 0 && (
+        <div style={advanceNote}>
+          <span style={advanceSwatch} />上位 {advanceCount} 名が決勝トーナメントへ進出
+        </div>
+      )}
     </div>
   );
 
@@ -217,6 +256,10 @@ const crossWrap: React.CSSProperties = {
   display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, alignItems: 'flex-start',
 };
 
+// 順位表と、その下の「上位N名が進出」の注記。crossWrap と同じ組み方にして
+// グリッドに並べたときの見え方をそろえる
+const standingsWrap: React.CSSProperties = crossWrap;
+
 const tableTitle: React.CSSProperties = {
   fontSize: 14, fontWeight: 700, color: TEXT_PRIMARY,
 };
@@ -246,7 +289,22 @@ const td: React.CSSProperties = {
 
 const tdNum: React.CSSProperties = { ...td, fontFamily: FONT_NUM };
 
+// 決勝トーナメントへ上がる行 (予選なしのリーグでは1位のみ)
 const rowTop: React.CSSProperties = { background: GOLD_LIGHT };
+
+// 通過ライン。ここから下は上がれない、を1本の線で示す
+const cutLine: React.CSSProperties = { borderBottom: `2px solid ${GOLD_BASE}` };
+
+const advanceNote: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: 6,
+  fontSize: 10, color: TEXT_MUTED, background: COOL_PALE,
+  borderRadius: 8, padding: '6px 10px', alignSelf: 'flex-start',
+};
+
+const advanceSwatch: React.CSSProperties = {
+  display: 'inline-block', width: 12, height: 12, borderRadius: 2,
+  background: GOLD_LIGHT, borderBottom: `2px solid ${GOLD_BASE}`, boxSizing: 'border-box',
+};
 
 // これから行う試合。該当セルと、その2チームの見出しを金色で示す
 const cellUpcoming: React.CSSProperties = {

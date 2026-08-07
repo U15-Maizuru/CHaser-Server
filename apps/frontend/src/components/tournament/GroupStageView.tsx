@@ -59,6 +59,20 @@ export function displayGroupPhase(state: TournamentStatePayload | null): {
   return autoGroupPhase(state);
 }
 
+/**
+ * そのリーグから実際に上がる人。**運営が枠を手で差し替えたときだけ**返す。
+ *
+ * 差し替えが無ければ null を返し、順位表には「上位 advancePerGroup 人」を位置で塗らせる —
+ * 予選の途中は枠がまだ埋まっていない (pending) ので、枠を見て塗ると通過圏が消えてしまう。
+ */
+function overriddenQualifiers(
+  state: TournamentStatePayload, group: number,
+): string[] | null {
+  const slots = (state.qualifiers ?? []).filter(q => q.group === group);
+  if (!slots.some(q => q.manualParticipantId !== null)) return null;
+  return slots.map(q => q.participantId).filter((id): id is string => id !== null);
+}
+
 /** 全工程が終わったうえで決勝トーナメント側を見ているか (= 表彰画面を出すべきか) */
 export function shouldShowFinale(state: TournamentStatePayload, phase: GroupStagePhase): boolean {
   return isTournamentComplete(state) && phase === 'bracket';
@@ -128,6 +142,9 @@ export function GroupStageView({
             matches={state.matches.filter(m => m.group === g.group)}
             participants={state.participants.filter(p => g.participantIds.includes(p.id))}
             standings={g.standings}
+            // 順位表は「決勝トーナメントへ上がる順位まで」を強調する
+            advanceCount={state.rules.advancePerGroup}
+            qualifiedIds={overriddenQualifiers(state, g.group)}
             upcomingMatchId={state.armedMatchId}
             finishedMatchId={finishedMatchId}
             interactive={interactive}

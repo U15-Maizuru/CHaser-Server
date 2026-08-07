@@ -31,6 +31,19 @@ function standing(participantId: string, rank: number): StandingRow {
   };
 }
 
+/** 順位表 (2つ目の table) のデータ行 */
+function standingsRows(): HTMLElement[] {
+  const table = screen.getAllByRole('table')[1]!;
+  return within(table).getAllByRole('row').slice(1) as HTMLElement[];
+}
+
+/** その行に色がついているか (通過圏の強調) */
+const highlighted = (row: HTMLElement) => row.style.background !== '';
+
+/** その行の下に通過ラインが引かれているか */
+const hasCutLine = (row: HTMLElement) =>
+  within(row).getAllByRole('cell')[0]!.style.borderBottomWidth === '2px';
+
 /** 星取表 (1つ目の table) の行見出し */
 function crossTableRowNames(): string[] {
   const table = screen.getAllByRole('table')[0]!;
@@ -67,6 +80,60 @@ describe('LeagueTable', () => {
   it('standings が空でも星取表は出る (1試合も終わっていない大会)', () => {
     render(<LeagueTable matches={matches} participants={participants} standings={[]} />);
     expect(crossTableRowNames()).toEqual(['A', 'B', 'C']);
+  });
+
+  // 予選リーグで観客と運営が見たいのは優勝者ではなく「通過ライン」。
+  // 1位だけを金色にすると、あと1つで上がれる境目が分からない
+  describe('決勝トーナメントの通過順位', () => {
+    // 順位表は C(1位) → B(2位) → A(3位)
+    const standings = [standing('p3', 1), standing('p2', 2), standing('p1', 3)];
+
+    it('上位 advanceCount 名まで色をつけ、その下に通過ラインを引く', () => {
+      render(
+        <LeagueTable
+          matches={matches} participants={participants} standings={standings}
+          advanceCount={2}
+        />,
+      );
+
+      const rows = standingsRows();
+      expect(rows.map(highlighted)).toEqual([true, true, false]);
+      expect(rows.map(hasCutLine)).toEqual([false, true, false]);
+      expect(screen.getByText(/上位 2 名が決勝トーナメントへ進出/)).toBeTruthy();
+    });
+
+    it('advanceCount が無ければ1位だけ (予選の無い単独リーグの優勝者)', () => {
+      render(<LeagueTable matches={matches} participants={participants} standings={standings} />);
+
+      const rows = standingsRows();
+      expect(rows.map(highlighted)).toEqual([true, false, false]);
+      expect(rows.some(hasCutLine)).toBe(false);
+      expect(screen.queryByText(/決勝トーナメントへ進出/)).toBeNull();
+    });
+
+    it('全員が上がるリーグには線を引かない (引く意味が無い)', () => {
+      render(
+        <LeagueTable
+          matches={matches} participants={participants} standings={standings}
+          advanceCount={3}
+        />,
+      );
+      expect(standingsRows().some(hasCutLine)).toBe(false);
+    });
+
+    it('運営が枠を差し替えたら、実際に上がる人を色づける', () => {
+      // 2位の B ではなく3位の A を上げた。線の位置 (通過ライン) は動かさない
+      render(
+        <LeagueTable
+          matches={matches} participants={participants} standings={standings}
+          advanceCount={2} qualifiedIds={['p3', 'p1']}
+        />,
+      );
+
+      const rows = standingsRows();
+      expect(rows.map(highlighted)).toEqual([true, false, true]);
+      expect(rows.map(hasCutLine)).toEqual([false, true, false]);
+    });
   });
 
   it('これから行う試合のセルに ▶ を出す', () => {
