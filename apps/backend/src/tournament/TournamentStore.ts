@@ -398,6 +398,28 @@ export function deleteTournament(id: string): void {
   fs.rmSync(dirOf(id), { recursive: true, force: true });
 }
 
+export type RenameResult = 'ok' | 'invalid' | 'not-found' | 'exists';
+
+/**
+ * 大会 id を変える (= フォルダ名を変える)。
+ *
+ * **作り直しではなく移動にすること。** 新しい id で取り込んで古いのを消す作り方だと、
+ * 同梱プログラム (programs/*.py) と進行状態が付いてこず、`program.kind === 'file'` の
+ * 参加者が「プログラムが見つかりません」になる。
+ *
+ * state.json の中の tournamentId は次の loadTournament が id で上書きするので、
+ * ここでは触らない。
+ */
+export function renameTournament(oldId: string, newId: string): RenameResult {
+  if (!isSafeId(oldId) || !isSafeId(newId)) return 'invalid';
+  if (oldId === newId) return 'ok';
+  if (!fs.existsSync(defPath(oldId))) return 'not-found';
+  if (fs.existsSync(dirOf(newId))) return 'exists';
+
+  fs.renameSync(dirOf(oldId), dirOf(newId));
+  return 'ok';
+}
+
 /** 未提出だった参加者に、あとからプログラムライブラリのエントリを紐付ける */
 export function assignProgram(
   id: string, participantId: string, catalogId: string | null,

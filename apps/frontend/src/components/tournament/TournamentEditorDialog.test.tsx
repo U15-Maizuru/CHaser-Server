@@ -410,6 +410,82 @@ describe('TournamentEditorDialog — 編集', () => {
     );
   }
 
+  it('別名で保存すると元の大会を残して新しいIDで複製する', async () => {
+    renderEdit();
+    await screen.findByDisplayValue('既存の杯');
+
+    const idInput = screen.getByLabelText('大会ID') as HTMLInputElement;
+
+    fireEvent.click(screen.getByText('別名で保存'));
+    expect(idInput.value).toBe('cup-a-2');   // 空いている番号を提案する
+
+    fireEvent.click(screen.getByRole('button', { name: '別名で保存' }));
+    await waitFor(() => expect(calls.some(c => c.url.includes('/import'))).toBe(true));
+
+    const call = calls.find(c => c.url.includes('/import'))!;
+    // 新しいフォルダを作るだけなので、元の大会の進行状態は作り直さない
+    expect(call.url).not.toContain('reset=1');
+    expect(sentDefinition().id).toBe('cup-a-2');
+  });
+
+  it('別名保存では既存IDと重なると弾く', async () => {
+    existing = [{ id: 'cup-a', name: '既存の杯' }];
+    renderEdit();
+    await screen.findByDisplayValue('既存の杯');
+    await waitFor(() => expect(calls.some(c => c.url.endsWith('/api/tournament'))).toBe(true));
+
+    fireEvent.click(screen.getByText('別名で保存'));
+    fireEvent.change(screen.getByLabelText('大会ID'), { target: { value: 'cup-a' } });
+    await waitFor(() =>
+      expect(screen.getByTestId('editor-validation')).toHaveTextContent('既に使われています'));
+  });
+
+  it('別名保存をやめると元のIDに戻る', async () => {
+    renderEdit();
+    await screen.findByDisplayValue('既存の杯');
+
+    fireEvent.click(screen.getByText('別名で保存'));
+    fireEvent.click(screen.getByText('上書き保存に戻す'));
+
+    const idInput = screen.getByLabelText('大会ID') as HTMLInputElement;
+    expect(idInput.value).toBe('cup-a');
+  });
+
+  it('大会IDを書き換えるとフォルダごと改名して保存する', async () => {
+    renderEdit();
+    await screen.findByDisplayValue('既存の杯');
+
+    fireEvent.change(screen.getByLabelText('大会ID'), { target: { value: 'cup-2027' } });
+    fireEvent.click(screen.getByText('IDを変えて保存'));
+
+    await waitFor(() => expect(calls.some(c => c.url.includes('/import'))).toBe(true));
+    const call = calls.find(c => c.url.includes('/import'))!;
+    // 取り込み直しではなく改名 — programs/*.py を新しいフォルダへ連れて行くため
+    expect(call.url).toContain('from=cup-a');
+    expect(sentDefinition().id).toBe('cup-2027');
+  });
+
+  it('大会IDを既存のものに書き換えたら弾く', async () => {
+    existing = [{ id: 'cup-a', name: '既存の杯' }, { id: 'cup-b', name: 'もう一つ' }];
+    renderEdit();
+    await screen.findByDisplayValue('既存の杯');
+    await waitFor(() => expect(calls.some(c => c.url.endsWith('/api/tournament'))).toBe(true));
+
+    fireEvent.change(screen.getByLabelText('大会ID'), { target: { value: 'cup-b' } });
+    await waitFor(() =>
+      expect(screen.getByTestId('editor-validation')).toHaveTextContent('既に使われています'));
+  });
+
+  it('同じIDのままの上書き保存は衝突とみなさない', async () => {
+    existing = [{ id: 'cup-a', name: '既存の杯' }];
+    renderEdit();
+    await screen.findByDisplayValue('既存の杯');
+    await waitFor(() => expect(calls.some(c => c.url.endsWith('/api/tournament'))).toBe(true));
+
+    expect(screen.queryByTestId('editor-validation')).not.toBeInTheDocument();
+    expect(screen.getByText('上書き保存')).not.toBeDisabled();
+  });
+
   it('既存の定義を選手番号順に読み込む', async () => {
     renderEdit();
     await screen.findByDisplayValue('既存の杯');
@@ -418,7 +494,6 @@ describe('TournamentEditorDialog — 編集', () => {
     // seed 1,2,3 の順 = 舞鶴B, 舞鶴A, 舞鶴C
     expect(rows.map(r => (within(r).getByPlaceholderText('チーム名') as HTMLInputElement).value))
       .toEqual(['舞鶴B', '舞鶴A', '舞鶴C']);
-    expect(screen.getByLabelText('大会ID')).toBeDisabled();
   });
 
   it('同梱ファイルの指定を保ったまま保存できる', async () => {

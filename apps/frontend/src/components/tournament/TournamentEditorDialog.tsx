@@ -85,6 +85,15 @@ function defaultId(now = new Date()): string {
        + `-${p(now.getHours())}${p(now.getMinutes())}`;
 }
 
+/** 別名保存の初期 id。`-2`, `-3` … と空いている番号を探す */
+function suggestCopyId(base: string, taken: string[]): string {
+  const root = base.replace(/-\d+$/, '');
+  for (let i = 2; ; i++) {
+    const candidate = `${root}-${i}`;
+    if (!taken.includes(candidate)) return candidate;
+  }
+}
+
 function nextParticipantId(taken: Set<string>): string {
   for (let i = 1; ; i++) {
     const id = `p${String(i).padStart(2, '0')}`;
@@ -121,6 +130,12 @@ export function TournamentEditorDialog({
   const [programs, setPrograms] = useState<CatalogEntry[]>([]);
   const [maps, setMaps]         = useState<MapCatalogEntry[]>([]);
   const [existingIds, setExistingIds] = useState<string[]>([]);
+
+  /**
+   * 別名保存モード。元の大会を残したまま、新しい id で複製する。
+   * 去年の大会データを土台に今年のを作る、予選の組み分けだけ変えた案を作る、といった使い方。
+   */
+  const [saveAs, setSaveAs]   = useState(false);
 
   const [bulk, setBulk]       = useState('');
   const [showBulk, setShowBulk] = useState(false);
@@ -300,10 +315,16 @@ export function TournamentEditorDialog({
   };
 
   // ── 検証 ──
+  /** 保存すると新しい大会が増えるか (新規作成 or 別名保存) */
+  const creatingNew = editId === null || saveAs;
+  /** 上書き保存のまま大会IDを書き換えたか (= フォルダごと改名する) */
+  const renaming = editId !== null && !saveAs && id !== editId;
+
   const validation = useMemo((): string | null => {
     if (name.trim() === '') return '大会名を入力してください';
     if (!ID_RE.test(id)) return '大会ID は半角英数字と . _ - だけで入力してください（フォルダ名になります）';
-    if (editId === null && existingIds.includes(id)) {
+    // 同じIDへの上書き保存だけは衝突ではない
+    if (existingIds.includes(id) && (creatingNew || id !== editId)) {
       return `大会ID "${id}" は既に使われています。別のIDにしてください`;
     }
     if (participants.length < 2) return '参加者を2人以上登録してください';
@@ -340,7 +361,7 @@ export function TournamentEditorDialog({
       }
     }
     return null;
-  }, [name, id, editId, existingIds, participants, format, manualBracket, slots,
+  }, [name, id, editId, creatingNew, existingIds, participants, format, manualBracket, slots,
       groupCount, advancePerGroup]);
 
   const preview = format === 'group-then-bracket'
@@ -409,9 +430,16 @@ export function TournamentEditorDialog({
     setSaving(true);
     setError(null);
     try {
-      // 上書き保存のときは進行状態も作り直す (形式やルールだけ変えた場合を取りこぼさないため)
-      const overwrite = editId !== null || existingIds.includes(id);
-      const res  = await fetch(`${httpBase}/api/tournament/import${overwrite ? '?reset=1' : ''}`, {
+      // 上書き保存のときは進行状態も作り直す (形式やルールだけ変えた場合を取りこぼさないため)。
+      // 別名保存は新しいフォルダを作るだけなので、元の大会の進行状態には触れない
+      const overwrite = !creatingNew || existingIds.includes(id);
+      const params = new URLSearchParams();
+      if (overwrite) params.set('reset', '1');
+      // ID を書き換えたときは、バックエンドに先にフォルダを改名させる
+      // (取り込み直しでは programs/*.py が新しいフォルダに付いてこない)
+      if (renaming) params.set('from', editId);
+      const qs = params.toString();
+      const res  = await fetch(`${httpBase}/api/tournament/import${qs ? `?${qs}` : ''}`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(buildDefinition()),
@@ -481,14 +509,19 @@ export function TournamentEditorDialog({
                 <span style={label}>大会ID</span>
                 <input
                   style={{ ...input, fontFamily: 'monospace' }} value={id} aria-label="大会ID"
-                  disabled={editId !== null}
                   onChange={e => setId(e.target.value)}
                 />
               </label>
               <p style={hint}>
                 大会ID は server/tournament/ の下に作られるフォルダ名です。
-                {editId !== null && ' 編集では変更できません。'}
+                {saveAs && ' 別名保存: 新しいIDで複製します。元の大会はそのまま残ります。'}
               </p>
+              {renaming && (
+                <div style={warnRow}>
+                  大会ID を「{editId}」から「{id}」へ変更します。フォルダごと名前が変わるので、
+                  元のIDは残りません。元を残したまま複製したいときは「別名で保存」を使ってください。
+                </div>
+              )}
 
               <div style={chips}>
                 {(['single-elimination', 'league', 'group-then-bracket'] as TournamentFormat[]).map(f => (
@@ -756,13 +789,28 @@ export function TournamentEditorDialog({
               </span>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button style={btnGhost} onClick={onClose}>キャンセル</button>
+                {editId !== null && (
+                  <button
+                    style={{ ...btnGhostSmall, ...(saving ? btnDisabled : null) }}
+                    disabled={saving}
+                    onClick={() => setSaveAs(v => {
+                      // 別名保存に切り替えた瞬間に、そのままでは重複する id をずらしておく
+                      if (!v) setId(cur => suggestCopyId(cur, existingIds));
+                      else setId(editId);
+                      return !v;
+                    })}
+                  >
+                    {saveAs ? '上書き保存に戻す' : '別名で保存'}
+                  </button>
+                )}
                 <button
                   style={{ ...btnPrimary, ...(validation || saving ? btnDisabled : null) }}
                   disabled={validation !== null || saving}
                   title={validation ?? ''}
                   onClick={() => void save()}
                 >
-                  {saving ? '保存中…' : editId === null ? 'この内容で作成' : '上書き保存'}
+                  {saving ? '保存中…' : editId === null ? 'この内容で作成'
+                    : saveAs ? '別名で保存' : renaming ? 'IDを変えて保存' : '上書き保存'}
                 </button>
               </div>
             </div>
@@ -890,6 +938,10 @@ const btnSmall: React.CSSProperties = {
 const btnGhost: React.CSSProperties = {
   ...btnBase, background: 'transparent', color: TEXT_SECONDARY,
   fontSize: 12, padding: '6px 12px',
+};
+
+const btnGhostSmall: React.CSSProperties = {
+  ...btnGhost, border: `1px solid ${BORDER_COLOR}`,
 };
 
 const btnIcon: React.CSSProperties = {

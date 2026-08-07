@@ -14,6 +14,7 @@ import {
   importFromJson,
   importFromZip,
   loadTournament,
+  renameTournament,
   resetTournamentState,
   scanTournaments,
   toSummary,
@@ -53,19 +54,42 @@ export function handleTournamentRequest(
     return true;
   }
 
-  // POST /api/tournament/import[?reset=1] → tournament.json の取り込み (body に定義そのもの)
+  // POST /api/tournament/import[?reset=1][&from=<旧id>] → tournament.json の取り込み
+  // (body に定義そのもの)
   //
   // reset=1 は「作成 UI からの上書き保存」用。同じ id へ書き戻すとき、参加者が変わって
   // いなければ古い進行状態がそのまま残ってしまう (loadTournament の噛み合わせ判定は
   // participant id しか見ないので、形式やルールだけ変えた場合を検知できない)。
+  //
+  // from=<旧id> は「編集画面で大会IDを書き換えた」場合。先にフォルダごと改名してから
+  // 書き込む — 新しい id で取り込んで古いのを消すと、同梱プログラムが付いてこない。
   if (req.method === 'POST' && url.pathname === '/api/tournament/import') {
     readJsonBody(req)
       .then((body) => {
         try {
           const wantId = (body as { id?: unknown }).id;
-          if (typeof wantId === 'string' && deps.boundRoomOf(wantId)) {
-            json(res, 409, { error: '運営中の大会は上書きできません。先に運営を終了してください' });
-            return;
+          const from   = url.searchParams.get('from');
+          for (const id of [wantId, from]) {
+            if (typeof id === 'string' && deps.boundRoomOf(id)) {
+              json(res, 409, { error: '運営中の大会は上書きできません。先に運営を終了してください' });
+              return;
+            }
+          }
+
+          if (from !== null && typeof wantId === 'string' && from !== wantId) {
+            const renamed = renameTournament(from, wantId);
+            if (renamed === 'exists') {
+              json(res, 409, { error: `大会ID "${wantId}" は既に使われています` });
+              return;
+            }
+            if (renamed === 'not-found') {
+              json(res, 404, { error: '変更元の大会が見つかりません' });
+              return;
+            }
+            if (renamed === 'invalid') {
+              badRequest(res, '大会ID は半角英数字と . _ - だけで指定してください');
+              return;
+            }
           }
 
           const result = importFromJson(body);

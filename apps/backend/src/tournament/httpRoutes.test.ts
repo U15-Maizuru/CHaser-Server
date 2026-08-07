@@ -117,6 +117,66 @@ describe('/api/tournament', () => {
     expect(loadTournament('cup-a')!.def.name).toBe('HTTPテスト杯');
   });
 
+  it('import?from=旧id はフォルダごと改名する (同梱プログラムを連れて行く)', async () => {
+    writeTournament('cup-a', {
+      ...DEF,
+      participants: [
+        { id: 'p1', name: 'A', seed: 1, program: { file: 'programs/a.py' } },
+        { id: 'p2', name: 'B', seed: 2, program: { builtin: 'cpu' } },
+      ],
+    });
+    const dir = path.join(tournamentRootDir(), 'cup-a', 'programs');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'a.py'), 'print(1)');
+
+    const res = await fetch(`${baseUrl}/api/tournament/import?reset=1&from=cup-a`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        ...DEF, id: 'cup-2027',
+        participants: [
+          { id: 'p1', name: 'A', seed: 1, program: { file: 'programs/a.py' } },
+          { id: 'p2', name: 'B', seed: 2, program: { builtin: 'cpu' } },
+        ],
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(fs.existsSync(path.join(tournamentRootDir(), 'cup-a'))).toBe(false);
+    // 同梱プログラムが新しいフォルダに付いてきていること (取り込み直しでは消える)
+    expect(fs.existsSync(path.join(tournamentRootDir(), 'cup-2027', 'programs', 'a.py'))).toBe(true);
+    expect(loadTournament('cup-2027')!.state.programs.p1).toBeDefined();
+  });
+
+  it('import?from= の改名先が既にあれば 409 (どちらも消さない)', async () => {
+    writeTournament('cup-a', DEF);
+    writeTournament('cup-b', { ...DEF, name: 'ぶつかる方' });
+
+    const res = await fetch(`${baseUrl}/api/tournament/import?reset=1&from=cup-a`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ ...DEF, id: 'cup-b' }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(loadTournament('cup-a')).not.toBeNull();
+    expect(loadTournament('cup-b')!.def.name).toBe('ぶつかる方');
+  });
+
+  it('運営中の大会は import?from= で改名できない (409)', async () => {
+    writeTournament('cup-a', DEF);
+    bound = 'cup-a';
+    const res = await fetch(`${baseUrl}/api/tournament/import?reset=1&from=cup-a`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ ...DEF, id: 'cup-2027' }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(loadTournament('cup-a')).not.toBeNull();
+    expect(loadTournament('cup-2027')).toBeNull();
+  });
+
   it('不正な定義の import は 400 と理由を返す', async () => {
     const res = await fetch(`${baseUrl}/api/tournament/import`, {
       method:  'POST',
