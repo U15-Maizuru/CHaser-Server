@@ -1098,7 +1098,8 @@ const WEB_PORTS: [number, number] = [13000, 14999]; // デフォルト: 最大50
 | `groupStage.ts` | 【純関数】参加者 → 予選リーグ N 本 + 決勝トーナメントの試合グラフ |
 | `qualifiers.ts` | 【純関数】予選の順位表 → 決勝トーナメントの枠 (同点の印つき) |
 | `standings.ts` | 【純関数】順位表 (勝ち点 → 合計ポイント → 直接対決) |
-| `progress.ts` | 【純関数】slot の解決・bye の自動確定・確定の取り消し |
+| `progress.ts` | 【純関数】slot の解決・bye の自動確定・確定の取り消し・次に実施する試合 |
+| `autoPlay.ts` | 【純関数】自動進行の「次の一手」と、その前に置く待機時間 |
 | `TournamentStore.ts` | 永続化・フォルダ検出・プログラムライブラリへの取り込み |
 | `zip.ts` | `node:zlib` だけで動く最小 ZIP 展開 (zip-slip 防御込み) |
 | `exporter.ts` | 結果の JSON / CSV 書き出し |
@@ -1201,8 +1202,8 @@ server/tournament/<大会id>/
 `FrontendMessage` に `tournament_bind` / `tournament_unbind` / `tournament_arm_match` /
 `tournament_confirm_result` / `tournament_discard_result` / `tournament_reopen_match` /
 `tournament_set_walkover` / `tournament_assign_program` / `tournament_set_stage_map` /
-`tournament_set_qualifier` / `tournament_set_display_view` / `tournament_rescan` を追加。
-失敗は握りつぶさず `error` メッセージで理由を返す。
+`tournament_set_qualifier` / `tournament_set_display_view` / `tournament_set_auto_play` /
+`tournament_rescan` を追加。失敗は握りつぶさず `error` メッセージで理由を返す。
 
 `tournament_set_stage_map` は運営中に回戦のマップを差し替える (`state.json` へ保存)。
 準備済み (`armed`) の試合が同じ回戦なら、その場で `loadMap` し直す — 次の `arm` まで待つと
@@ -1253,7 +1254,7 @@ participant id だけを見ていた頃は「参加者を変えずにルール�
 | `components/tournament/GroupStageView.tsx` | 予選リーグ表 N 枚 ⇄ 決勝トーナメント表の切り替え。観戦画面の出し分け (`displayGroupPhase`) もここ |
 | `components/tournament/QualifierSection.tsx` | 決勝進出者の一覧と差し替え (`QualifierPicker` は表のカードからも使う) |
 | `components/tournament/MatchCard.tsx` | 1試合のカード。3画面で共用 (`interactive` で操作の有無を切替) |
-| `components/tournament/TournamentPanel.tsx` | 運営パネル (大会の選択・取り込み・回戦ごとのマップ・次の一手) |
+| `components/tournament/TournamentPanel.tsx` | 運営パネル (大会の選択・取り込み・回戦ごとのマップ・オートプレイ・次の一手) |
 | `components/tournament/ResultConfirmDialog.tsx` | 結果確定。同点時の3択を出す |
 | `components/tournament/TournamentEditorDialog.tsx` | 大会データの作成・編集フォーム (13-7) |
 | `components/tournament/TournamentMode.tsx` | `?mode=tournament` のルート |
@@ -1457,3 +1458,79 @@ id は予選が `G1-D1M1` (Gリーグ番号-D節-M試合)、決勝が従来ど�
 
 凡例 (○ 勝ち / △ 引き分け / ● 負け) は星取表のすぐ下に置く。順位表の下だと何の記号の
 説明なのか離れて分かりにくい。「未消化」は表の `・` を見れば分かるので載せない。
+
+### 13-9. オートプレイ (自動進行 / デモモード)
+
+運営が押していた操作をバックエンドが順に代行し、大会を最後まで進める。用途は
+無人展示とリハーサル — **観客が見て分かること**が目的なので、画面が切り替わるたびに
+数秒ずつ間を置く。
+
+```
+この試合を準備 (arm) → ゲームスタート → (2ゲーム制なら) 第2ゲームへ → 結果を確定 → 次の試合
+```
+
+**`ServerManager` のデモモード (`demoMode` / `repeatMode`) とは別物。** あちらは
+ライブラリからランダムに2つ選んで延々と対戦させるもので、大会運営中は
+`TournamentOrchestrator` が常に打ち消している (勝手に次の対戦を始めてしまうため)。
+大会側の自動進行はこの節のオートプレイだけで、組み合わせも結果も大会データに従う。
+
+#### 判断は純関数、予約と実行だけがオーケストレータ
+
+`autoPlay.ts` の `nextAutoPlayAction()` は「今の状態から見て次にやること」を1つ返すだけで、
+状態遷移を持たない。判定の優先順は次のとおり:
+
+1. 確定待ちの試合 → `confirm` (勝ち上がりの同点だけは `pause`)
+2. 準備済みの試合 → `start` / `next-round` (対戦中・接続待ちの間は `null`)
+3. 予選が終わっている → `confirm-qualifiers`
+4. 実施できる試合がある → `arm` (`nextReadyMatch` = 手動操作と同じ実施順)
+5. 全試合が終わった → `restart` (デモモード) / `finish`
+
+- **予約は常に高々1つ。予約したときと発火したときの2回、同じ純関数を通す。**
+  待っている数秒の間に運営が手で操作しているかもしれないので、予約した内容を
+  そのまま実行してはいけない。食い違っていたら、今の状態に合う一手を
+  改めて (その一手ぶんの待機時間で) 予約し直す。
+- **予約は `publish()` から行う。** 状態が変わる操作はすべて `publish()` を通るので、
+  操作ごとに予約を書いて回ると必ず1つ書き漏らす。`ServerManager` の `'status'` は
+  publish しない経路があるので、`onServerStatus` の末尾でも保険で叩く
+  (予約済みなら何もしないので二重予約にはならない)。
+- **失敗したら理由を添えて止める** (`autoPlay.stoppedReason`)。同じ操作を延々と
+  再試行すると、運営が気づかないまま止まっているのと変わらない。
+
+#### 自動では決めないこと
+
+**勝ち上がりの試合が同点になったら止まる。** 公式ルールでは「マップを変更して再試合」か
+審判裁定で、どちらも運営の判断だから (13-4)。判定は形式ではなく試合ごと
+(`isKnockoutMatch`) なので、`group-then-bracket` の予選の引き分けはそのまま確定して進む。
+
+`isKnockoutMatch` は `progress.ts` にある (オーケストレータと `autoPlay.ts` の両方が
+使うため。`autoPlay.ts` からオーケストレータを参照すると循環 import になる)。
+
+#### デモモード (`loop`) のやり直し
+
+全試合が終わると表彰画面をしばらく出したあと、`restartForLoop()` が進行状態を作り直す。
+
+- `resetTournamentState()` は**使わない**。あちらは `state.json` を読み直すが、
+  運営中は進行状態をオーケストレータがメモリに握っているので食い違う。
+- 残すもの: `programs` (プログラムの紐付け)、`stageMapOverrides` (回戦ごとのマップ) —
+  進行ではなく運営の設定なので、繰り返しのたびに消えると設定し直しになる。
+- 捨てるもの: 試合の結果、`qualifierOverrides` / `qualifiersConfirmed` — どれも
+  今回の結果に紐づくもので、次の周では意味を持たない。
+- 盤面も `requestReset()` で戻し、最初の回戦のマップを読み直す (bind 直後と同じ絵にする)。
+
+#### 待機時間
+
+`DEFAULT_AUTO_PLAY_DELAYS_MS` (`autoPlay.ts`)。**視認性のための間なので、詰めると
+この機能の意味が消える。**
+
+| キー | 既定 | 何を見せている時間か |
+|---|---|---|
+| `arm` | 6s | 直前の試合の結果 (表の中で強調されている) |
+| `start` | 5s | これから戦う2人とマップ |
+| `nextRound` | 6s | 2ゲーム制の第1ゲームの結果 |
+| `confirm` | 8s | 対戦の最終結果 |
+| `qualifiers` | 12s | 予選リーグの最終順位 (確定するまで観戦画面はこれを出し続ける) |
+| `restart` | 20s | 表彰画面 |
+
+テストからは `OrchestratorDeps.autoPlayDelaysMs` で縮められる。**`arm` だけは
+ある程度残すこと** — 0 にすると、確定や決勝進出者の確定を見届ける前に
+次の対戦が始まってしまい、アサーションが競走する。

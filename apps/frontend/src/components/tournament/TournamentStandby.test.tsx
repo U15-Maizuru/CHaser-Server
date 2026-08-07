@@ -56,7 +56,8 @@ function state(
     },
     participants, matches, standings, groups: null, qualifiers: null, stageMaps: [], stageLabels: [],
     qualifiersConfirmed: false,
-    displayView: 'auto', armedMatchId: null, boundRoomId: 'room', updatedAt: 0,
+    displayView: 'auto', autoPlay: { enabled: false, loop: false, stoppedReason: null },
+    armedMatchId: null, boundRoomId: 'room', updatedAt: 0,
   };
 }
 

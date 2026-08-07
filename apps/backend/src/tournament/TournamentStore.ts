@@ -6,6 +6,7 @@ import type {
   GroupStanding,
   QualifierSlot,
   ResolvedParticipant,
+  TournamentAutoPlay,
   TournamentDisplayView,
   TournamentDefinition,
   TournamentMatch,
@@ -586,6 +587,7 @@ export function qualifiersConfirmedOf(loaded: LoadedTournament): boolean {
 export function buildStatePayload(
   loaded: LoadedTournament, boundRoomId: string, armedMatchId: string | null,
   displayView: TournamentDisplayView = 'auto',
+  autoPlay: TournamentAutoPlay = { enabled: false, loop: false, stoppedReason: null },
 ): TournamentStatePayload {
   const participants = resolveParticipants(loaded);
   return {
@@ -604,6 +606,7 @@ export function buildStatePayload(
     stageMaps:    resolveStageMaps(loaded),
     stageLabels:  stageLabelsOf(loaded.state.matches),
     displayView,
+    autoPlay,
     armedMatchId,
     boundRoomId,
     updatedAt:    loaded.state.updatedAt,

@@ -324,6 +324,27 @@ export interface StandingRow {
  */
 export type TournamentDisplayView = 'auto' | 'groups' | 'bracket';
 
+/**
+ * オートプレイ (自動進行) の状態。
+ *
+ * 運営が押していた「この試合を準備」→「ゲームスタート」→「結果を確定」を
+ * バックエンドが順に代行する。**画面が切り替わるたびに数秒ずつ間を置く** —
+ * 無人の展示で観客が結果を目で追えるようにするための機能なので、
+ * 間を詰めると意味が無くなる (待機時間は AUTO_PLAY_DELAYS_MS)。
+ */
+export interface TournamentAutoPlay {
+  enabled: boolean;
+  /** 全試合が終わったら進行状態を作り直して繰り返す (デモモード) */
+  loop:    boolean;
+  /**
+   * 自動進行が止まった理由。動いている間は null。
+   *
+   * 完走したとき (loop でない) と、運営の判断が要るとき (勝ち上がりの同点など) の
+   * 両方で入る。**自動では決められないことを黙って決めない**ための出口。
+   */
+  stoppedReason: string | null;
+}
+
 /** 予選リーグ1つぶんの順位表 (group-then-bracket) */
 export interface GroupStanding {
   group:          number;
@@ -398,6 +419,8 @@ export interface TournamentStatePayload {
   qualifiersConfirmed: boolean;
   /** 観戦画面に出すもの (運営が指定。既定は進行に追従する 'auto') */
   displayView:  TournamentDisplayView;
+  /** 自動進行 (オートプレイ / デモモード) の状態 */
+  autoPlay:     TournamentAutoPlay;
   /**
    * 回戦ごとの実効マップ (index = stage)。定義の rules.stageMaps に運営中の差し替えを
    * 重ねた結果で、null は「大会の設定 (rules.mapCatalogId) に従う」。

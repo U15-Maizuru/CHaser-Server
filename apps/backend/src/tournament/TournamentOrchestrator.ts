@@ -3,10 +3,11 @@ import type {
   ProcessConfig,
   ResolvedParticipant,
   ServerStatusPayload,
+  TournamentAutoPlay,
   TournamentMatch,
   TournamentDisplayView,
-  TournamentFormat,
   TournamentMatchResult,
+  TournamentState,
   TournamentStatePayload,
   WsMessage,
 } from '@u15/ws-types';
@@ -16,6 +17,7 @@ import { buildProcessConfig } from '../game/processConfig.js';
 import { getCatalogEntry } from '../programCatalog.js';
 import {
   assignProgram,
+  buildMatches,
   buildStatePayload,
   groupsOf,
   loadTournament,
@@ -38,9 +40,17 @@ import {
   discardResult as discardInGraph,
   downstreamOf,
   hasConfirmedDownstream,
+  isKnockoutMatch,
   reopenMatch as reopenInGraph,
   setWalkover as walkoverInGraph,
 } from './progress.js';
+import {
+  DEFAULT_AUTO_PLAY_DELAYS_MS,
+  delayFor,
+  nextAutoPlayAction,
+  type AutoPlayAction,
+  type AutoPlayDelaysMs,
+} from './autoPlay.js';
 
 // 大会の進行と ServerManager の橋渡し。
 //
@@ -60,20 +70,33 @@ interface Binding {
   armedMatchId: string | null;
   /** 観戦画面に出すもの。運営席の表示とは独立 (armedMatchId と同じくプロセス内の状態) */
   displayView:  TournamentDisplayView;
+  /** 自動進行。armedMatchId と同じくプロセス内の状態なので bind のたびに切れている */
+  autoPlay:     TournamentAutoPlay;
+  /** 自動進行の判断材料。ServerManager の最新の status を持っておく */
+  lastStatus:   ServerStatusPayload;
+  /** 予約中の自動操作 (常に高々1つ) */
+  autoTimer:    ReturnType<typeof setTimeout> | null;
   listener:     (st: ServerStatusPayload) => void;
   keepalive:    ReturnType<typeof setInterval>;
 }
 
+const AUTO_PLAY_OFF: TournamentAutoPlay = { enabled: false, loop: false, stoppedReason: null };
+
 export interface OrchestratorDeps {
   rm:        RoomManager;
   broadcast: (roomId: string, msg: WsMessage) => void;
+  /** 自動進行の待機時間 (テストで縮めるためだけの穴。既定は視認性を優先した秒単位) */
+  autoPlayDelaysMs?: Partial<AutoPlayDelaysMs>;
 }
 
 export class TournamentOrchestrator {
   private readonly byRoom       = new Map<string, Binding>();
   private readonly roomOfCup    = new Map<string, string>();
+  private readonly autoDelays:  AutoPlayDelaysMs;
 
-  constructor(private readonly deps: OrchestratorDeps) {}
+  constructor(private readonly deps: OrchestratorDeps) {
+    this.autoDelays = { ...DEFAULT_AUTO_PLAY_DELAYS_MS, ...deps.autoPlayDelaysMs };
+  }
 
   // ── 問い合わせ ────────────────────────────────────────────────────────────
 
@@ -120,6 +143,9 @@ export class TournamentOrchestrator {
       loaded,
       armedMatchId: null,
       displayView:  'auto',
+      autoPlay:     AUTO_PLAY_OFF,
+      lastStatus:   room.manager.getStatus(),
+      autoTimer:    null,
       listener,
       keepalive: setInterval(() => this.deps.rm.touchRoom(roomId), KEEPALIVE_MS),
     };
@@ -141,6 +167,7 @@ export class TournamentOrchestrator {
     const b = this.byRoom.get(roomId);
     if (!b) return;
     clearInterval(b.keepalive);
+    this.clearAutoTimer(b);
     this.deps.rm.getRoom(roomId)?.manager.off('status', b.listener);
     this.byRoom.delete(roomId);
     this.roomOfCup.delete(b.tournamentId);
@@ -152,6 +179,7 @@ export class TournamentOrchestrator {
     const b = this.byRoom.get(roomId);
     if (!b) return;
     clearInterval(b.keepalive);
+    this.clearAutoTimer(b);
     this.byRoom.delete(roomId);
     this.roomOfCup.delete(b.tournamentId);
   }
@@ -469,6 +497,23 @@ export class TournamentOrchestrator {
     this.publish(roomId);
   }
 
+  /**
+   * 自動進行 (オートプレイ) を入れる / 切る。
+   *
+   * `loop` を省略すると今の設定を保つ — パネルの2つのボタン (自動で進める / 繰り返す) が
+   * 互いの設定を巻き戻さないようにするため。入れ直しは停止理由も消す。
+   */
+  setAutoPlay(roomId: string, enabled: boolean, loop?: boolean): void {
+    const b = this.require(roomId);
+    b.autoPlay = {
+      enabled,
+      loop: loop ?? b.autoPlay.loop,
+      stoppedReason: null,
+    };
+    if (!enabled) this.clearAutoTimer(b);
+    this.publish(roomId);   // publish の中で次の一手を予約する
+  }
+
   /** 未提出だった参加者に、当日届いたプログラムを紐付ける */
   assignProgram(roomId: string, participantId: string, catalogId: string | null): void {
     const b = this.require(roomId);
@@ -494,7 +539,16 @@ export class TournamentOrchestrator {
   private onServerStatus(roomId: string, st: ServerStatusPayload): void {
     const b = this.byRoom.get(roomId);
     if (!b) return;
+    // 自動進行の判断材料。**先に更新すること** — この下の経路は publish して
+    // そこから次の一手を予約するので、古い status で判断すると1手ぶんズレる
+    b.lastStatus = st;
+    this.applyServerStatus(roomId, b, st);
+    // 状態が変わらなかった (publish しなかった) 経路のための保険。
+    // 予約済みなら autoTick は何もしないので、二重に予約されることはない
+    this.autoTick(roomId);
+  }
 
+  private applyServerStatus(roomId: string, b: Binding, st: ServerStatusPayload): void {
     // デモ・リピートが別のコントロール窓から有効化されても打ち消す (自己修復)
     const manager = this.deps.rm.getRoom(roomId)?.manager;
     if (manager && (st.demoMode || st.repeatMode)) {
@@ -540,6 +594,126 @@ export class TournamentOrchestrator {
       // まだ始まっていない状態でリセットされた場合は準備だけ取り消す
       return;
     }
+  }
+
+  // ── 自動進行 (オートプレイ) ────────────────────────────────────────────────
+  //
+  // 「次の一手」の判断は純関数 (autoPlay.ts) に閉じ、ここは予約と実行だけを持つ。
+  //
+  // 予約は常に高々1つ。**予約したときと発火したときの2回、同じ純関数を通す** —
+  // 待っている数秒の間に運営が手で操作しているかもしれないので、予約した内容を
+  // そのまま実行してはいけない。食い違っていたら、今の状態に合う一手を
+  // 改めて (その一手ぶんの待機時間で) 予約し直す。
+
+  /** 今の状態から次の一手を予約する。予約済み・自動進行が切なら何もしない */
+  private autoTick(roomId: string): void {
+    const b = this.byRoom.get(roomId);
+    if (!b || !b.autoPlay.enabled || b.autoTimer) return;
+
+    const planned = this.planAuto(b);
+    if (!planned) return;
+
+    b.autoTimer = setTimeout(() => {
+      b.autoTimer = null;
+      const now = this.planAuto(b);
+      if (!now) return;
+      // 待っている間に状況が変わった → 今の一手を、その一手ぶん待ってから
+      if (now.kind !== planned.kind) { this.autoTick(roomId); return; }
+      void this.runAuto(roomId, now);
+    }, delayFor(planned.kind, this.autoDelays));
+  }
+
+  private planAuto(b: Binding): AutoPlayAction | null {
+    if (!b.autoPlay.enabled) return null;
+    return nextAutoPlayAction({
+      matches:             b.loaded.state.matches,
+      armedMatchId:        b.armedMatchId,
+      format:              b.loaded.def.format,
+      qualifiersConfirmed: qualifiersConfirmedOf(b.loaded),
+      groupStageDone:      isGroupStageDone(b.loaded.state.matches),
+      status:              b.lastStatus,
+      loop:                b.autoPlay.loop,
+    });
+  }
+
+  /**
+   * 一手ぶんの操作を実行する。
+   *
+   * 失敗 (プログラム未登録など) は握りつぶさず、理由を添えて自動進行を止める —
+   * 同じ操作を延々と再試行すると、運営が気づかないまま止まっているのと変わらない。
+   */
+  private async runAuto(roomId: string, action: AutoPlayAction): Promise<void> {
+    const b = this.byRoom.get(roomId);
+    if (!b || !b.autoPlay.enabled) return;
+
+    const manager = this.deps.rm.getRoom(roomId)?.manager;
+    if (!manager) return;
+
+    try {
+      switch (action.kind) {
+        case 'arm':                await this.armMatch(roomId, action.matchId); break;
+        // requestStart は対戦が終わるまで返らない。その間の進行は status イベントが動かす
+        case 'start':              await manager.requestStart(); break;
+        case 'next-round':         await manager.requestNextRound(); break;
+        case 'confirm':            this.confirmResult(roomId, action.matchId); break;
+        case 'confirm-qualifiers': this.confirmQualifiers(roomId, true); break;
+        case 'restart':            await this.restartForLoop(roomId); break;
+        case 'finish':             this.stopAuto(roomId, '全ての試合が終了しました'); return;
+        case 'pause':              this.stopAuto(roomId, action.reason); return;
+      }
+    } catch (e) {
+      this.stopAuto(roomId, (e as Error).message);
+      return;
+    }
+    // 操作の中で publish していれば予約済み。していない経路のための保険
+    this.autoTick(roomId);
+  }
+
+  /** 理由を添えて自動進行を止める (運営パネルにそのまま出る) */
+  private stopAuto(roomId: string, reason: string): void {
+    const b = this.byRoom.get(roomId);
+    if (!b) return;
+    this.clearAutoTimer(b);
+    b.autoPlay = { ...b.autoPlay, enabled: false, stoppedReason: reason };
+    this.publish(roomId);
+  }
+
+  private clearAutoTimer(b: Binding): void {
+    if (b.autoTimer) {
+      clearTimeout(b.autoTimer);
+      b.autoTimer = null;
+    }
+  }
+
+  /**
+   * デモモード: 進行状態を作り直して最初からやり直す。
+   *
+   * `resetTournamentState` を使わないのは、あちらが state.json を読み直すため
+   * (運営中はこちらがメモリに握っているので食い違う)。回戦ごとのマップの差し替えは
+   * 進行ではなく運営の設定なので残し、結果に紐づくもの (決勝進出者の指名・確定) は捨てる。
+   */
+  private async restartForLoop(roomId: string): Promise<void> {
+    const b = this.require(roomId);
+
+    const state: TournamentState = {
+      tournamentId: b.tournamentId,
+      matches:      buildMatches(b.loaded.def),
+      programs:     b.loaded.state.programs,
+      updatedAt:    Date.now(),
+    };
+    if (b.loaded.state.stageMapOverrides) {
+      state.stageMapOverrides = b.loaded.state.stageMapOverrides;
+    }
+    b.loaded = { ...b.loaded, state };
+    saveState(state);
+    b.armedMatchId = null;
+
+    // 盤面と割り当てをセットアップへ戻す (bind 直後と同じ見た目にする)
+    await this.deps.rm.getRoom(roomId)?.manager.requestReset();
+    const firstMap = mapForStage(b.loaded, 0);
+    if (firstMap) this.deps.rm.getRoom(roomId)?.manager.loadMap(firstMap);
+
+    this.publish(roomId);
   }
 
   // ── 補助 ──────────────────────────────────────────────────────────────────
@@ -617,24 +791,19 @@ export class TournamentOrchestrator {
 
   private payloadFor(roomId: string): TournamentStatePayload | null {
     const b = this.byRoom.get(roomId);
-    return b ? buildStatePayload(b.loaded, roomId, b.armedMatchId, b.displayView) : null;
+    return b
+      ? buildStatePayload(b.loaded, roomId, b.armedMatchId, b.displayView, b.autoPlay)
+      : null;
   }
 
+  /**
+   * 配信する。**状態が変わる操作は必ずここを通る**ので、自動進行の次の一手も
+   * ここで予約する (操作ごとに書いて回ると必ず1つ書き漏らす)。
+   */
   private publish(roomId: string): void {
     this.deps.broadcast(roomId, { type: 'tournament_state', payload: this.payloadFor(roomId) });
+    this.autoTick(roomId);
   }
-}
-
-/**
- * 勝ち上がりの試合か (= 勝者不在のまま確定できない試合か)。
- *
- * 形式**と**試合の両方を見る:
- *   league             … 勝ち上がりが無いので常に false (引き分けはそのまま確定できる)
- *   single-elimination … 常に true
- *   group-then-bracket … 1つの大会に予選と決勝が同居するので、group の有無で分ける
- */
-function isKnockoutMatch(format: TournamentFormat, m: TournamentMatch): boolean {
-  return hasBracket(format) && m.group === undefined;
 }
 
 /** 完了したゲーム結果から、試合の結果レコードを組み立てる */

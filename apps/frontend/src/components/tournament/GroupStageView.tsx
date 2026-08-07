@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { TournamentStatePayload } from '@u15/ws-types';
+import { hasGroupStage } from '@u15/ws-types';
 import { isTournamentComplete } from '../../lib/tournamentResult';
 import { FitArea } from '../FitArea';
 import { BracketView } from './BracketView';
@@ -33,6 +34,10 @@ export function isGroupStageFinished(state: TournamentStatePayload): boolean {
 export function autoGroupPhase(state: TournamentStatePayload): {
   phase: GroupStagePhase; holdingResult: boolean;
 } {
+  // 予選を持たない形式に「予選表」は無いので、常に決勝側 (通常のトーナメント表 / リーグ表)。
+  // ここを 'groups' に倒すと、観戦画面の表彰画面 (shouldShowFinale) が
+  // **トーナメント・リーグの大会で永久に出ない**
+  if (!hasGroupStage(state.format))  return { phase: 'bracket', holdingResult: false };
   if (!isGroupStageFinished(state))  return { phase: 'groups',  holdingResult: false };
   if (state.qualifiersConfirmed)     return { phase: 'bracket', holdingResult: false };
   return { phase: 'groups', holdingResult: true };

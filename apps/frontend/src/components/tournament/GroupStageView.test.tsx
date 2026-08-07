@@ -79,6 +79,7 @@ function state(
     qualifiersConfirmed: opts.confirmed ?? false,
     stageMaps: [null, null], stageLabels: ['予選 第1節', '決勝'],
     displayView: opts.displayView ?? 'auto',
+    autoPlay: { enabled: false, loop: false, stoppedReason: null },
     armedMatchId: null, boundRoomId: 'room', updatedAt: 0,
   };
 }
@@ -93,6 +94,14 @@ describe('isGroupStageFinished', () => {
 describe('displayGroupPhase — 決勝進出者の確定を待つ', () => {
   it('予選中は予選表 (据え置きの見出しは出さない)', () => {
     expect(displayGroupPhase(state(false))).toEqual({ phase: 'groups', holdingResult: false });
+  });
+
+  it('予選を持たない形式は常に決勝側 (でないと表彰画面が永久に出ない)', () => {
+    for (const format of ['single-elimination', 'league'] as const) {
+      const s = { ...state(true), format, matches: [{ ...FINAL, status: 'done' as const }] };
+      expect(displayGroupPhase(s)).toEqual({ phase: 'bracket', holdingResult: false });
+      expect(shouldShowFinale(s, displayGroupPhase(s).phase)).toBe(true);
+    }
   });
 
   it('予選が終わっても、確定するまでは予選の最終結果を出し続ける', () => {

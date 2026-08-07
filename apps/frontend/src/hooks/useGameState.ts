@@ -36,6 +36,11 @@ export interface TournamentCommands {
   confirmQualifiers: (confirmed: boolean) => void;
   /** 観戦画面に出すものの切り替え (運営席の表示とは連動しない) */
   setDisplayView: (view: TournamentDisplayView) => void;
+  /**
+   * 自動進行の切り替え。`loop` を省略するとサーバー側の今の設定を保つ
+   * (「自動で進める」と「繰り返す」を別々のボタンにしても互いを巻き戻さない)
+   */
+  setAutoPlay: (enabled: boolean, loop?: boolean) => void;
   rescan:   () => void;
 }
 
@@ -214,6 +219,8 @@ export function useGameState(wsUrl: string, roomId: string): GameStateHook {
         send({ type: 'tournament_confirm_qualifiers', payload: { confirmed } }),
       setDisplayView: (view) =>
         send({ type: 'tournament_set_display_view', payload: { view } }),
+      setAutoPlay: (enabled, loop) =>
+        send({ type: 'tournament_set_auto_play', payload: { enabled, loop } }),
       rescan:   ()                    => send({ type: 'tournament_rescan' }),
     },
   };

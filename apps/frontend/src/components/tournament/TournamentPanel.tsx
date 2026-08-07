@@ -300,6 +300,41 @@ export function TournamentPanel({
             </section>
           )}
 
+          {/* ── オートプレイ ── */}
+          <section style={card}>
+            <div style={sectionTitle}>オートプレイ</div>
+            <p style={hint}>
+              「この試合を準備」→「ゲームスタート」→「結果を確定」を自動で行い、大会を最後まで進めます。
+              画面が切り替わるたびに数秒ずつ間を置くので、観客が対戦カードと結果を目で追えます。
+              <strong>同点で勝者が決まらないときは止まります</strong> —
+              再試合か審判裁定かは運営が決めるものなので、自動では決めません。
+            </p>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <button
+                style={{ ...btnChoice, ...(state.autoPlay.enabled ? btnChoiceOn : null) }}
+                onClick={() => commands.setAutoPlay(!state.autoPlay.enabled)}
+              >
+                {state.autoPlay.enabled ? '自動進行を止める' : '自動で進める ▶'}
+              </button>
+              <button
+                style={{ ...btnChoice, ...(state.autoPlay.loop ? btnChoiceOn : null) }}
+                onClick={() => commands.setAutoPlay(state.autoPlay.enabled, !state.autoPlay.loop)}
+              >
+                デモモード（繰り返す）
+              </button>
+            </div>
+            {state.autoPlay.loop && (
+              <p style={hint}>
+                全試合が終わると表彰画面をしばらく出したあと、
+                <strong>進行状態を消して同じ大会データを最初からやり直します</strong>。
+                無人展示向けの設定なので、本番の運営では切ってください。
+              </p>
+            )}
+            {state.autoPlay.stoppedReason && (
+              <div style={warnRow}>⚠ 自動進行を止めました: {state.autoPlay.stoppedReason}</div>
+            )}
+          </section>
+
           {/* ── 次の一手 ── */}
           <section style={card}>
             <div style={sectionTitle}>対戦中の試合</div>

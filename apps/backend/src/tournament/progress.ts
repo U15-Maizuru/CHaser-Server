@@ -1,10 +1,11 @@
 import type {
   LeaguePoints,
   MatchSlotRef,
+  TournamentFormat,
   TournamentMatch,
   TournamentMatchResult,
 } from '@u15/ws-types';
-import { compareByPlayOrder } from '@u15/ws-types';
+import { compareByPlayOrder, hasBracket } from '@u15/ws-types';
 import { qualifierKey, resolveGroupRank } from './qualifiers.js';
 
 // 試合グラフの進行 (slot の解決・bye の自動確定・確定の取り消し) を行う純関数。
@@ -283,4 +284,16 @@ export function nextReadyMatch(matches: TournamentMatch[]): TournamentMatch | nu
   return [...matches]
     .filter(m => m.status === 'ready')
     .sort(compareByPlayOrder)[0] ?? null;
+}
+
+/**
+ * 勝ち上がりの試合か (= 勝者不在のまま確定できない試合か)。
+ *
+ * 形式**と**試合の両方を見る:
+ *   league             … 勝ち上がりが無いので常に false (引き分けはそのまま確定できる)
+ *   single-elimination … 常に true
+ *   group-then-bracket … 1つの大会に予選と決勝が同居するので、group の有無で分ける
+ */
+export function isKnockoutMatch(format: TournamentFormat, m: TournamentMatch): boolean {
+  return hasBracket(format) && m.group === undefined;
 }

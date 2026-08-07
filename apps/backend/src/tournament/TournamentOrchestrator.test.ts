@@ -59,6 +59,11 @@ describe('TournamentOrchestrator', () => {
     orch = new TournamentOrchestrator({
       rm,
       broadcast: (roomId, msg) => sent.push({ roomId, msg }),
+      // 自動進行の「観客に見せる間」はテストでは要らない。ただし arm だけは
+      // 少し置く — 確定や予選確定を見届ける前に次の対戦が始まってしまうため
+      autoPlayDelaysMs: {
+        arm: 300, start: 10, nextRound: 10, confirm: 10, qualifiers: 10, restart: 10,
+      },
     });
   });
 
@@ -540,6 +545,122 @@ describe('TournamentOrchestrator', () => {
     });
   });
 
+  // ── オートプレイ ────────────────────────────────────────────────────────
+  describe('オートプレイ (自動進行)', () => {
+    /** 2人 = 1試合だけの大会。自動進行を最後まで通しても現実的な時間で終わる */
+    const soloCup = () => cupDef({
+      participants: [
+        { id: 'p1', name: 'A', seed: 1, program: { builtin: 'cpu' } },
+        { id: 'p2', name: 'B', seed: 2, program: { builtin: 'cpu' } },
+      ],
+    });
+
+    const waitFor = async (label: string, cond: () => boolean, timeoutMs = 40_000) => {
+      const until = Date.now() + timeoutMs;
+      while (!cond()) {
+        if (Date.now() > until) throw new Error(`タイムアウト: ${label}`);
+        await new Promise(r => setTimeout(r, 20));
+      }
+    };
+
+    it('既定では切れていて、enabled と loop は別々に設定できる', () => {
+      writeCup(soloCup());
+      orch.bind(ROOM, CUP);
+      expect(lastState()!.autoPlay).toEqual({ enabled: false, loop: false, stoppedReason: null });
+
+      // 切ったまま繰り返しの設定だけ入れられる (パネルのボタンが2つに分かれているため)
+      orch.setAutoPlay(ROOM, false, true);
+      expect(lastState()!.autoPlay).toEqual({ enabled: false, loop: true, stoppedReason: null });
+
+      // loop を省略した呼び出しは今の設定を巻き戻さない
+      orch.setAutoPlay(ROOM, false);
+      expect(lastState()!.autoPlay.loop).toBe(true);
+    });
+
+    it('準備・開始・確定を代行して最後まで進め、終わると自動で切れる', async () => {
+      writeCup(soloCup());
+      orch.bind(ROOM, CUP);
+      orch.setAutoPlay(ROOM, true);
+
+      // 完走しても同点で止まっても autoPlay は切れる。どちらだったかで期待を分ける
+      await waitFor('自動進行の停止', () => !lastState()!.autoPlay.enabled);
+
+      const reason = lastState()!.autoPlay.stoppedReason;
+      if (reason?.includes('同点')) return;  // CPU 同士が同点。手動決着が要る (別テスト)
+
+      expect(reason).toBe('全ての試合が終了しました');
+      expect(matchOf('FINAL').status).toBe('done');
+      expect(matchOf('FINAL').result!.roundResults).toHaveLength(1);
+    }, 60_000);
+
+    it('操作が通らなければ理由を添えて止まる', async () => {
+      writeCup(cupDef({
+        participants: [
+          { id: 'p1', name: 'A', seed: 1, program: { builtin: 'cpu' } },
+          { id: 'p2', name: 'B', seed: 2, program: null },
+        ],
+      }));
+      orch.bind(ROOM, CUP);
+      orch.setAutoPlay(ROOM, true);
+
+      await waitFor('停止', () => lastState()!.autoPlay.stoppedReason !== null);
+      expect(lastState()!.autoPlay.stoppedReason).toMatch(/B のプログラムが登録されていません/);
+      expect(lastState()!.autoPlay.enabled).toBe(false);
+      expect(matchOf('FINAL').status).toBe('ready');
+    });
+
+    it('切ると予約済みの操作は実行されない', async () => {
+      writeCup(soloCup());
+      orch.bind(ROOM, CUP);
+      orch.setAutoPlay(ROOM, true);
+      orch.setAutoPlay(ROOM, false);
+
+      await new Promise(r => setTimeout(r, 500));   // arm の待機時間 (300ms) を超えて待つ
+      expect(lastState()!.armedMatchId).toBeNull();
+      expect(matchOf('FINAL').status).toBe('ready');
+    });
+
+    it('デモモードでは全試合が終わると進行を作り直して繰り返す', async () => {
+      writeCup(soloCup());
+      orch.bind(ROOM, CUP);
+      orch.setWalkover(ROOM, 'FINAL', 0);          // 対戦せずに全試合終了の状態を作る
+      expect(matchOf('FINAL').status).toBe('done');
+
+      orch.setAutoPlay(ROOM, true, true);
+      await waitFor('やり直し', () => matchOf('FINAL').status !== 'done');
+      orch.setAutoPlay(ROOM, false);               // 次の対戦が始まる前に止める
+
+      expect(matchOf('FINAL').result).toBeUndefined();
+      expect(lastState()!.autoPlay.stoppedReason).toBeNull();  // 完走ではないので止まらない
+      // 作り直した進行は state.json にも残る
+      expect(loadTournament(CUP)!.state.matches.every(m => m.status !== 'done')).toBe(true);
+    });
+
+    it('デモモードでも回戦ごとのマップの差し替えは残る (進行だけ作り直す)', async () => {
+      writeCup(soloCup());
+      orch.bind(ROOM, CUP);
+      orch.setStageMap(ROOM, 0, 'final-map');
+      orch.setWalkover(ROOM, 'FINAL', 0);
+
+      orch.setAutoPlay(ROOM, true, true);
+      await waitFor('やり直し', () => matchOf('FINAL').status !== 'done');
+      orch.setAutoPlay(ROOM, false);
+
+      expect(lastState()!.stageMaps).toEqual(['final-map']);
+    });
+
+    it('繰り返さないなら全試合終了で止まる', async () => {
+      writeCup(soloCup());
+      orch.bind(ROOM, CUP);
+      orch.setWalkover(ROOM, 'FINAL', 0);
+
+      orch.setAutoPlay(ROOM, true);
+      await waitFor('停止', () => !lastState()!.autoPlay.enabled);
+      expect(lastState()!.autoPlay.stoppedReason).toBe('全ての試合が終了しました');
+      expect(matchOf('FINAL').status).toBe('done');
+    });
+  });
+
   // ── 予選リーグ + 決勝トーナメント ────────────────────────────────────────
   describe('予選リーグ + 決勝トーナメント', () => {
     /**
@@ -676,6 +797,24 @@ describe('TournamentOrchestrator', () => {
       orch.confirmQualifiers(ROOM, true);
       expect(lastState()!.qualifiersConfirmed).toBe(true);
       await expect(orch.armMatch(ROOM, 'SF1')).resolves.toBeUndefined();
+    });
+
+    it('オートプレイは予選が終わると決勝進出者を確定して決勝へ進む', async () => {
+      writeCup(groupCup());
+      orch.bind(ROOM, CUP);
+      finishGroups();
+      expect(lastState()!.qualifiersConfirmed).toBe(false);
+
+      orch.setAutoPlay(ROOM, true);
+      const until = Date.now() + 5_000;
+      while (!lastState()!.qualifiersConfirmed) {
+        if (Date.now() > until) throw new Error('タイムアウト: 決勝進出者の確定');
+        await new Promise(r => setTimeout(r, 20));
+      }
+      orch.setAutoPlay(ROOM, false);   // 決勝の対戦が始まる前に止める
+
+      expect(lastState()!.qualifiersConfirmed).toBe(true);
+      expect(lastState()!.autoPlay.stoppedReason).toBeNull();
     });
 
     it('予選の試合は確定前でも準備できる (確定は決勝の手前の関門)', async () => {

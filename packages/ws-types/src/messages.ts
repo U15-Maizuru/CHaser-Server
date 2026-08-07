@@ -59,6 +59,11 @@ export type FrontendMessage =
   | { type: 'tournament_confirm_qualifiers'; payload: { confirmed: boolean } }
   /** 観戦画面に出すものを切り替える (運営席の表示とは連動しない) */
   | { type: 'tournament_set_display_view'; payload: { view: TournamentDisplayView } }
+  /**
+   * 自動進行の切り替え。`loop` は「全試合が終わったら最初からやり直す」(デモモード)。
+   * `loop` を省略したら今の設定を保つ (どちらか一方だけを押せるようにするため)
+   */
+  | { type: 'tournament_set_auto_play';   payload: { enabled: boolean; loop?: boolean } }
   | { type: 'tournament_rescan' };
 
 // --- Room / lobby ---
