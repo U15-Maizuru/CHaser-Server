@@ -3,6 +3,7 @@ import type { ClientType, InlineMapData, MapCatalogEntry, ProcessConfig, ServerS
 import { MapObject } from '@u15/ws-types';
 import { TeamSetupPanel } from './TeamSetupPanel';
 import { MapThumbnail } from './MapThumbnail';
+import { countObj } from '../lib/boardDraw';
 import { MapSourceSection, sourceLabel } from './MapSourceSection';
 import { useTextures } from '../hooks/useTextures';
 import {
@@ -280,10 +281,6 @@ function MapPreviewColumn({
       </div>
     </div>
   );
-}
-
-function countObj(field: number[][], obj: MapObject): number {
-  return field.flat().filter(c => c === obj).length;
 }
 
 const s: Record<string, React.CSSProperties> = {

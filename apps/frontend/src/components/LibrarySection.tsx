@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { FileDropZone } from './FileDropZone';
 import { BORDER_COLOR, TEXT_SECONDARY, TEXT_PRIMARY, TEXT_MUTED, WIN_BASE, BG_CARD, FONT_NUM } from '../ui';
+import { deleteLibFile, fetchLibFiles, libUploadUrl } from '../lib/api';
 
 interface Props {
   slot:     0 | 1;
@@ -14,15 +15,10 @@ export function LibrarySection({ slot, httpBase, roomId }: Props) {
   const [open,  setOpen]  = useState(false);
   const [files, setFiles] = useState<string[]>([]);
 
-  const libEndpoint  = `${httpBase}/api/upload/library?slot=${slot}&room=${roomId}`;
+  const libEndpoint  = libUploadUrl(httpBase, roomId, slot);
   const customFiles  = files.filter(f => f !== DEFAULT_LIBRARY);
 
-  const fetchFiles = () => {
-    fetch(`${httpBase}/api/libs?slot=${slot}&room=${roomId}`)
-      .then(r => r.json())
-      .then((d: { files: string[] }) => setFiles(d.files))
-      .catch(() => {});
-  };
+  const fetchFiles = () => { void fetchLibFiles(httpBase, roomId, slot).then(setFiles); };
 
   useEffect(() => {
     if (open) fetchFiles();
@@ -30,9 +26,7 @@ export function LibrarySection({ slot, httpBase, roomId }: Props) {
   }, [open]);
 
   const handleDelete = (filename: string) => {
-    fetch(`${httpBase}/api/libs/${encodeURIComponent(filename)}?slot=${slot}&room=${roomId}`, { method: 'DELETE' })
-      .then(() => fetchFiles())
-      .catch(() => {});
+    void deleteLibFile(httpBase, roomId, slot, filename).then(fetchFiles);
   };
 
   return (

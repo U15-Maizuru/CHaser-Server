@@ -3,6 +3,7 @@ import type { MapCatalogEntry } from '@u15/ws-types';
 import { FileDropZone } from './FileDropZone';
 import { LibraryBrowser, LibraryRow } from './LibraryBrowser';
 import { BG_CARD, BORDER_COLOR, Button, Callout, Dialog, RADIUS_PILL, TEXT_SECONDARY } from '../ui';
+import { deleteMap, fetchMaps } from '../lib/api';
 
 interface Props {
   httpBase: string;
@@ -14,14 +15,7 @@ interface Props {
 export function MapLibraryDialog({ httpBase, onClose }: Props) {
   const [entries, setEntries] = useState<MapCatalogEntry[]>([]);
 
-  const fetchEntries = () => {
-    fetch(`${httpBase}/api/maps`)
-      .then(r => r.json())
-      .then((d: { entries: MapCatalogEntry[] }) => {
-        setEntries([...d.entries].sort((a, b) => b.uploadedAt - a.uploadedAt));
-      })
-      .catch(() => {});
-  };
+  const fetchEntries = () => { void fetchMaps(httpBase).then(setEntries); };
 
   useEffect(fetchEntries, [httpBase]);
 
@@ -31,9 +25,7 @@ export function MapLibraryDialog({ httpBase, onClose }: Props) {
       + 'このマップを選択中のルームでは、リセット後にマップが読み込めなくなります。よろしいですか？',
     );
     if (!ok) return;
-    fetch(`${httpBase}/api/maps/${entry.id}`, { method: 'DELETE' })
-      .then(() => fetchEntries())
-      .catch(() => {});
+    void deleteMap(httpBase, entry.id).then(fetchEntries);
   };
 
   return (
