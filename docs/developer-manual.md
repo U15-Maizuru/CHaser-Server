@@ -32,7 +32,7 @@
 | 公式用語 | 意味 | コード上の識別子 |
 |---|---|---|
 | **ゲーム** | 1回の対戦 (盤面用意 → 決着 / ターン切れ) | `round` — `currentRound` / `roundResults` / `RoundResult` / `RoundController` / `idxForSide(side, round)` / `roundPointsFor` |
-| **試合** | 同じマップで先後を入れ替えた2ゲームのまとまり | `set` — `computeSetResult` / `SetResult` / `setResult.ts`、および `doubleMode` (= 2ゲーム制)<br>大会運営では `match` — `TournamentMatch` / `matchId` / `MatchStatus` (粒度は `set` と同じ) |
+| **試合** | 同じマップで先後を入れ替えた2ゲームのまとまり | `set` — `computeSetResult` / `SetResult` (`ws-types/scoring.ts`)、および `doubleMode` (= 2ゲーム制)<br>大会運営では `match` — `TournamentMatch` / `matchId` / `MatchStatus` (粒度は `set` と同じ) |
 | **回戦 / 節** | トーナメントの1回戦・準決勝、リーグの第N節 | `stage` — `TournamentMatch.stage`。`round` は「ゲーム」に使っているので流用しない |
 | **予選グループ** | 予選リーグの Aリーグ / Bリーグ。BOT対戦予選では1つだけ | `group` — `TournamentMatch.group`。**これを持つ試合が「予選」**で、持たない試合が決勝トーナメント |
 | **運営BOT** | BOT対戦予選で全参加者の対戦相手になるプログラム | `BOT_PARTICIPANT_ID` (`'__bot__'`) — `participants` には入れず、配信ペイロードにだけ合成する |
@@ -81,7 +81,7 @@
 │  Backend (apps/backend) — Node.js + TypeScript              │
 │                                                             │
 │  WsServer (port 8765)                                       │
-│    ├── HttpServer — ファイルアップロード / default-room      │
+│    ├── http/router — ファイルアップロード / default-room     │
 │    └── RoomManager — 部屋管理                               │
 │          └── Room "local" (ports 2009/2010)                 │
 │                └── ServerManager                            │
@@ -145,9 +145,21 @@ U15-server-maizuru/
 │   │       │   ├── ServerManager.ts    1ゲームを管理するコーディネーター (コンストラクタでポート番号ペアを受け取る)
 │   │       │   ├── SlotManager.ts      クライアント接続・スロット管理
 │   │       │   ├── MapManager.ts       マップ状態管理
-│   │       │   └── RoundController.ts  フェーズ・ゲーム制御
+│   │       │   ├── RoundController.ts  フェーズ・ゲーム制御
+│   │       │   ├── roundResult.ts      1ゲームの結果から RoundResult を組み立てる
+│   │       │   └── inlineMap.ts        InlineMapData ⇄ GameMap の相互変換
+│   │       ├── catalog/
+│   │       │   └── JsonIndexStore.ts   「ディレクトリ + index.json」で永続化するカタログの土台
 │   │       ├── log/
-│   │       │   └── StableLog.ts
+│   │       │   └── StableLog.ts        対戦ログ (openGameLog がゲームごとのファイルを開く)
+│   │       ├── http/
+│   │       │   ├── router.ts           入口。リソース別のハンドラへ振り分ける
+│   │       │   ├── programs.ts         /api/programs, /api/upload/program
+│   │       │   ├── maps.ts             /api/maps* (一覧・ランダム生成・保存・エクスポート)
+│   │       │   ├── libs.ts             /api/libs, /api/upload/library
+│   │       │   ├── music.ts            /api/music, /api/upload/music
+│   │       │   ├── static.ts           frontend/dist の静的配信 (SPA フォールバック付き)
+│   │       │   └── paths.ts            ルームごとのディレクトリ規約
 │   │       └── network/
 │   │           ├── PortPool.ts             TCP ポートプール
 │   │           ├── BaseClient.ts           全クライアント種別の基底 (Process/Tcp/Manual/Com)
@@ -155,7 +167,8 @@ U15-server-maizuru/
 │   │           ├── WsServer.ts             WebSocket サーバー。setRoomManager でルームマネージャを注入し、ソケット⇔ルームの紐付けを管理する薄いコーディネーター
 │   │           ├── LobbyRouter.ts          ロビー系メッセージ (create/join/list/destroy_room) を処理
 │   │           ├── GameMessageDispatch.ts  ルーム内ゲームメッセージを対応する ServerManager へディスパッチ
-│   │           └── HttpServer.ts           静的配信 + room別パスでのファイルアップロード + /api/default-room
+│   │           ├── TournamentMessageDispatch.ts  ルーム内の大会運営メッセージを転送
+│   │           └── localIp.ts               LAN から到達できる自分の IPv4 アドレス
 │   │
 │   ├── frontend/
 │   │   └── src/
@@ -193,11 +206,17 @@ U15-server-maizuru/
 │   │       │   ├── useFitScale.ts        空き領域に合わせた表示倍率の算出 (FitArea の中身)
 │   │       │   ├── useBgm.ts             フェーズに応じた BGM 再生
 │   │       │   ├── useStartCountdown.ts  ゲーム開始カウントダウンの表示制御
+│   │       │   ├── useBoardLayout.ts     盤面のセルサイズ・サイドパネル幅・スコアバー寸法の導出
+│   │       │   ├── useFitCorrection.ts   中身が高さに収まる最大の拡大率を二分探索で求める
 │   │       │   └── ...
 │   │       ├── lib/
-│   │       │   ├── roundSide.ts        2ゲーム制のゲーム番号から画面左右の team-index を算出
-│   │       │   ├── setResult.ts        画面側 (side) ごとの勝利数・合計ポイントと試合勝者を算出
-│   │       │   │                        (勝利数優先 → 同数なら合計ポイント。サイドパネルの総合欄で使用)
+│   │       │   ├── api.ts             バックエンドの HTTP API を叩く場所 (URL とレスポンスの形はここだけが知る)
+│   │       │   ├── appMode.ts         URL のクエリから「どの画面を出すか」を読む
+│   │       │   ├── boardDraw.ts       盤面 canvas の共通部品 (色・反転の式・テクスチャのフォールバック)
+│   │       │   ├── boardLayers.ts     盤面に重ねるレイヤー (決着演出・ダーク幕)
+│   │       │   ├── panelDim.ts        サイドパネルの寸法計算
+│   │       │   ├── roundRow.ts        2ゲーム制サイドパネルの明細1行の組み立て
+│   │       │   ├── resultText.ts      決着理由・勝敗の文言
 │   │       │   ├── decisiveEffect.ts   決着理由 → 盤面演出 (勝者の 👑・敗者の暗転・敗因バッジ/リング) の変換
 │   │       │   └── ...
 │   │       └── ...
@@ -209,7 +228,13 @@ U15-server-maizuru/
 │
 ├── packages/
 │   └── ws-types/
-│       └── src/index.ts    バックエンド・フロントエンド共有のプロトコル型・メッセージ型を定義
+│       └── src/
+│           ├── protocol.ts       基本型・enum・共有の既定値 (依存なし)
+│           ├── scoring.ts        競技ルールの得点・勝敗判定の純関数と係数
+│           ├── messages.ts       WS メッセージ union
+│           ├── tournament.ts     大会運営の型と純関数
+│           ├── tournamentFlow.ts 試合グラフを読む述語
+│           └── index.ts          re-export の集約点
 │
 ├── server/
 │   ├── program-catalog/            プログラムライブラリ (CRUD カタログ、全ルーム共通)
@@ -705,7 +730,7 @@ sweepBonus[winnerIdx] = SWEEP_POINT_PER_ITEM * leaveItems;
 ボーナスは1ゲーム制でも発生する（決着理由が `SCORE` 以外なら常に計算される）。1ゲームの
 ポイントは `scores × 10 + strikeBonus + sweepBonus`。
 
-試合全体の集計はフロントの `lib/setResult.ts` (`roundPointsFor` / `roundWonBy` /
+試合全体の集計は `@u15/ws-types` の `scoring.ts` (`roundPointsFor` / `roundWonBy` /
 `computeSetResult`) に集約している。集計の単位が team-index ではなく画面側 (`side`) である点に
 注意 — 2ゲーム制ではゲームごとに先攻/後攻が入れ替わるため、`idxForSide(side, round)` で
 team-index を引き直さないと同じプログラムを追いかけられない。
@@ -921,7 +946,7 @@ pnpm build
 NODE_ENV=production U15_MODE=web PORT=8765 node apps/backend/dist/index.js
 ```
 
-`NODE_ENV=production` にすると `HttpServer` が `apps/frontend/dist/` を port 8765 で静的配信します。ポート1つで完結します。
+`NODE_ENV=production` にすると `http/static.ts` が `apps/frontend/dist/` を port 8765 で静的配信します。ポート1つで完結します。
 
 ### ビルド依存順序
 
@@ -1029,7 +1054,7 @@ pnpm --filter @u15/backend test
 |---|---|
 | ゲーム進行・判定 | `game/GameLogic.test.ts`, `game/GameSystem.test.ts`, `game/Game.test.ts` |
 | ServerManager の分割クラス | `game/ServerManager.test.ts`, `game/MapManager.test.ts`, `game/SlotManager.test.ts` |
-| ネットワーク | `network/TcpClient.test.ts`, `network/WsServer.test.ts`, `network/HttpServer.test.ts` |
+| ネットワーク | `network/TcpClient.test.ts`, `network/WsServer.test.ts`, `http/router.test.ts` |
 | ルーム・カタログ | `RoomManager.test.ts`, `programCatalog.test.ts`, `programName.test.ts`, `mapCatalog.test.ts`, `libTemplates.test.ts` |
 | クライアント | `clients/ProcessClient.test.ts` |
 | 大会運営 | `tournament/bracket.test.ts`, `league.test.ts`, `standings.test.ts`, `progress.test.ts`, `definition.test.ts`, `TournamentStore.test.ts`, `TournamentOrchestrator.test.ts`, `zip.test.ts`, `exporter.test.ts`, `httpRoutes.test.ts` |
@@ -1051,7 +1076,7 @@ pnpm --filter @u15/frontend test
 | 範囲 | ファイル |
 |---|---|
 | フック | `hooks/useTextures.test.ts`, `hooks/useGamePhaseSound.test.ts`, `hooks/usePersistedState.test.ts` |
-| 得点・演出のロジック | `lib/setResult.test.ts`, `lib/roundSide.test.ts`, `lib/decisiveEffect.test.ts` |
+| 得点・演出のロジック | `lib/decisiveEffect.test.ts`, `lib/roundRow.test.ts`, `lib/resultText.test.ts`<br>競技ルールそのものは `packages/ws-types/src/scoring.test.ts` |
 | 大会運営のロジック | `lib/bracketLayout.test.ts`, `lib/bracketSlots.test.ts` |
 | コンポーネント | `components/PlayerSidePanel.test.tsx`, `components/tournament/TournamentEditorDialog.test.tsx` |
 

@@ -36,8 +36,8 @@ packages/ws-types/  バックエンドとフロントエンドが共有する型
 pnpm install
 pnpm build                          # 全ワークスペースの型チェック + ビルド
 pnpm -r test                        # 単体テスト (vitest)
-pnpm test:e2e                       # Electron + Playwright の全自動 E2E
-pnpm --filter @u15/electron dev     # 開発起動 (Electron + Vite + Backend)
+pnpm test:e2e                       # Electron + Playwright の全自動 E2E (先に build する)
+pnpm dev                            # 開発起動 (Electron + Vite + Backend)
 ```
 
 - `@u15/ws-types` を変えたら **先に `pnpm --filter @u15/ws-types build`**。

@@ -12,7 +12,7 @@ description: このリポジトリでアプリを起動する・E2E を回す・
 ## 起動
 
 ```bash
-pnpm --filter @u15/electron dev     # Electron + Vite + Backend が同時に立つ
+pnpm dev     # Electron + Vite + Backend が同時に立つ
 ```
 
 対戦表示ウィンドウ (1280×800) とコントロールウィンドウ (1280×800) が開く。
@@ -24,9 +24,12 @@ pnpm --filter @u15/electron dev     # Electron + Vite + Backend が同時に立�
 ## E2E
 
 ```bash
-pnpm build          # backend/electron の dist が要る
-pnpm test:e2e
+pnpm test:e2e       # backend/electron の dist が要るので build を前置してある
 ```
+
+Vite の起動は `apps/electron/viteLauncher.cjs` を dev と共有している。
+pnpm 経由 (`shell: true`) で起動すると cmd → pnpm → cmd → vite と実体が3階層下に来て、
+後始末で木ごと落とすときに追いきれなくなるため、CLI を直接叩いている。
 
 スクリーンショットは `test-screenshots/` に出る。
 
