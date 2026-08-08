@@ -13,6 +13,15 @@ import type {
 
 const DEFAULT_TYPE: ClientType = 'process';
 
+/**
+ * 接続を伴わないクライアント種別の表示。名前と接続元はクライアント実装
+ * (ComClient / ManualClient) が持つ値と揃える。
+ */
+const LOCAL_CLIENT_LABEL: Partial<Record<ClientType, { name: string; ip: string }>> = {
+  cpu:    { name: ComClient.DISPLAY_NAME,    ip: ComClient.DISPLAY_IP },
+  manual: { name: ManualClient.DISPLAY_NAME, ip: ManualClient.DISPLAY_IP },
+};
+
 interface SlotInfo {
   type:          ClientType;
   state:         ClientState;
@@ -44,41 +53,15 @@ export class SlotManager extends EventEmitter {
 
   async setClientType(slot: 0 | 1, type: ClientType, processConfig?: ProcessConfig): Promise<void> {
     const info = this.slots[slot];
+    disconnect(info);
     info.type = type;
-    info.error = undefined;
+    // processConfig を持つのは process のときだけ。他の型に移ったら必ず捨てる
+    info.processConfig = type === 'process' ? processConfig : undefined;
 
-    if (type === 'cpu') {
-      info.tcp?.close();
-      info.tcp = null;
-      info.state = 'ready';
-      info.name  = 'CPU';
-      info.ip    = 'ローカル';
-      info.processConfig = undefined;
+    if (markLocalReady(info)) {
+      // cpu / manual は接続を待たないのでここで完了。listening も張らない
       this.emitChange();
       return;
-    }
-
-    if (type === 'manual') {
-      info.tcp?.close();
-      info.tcp = null;
-      info.state = 'ready';
-      info.name  = '手動操作';
-      info.ip    = 'ローカル';
-      info.processConfig = undefined;
-      this.emitChange();
-      return;
-    }
-
-    info.tcp?.close();
-    info.tcp  = null;
-    info.name = '';
-    info.ip   = '';
-    info.state = 'waiting';
-
-    if (type === 'process') {
-      info.processConfig = processConfig;
-    } else {
-      info.processConfig = undefined;
     }
 
     this.emitChange();
@@ -87,13 +70,8 @@ export class SlotManager extends EventEmitter {
 
   deleteProgram(slot: 0 | 1): void {
     const info = this.slots[slot];
-    info.tcp?.close();
-    info.tcp           = null;
+    disconnect(info);
     info.processConfig = undefined;
-    info.state         = 'waiting';
-    info.name          = '';
-    info.ip            = '';
-    info.error         = undefined;
     this.emitChange();
     void this.startListening(slot);
   }
@@ -101,13 +79,8 @@ export class SlotManager extends EventEmitter {
   /** requestReset 用: type を含めて完全に初期状態へ戻す (listening の再開始は呼び出し元が行う) */
   resetAllToDefault(): void {
     for (const slot of this.slots) {
-      slot.tcp?.close();
-      slot.tcp           = null;
+      disconnect(slot);
       slot.type          = DEFAULT_TYPE;
-      slot.state         = 'waiting';
-      slot.name          = '';
-      slot.ip            = '';
-      slot.error         = undefined;
       slot.processConfig = undefined;
     }
   }
@@ -115,12 +88,7 @@ export class SlotManager extends EventEmitter {
   /** requestNextRound 用: type (スワップ済み) は維持したまま接続状態だけ初期化する */
   resetForNextRound(): void {
     for (const slot of this.slots) {
-      slot.tcp?.close();
-      slot.tcp   = null;
-      slot.state = 'waiting';
-      slot.name  = '';
-      slot.ip    = '';
-      slot.error = undefined;
+      disconnect(slot);
     }
   }
 
@@ -190,18 +158,9 @@ export class SlotManager extends EventEmitter {
 
   private async startListening(slot: 0 | 1): Promise<void> {
     const info = this.slots[slot];
-    if (info.type === 'cpu') {
-      // CPU は再起動不要 (setClientType で ready にされる)
-      info.state = 'ready';
-      info.name  = 'CPU';
-      info.ip    = 'ローカル';
-      this.emitChange();
-      return;
-    }
-    if (info.type === 'manual') {
-      info.state = 'ready';
-      info.name  = '手動操作';
-      info.ip    = 'ローカル';
+
+    // cpu / manual は接続を待たない (setClientType でも同じ扱いをする)
+    if (markLocalReady(info)) {
       this.emitChange();
       return;
     }
@@ -210,19 +169,27 @@ export class SlotManager extends EventEmitter {
     const tcp = info.type === 'process' ? new ProcessClient(this.timeoutMs) : new TcpClient(this.timeoutMs);
     info.tcp = tcp;
 
+    // 非同期の待ち合わせから戻ってきた時点で、待っている間に setClientType 等で
+    // スロットが差し替わっていることがある。その場合は古い接続の結果を書き戻さない。
+    const ifCurrent = (fn: () => void) => {
+      if (info.tcp !== tcp) return;
+      fn();
+      this.emitChange();
+    };
+
     try {
       await tcp.listen(info.port);
     } catch (e) {
-      if (info.tcp !== tcp) return; // listen() 待ち中に setClientType 等で型が切り替わっていたら無視する
       const msg = (e as Error).message;
-      console.error(`[slot ${slot}] listen failed on port ${info.port}:`, msg);
-      info.state = 'waiting';
-      info.error = `ポート ${info.port} のリッスンに失敗: ${msg}`;
-      this.emitChange();
+      ifCurrent(() => {
+        console.error(`[slot ${slot}] listen failed on port ${info.port}:`, msg);
+        info.state = 'waiting';
+        info.error = `ポート ${info.port} のリッスンに失敗: ${msg}`;
+      });
       return;
     }
 
-    if (info.tcp !== tcp) return; // listen() 待ち中に setClientType 等で型が切り替わっていたら無視する
+    if (info.tcp !== tcp) return;
     console.log(`[slot ${slot}] listening on port ${info.port}`);
     info.state = 'waiting';
     info.error = undefined;
@@ -238,48 +205,78 @@ export class SlotManager extends EventEmitter {
     // spawnProgram() の catch では拾えないため、ここで受けて管理画面にエラーを表示する。
     if (tcp instanceof ProcessClient) {
       tcp.on('crashed', ({ message }: { message: string }) => {
-        if (info.tcp !== tcp) return;
-        console.error(`[slot ${slot}] process crashed:`, message);
-        info.error = message;
-        this.emitChange();
+        ifCurrent(() => {
+          console.error(`[slot ${slot}] process crashed:`, message);
+          info.error = message;
+        });
       });
     }
 
     if (info.type === 'process' && info.processConfig) {
-      void this.spawnProgram(slot, tcp as ProcessClient, info.processConfig);
+      void this.spawnProgram(slot, tcp as ProcessClient, info.processConfig, ifCurrent);
     } else {
-      tcp.waitForClient().then(() => {
-        if (info.tcp !== tcp) return;
-        info.state = 'ready';
-        info.name  = tcp.name;
-        info.ip    = tcp.ip;
-        this.emitChange();
-      }).catch(() => {});
+      tcp.waitForClient()
+        .then(() => ifCurrent(() => markConnected(info, tcp)))
+        .catch(() => {});
     }
   }
 
-  private async spawnProgram(slot: 0 | 1, tcp: ProcessClient, cfg: NonNullable<SlotInfo['processConfig']>): Promise<void> {
+  private async spawnProgram(
+    slot: 0 | 1,
+    tcp: ProcessClient,
+    cfg: NonNullable<SlotInfo['processConfig']>,
+    ifCurrent: (fn: () => void) => void,
+  ): Promise<void> {
     const info = this.slots[slot];
     try {
       await tcp.startProgram(info.port, cfg.programType, cfg.programPath, cfg.runtimeCommand, cfg.libPath, this.pythonCommandOverride);
-      if (info.tcp !== tcp) return;
-      info.state = 'ready';
-      info.name  = tcp.name;
-      info.ip    = tcp.ip;
-      info.error = undefined;
+      ifCurrent(() => {
+        markConnected(info, tcp);
+        info.error = undefined;
+      });
     } catch (e) {
-      if (info.tcp !== tcp) return;
       const msg = (e as Error).message;
-      console.error(`[slot ${slot}] process failed:`, msg);
-      info.state = 'waiting';
-      info.error = `プログラムの起動に失敗: ${msg}`;
+      ifCurrent(() => {
+        console.error(`[slot ${slot}] process failed:`, msg);
+        info.state = 'waiting';
+        info.error = `プログラムの起動に失敗: ${msg}`;
+      });
     }
-    this.emitChange();
   }
 
   private emitChange(): void {
     this.emit('change');
   }
+}
+
+/** 接続を切って「誰も繋がっていない」状態に戻す (type と processConfig はそのまま) */
+function disconnect(info: SlotInfo): void {
+  info.tcp?.close();
+  info.tcp   = null;
+  info.state = 'waiting';
+  info.name  = '';
+  info.ip    = '';
+  info.error = undefined;
+}
+
+/**
+ * cpu / manual なら接続を待たずに ready にして true を返す。
+ * それ以外の型なら何もせず false (呼び出し側が listening を張る)。
+ */
+function markLocalReady(info: SlotInfo): boolean {
+  const label = LOCAL_CLIENT_LABEL[info.type];
+  if (!label) return false;
+  info.state = 'ready';
+  info.name  = label.name;
+  info.ip    = label.ip;
+  return true;
+}
+
+/** TCP 越しの相手が名乗り終わった状態にする */
+function markConnected(info: SlotInfo, tcp: TcpClient): void {
+  info.state = 'ready';
+  info.name  = tcp.name;
+  info.ip    = tcp.ip;
 }
 
 function toPayload(slot: SlotInfo): ClientStatusPayload {

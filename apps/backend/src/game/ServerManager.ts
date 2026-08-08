@@ -1,16 +1,15 @@
 import { EventEmitter } from 'node:events';
-import fs from 'node:fs';
-import path from 'node:path';
 import { GameSession } from './Game.js';
 import { getLocalIP } from '../network/localIp.js';
-import { StableLog } from '../log/StableLog.js';
+import { DEFAULT_LOG_DIR, openGameLog } from '../log/StableLog.js';
+import { buildRoundResult } from './roundResult.js';
 
 import type { GameStatus } from './types.js';
 import { SlotManager } from './SlotManager.js';
 import { MapManager } from './MapManager.js';
 import { RoundController } from './RoundController.js';
 import { buildProcessConfig } from './processConfig.js';
-import { calculateBonusBreakdown, START_COUNTDOWN_SECONDS, Winner } from '@u15/ws-types';
+import { START_COUNTDOWN_SECONDS, Winner } from '@u15/ws-types';
 import type { ManualClient } from '../clients/ManualClient.js';
 import { pickRandomPair } from '../programCatalog.js';
 import { getMapCatalogEntry } from '../mapCatalog.js';
@@ -48,15 +47,19 @@ export class ServerManager extends EventEmitter {
   private darkMode = false;
   private displayPrefs: DisplayPrefs = { ...DEFAULT_DISPLAY_PREFS };
   private demoTimer: ReturnType<typeof setTimeout> | null = null;
-  private logDir = '.';
+  private logDir = DEFAULT_LOG_DIR;
   private roomId = 'local';
+  private readonly localMode: boolean;
 
   constructor(
     ports: [number, number] = [2009, 2010],
     startDelayMs = START_COUNTDOWN_SECONDS * 1000,
     demoDelaysMs: DemoDelaysMs = DEFAULT_DEMO_DELAYS_MS,
+    // 既定は起動時の環境変数。引数で渡せるようにしてあるのは web モードの挙動をテストできるようにするため
+    localMode = (process.env['U15_MODE'] ?? 'local') === 'local',
   ) {
     super();
+    this.localMode = localMode;
     this.localIP   = getLocalIP();
     this.startDelayMs = startDelayMs;
     this.demoDelaysMs = demoDelaysMs;
@@ -134,7 +137,7 @@ export class ServerManager extends EventEmitter {
    * ことになるため、常に無視する。
    */
   private isLocalMode(): boolean {
-    return (process.env['U15_MODE'] ?? 'local') === 'local';
+    return this.localMode;
   }
 
   setLogDir(dir: string): void {
@@ -185,7 +188,7 @@ export class ServerManager extends EventEmitter {
 
     this.emit('session_created', session, playerNames);
 
-    const log    = new StableLog(this.buildLogFilePath());
+    const log    = openGameLog(this.logDir, this.round.currentRound);
     const result = await session.run(clients, this.mapManager.map, log, this.round.turnDelayMs, this.startDelayMs);
     console.log('Game finished:', result.status);
 
@@ -316,38 +319,10 @@ export class ServerManager extends EventEmitter {
     await this.slots.setClientType(1, 'process', buildProcessConfig(pair[1], 1, this.roomId));
   }
 
-  /** ゲームごとに一意なログファイルパスを組み立てる (日時+ゲーム番号)。保存先ディレクトリも用意する。 */
-  private buildLogFilePath(): string {
-    fs.mkdirSync(this.logDir, { recursive: true });
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    return path.join(this.logDir, `game-${timestamp}-round${this.round.currentRound}.log`);
-  }
-
   private clearDemoTimer(): void {
     if (this.demoTimer) {
       clearTimeout(this.demoTimer);
       this.demoTimer = null;
     }
   }
-}
-
-function buildRoundResult(
-  round:          0 | 1,
-  status:         GameStatus,
-  scores:         [number, number],
-  remainingTurns: number,
-  leaveItems:     number,
-  playerNames:    [string, string],
-): RoundResult {
-  const { strikeBonus, sweepBonus } = calculateBonusBreakdown(status.winner, status.reason, scores, leaveItems);
-  return {
-    round,
-    winner: status.winner,
-    reason: status.reason,
-    scores,
-    remainingTurns,
-    strikeBonus,
-    sweepBonus,
-    playerNames,
-  };
 }
