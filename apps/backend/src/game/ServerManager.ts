@@ -1,8 +1,8 @@
 import { EventEmitter } from 'node:events';
-import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import { GameSession } from './Game.js';
+import { getLocalIP } from '../network/localIp.js';
 import { StableLog } from '../log/StableLog.js';
 import { calculateBonusBreakdown } from './GameLogic.js';
 import type { GameStatus } from './types.js';
@@ -350,15 +350,4 @@ function buildRoundResult(
     sweepBonus,
     playerNames,
   };
-}
-
-function getLocalIP(): string {
-  const nets = os.networkInterfaces();
-  for (const iface of Object.values(nets)) {
-    if (!iface) continue;
-    for (const addr of iface) {
-      if (addr.family === 'IPv4' && !addr.internal) return addr.address;
-    }
-  }
-  return '127.0.0.1';
 }

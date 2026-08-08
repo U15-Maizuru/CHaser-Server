@@ -12,6 +12,7 @@ import {
   TEAM_COUNT,
   Team,
 } from './types.js';
+import { DEFAULT_MAP_PARAMS } from '@u15/ws-types';
 
 export const DEFAULT_MAP_WIDTH = 15;
 export const DEFAULT_MAP_HEIGHT = 17;
@@ -105,10 +106,10 @@ function checkBlockRole(pos: Point, map: GameMap): boolean {
 
 export function createRandomMap(
   size: Point = { x: DEFAULT_MAP_WIDTH, y: DEFAULT_MAP_HEIGHT },
-  blockNum = 20,
-  itemNum = 51,
-  turn = 100,
-  mirror = true,
+  blockNum = DEFAULT_MAP_PARAMS.blockNum,
+  itemNum  = DEFAULT_MAP_PARAMS.itemNum,
+  turn     = DEFAULT_MAP_PARAMS.turnNum,
+  mirror   = DEFAULT_MAP_PARAMS.mirror,
 ): GameMap {
   const map = createDefaultMap();
   map.size = size;

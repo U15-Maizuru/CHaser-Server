@@ -12,11 +12,11 @@ import {
 } from './httpUtil.js';
 import { handleTournamentRequest, type TournamentRouteDeps } from '../tournament/httpRoutes.js';
 import type { InlineMapData, MapParams } from '@u15/ws-types';
-import { MapObject } from '@u15/ws-types';
+import { DEFAULT_MAP_PARAMS } from '@u15/ws-types';
 import type { RoomManager } from '../RoomManager.js';
 import { ensureLibDir } from '../libTemplates.js';
 import { createRandomMap, exportMap } from '../game/GameSystem.js';
-import type { GameMap } from '../game/types.js';
+import { toGameMap, toInlineData } from '../game/inlineMap.js';
 import {
   addCatalogEntry,
   catalogDir,
@@ -198,9 +198,14 @@ export function handleHttpRequest(
     readJsonBody(req)
       .then((body) => {
         const p = body as Partial<MapParams>;
-        const map = createRandomMap(p.size, p.blockNum ?? 20, p.itemNum ?? 51, p.turnNum ?? 100, p.mirror ?? true);
-        const data: InlineMapData = { field: map.field, size: map.size, turn: map.turn, teamFirstPoint: map.teamFirstPoint };
-        json(res, 200, { data });
+        const map = createRandomMap(
+          p.size,
+          p.blockNum ?? DEFAULT_MAP_PARAMS.blockNum,
+          p.itemNum  ?? DEFAULT_MAP_PARAMS.itemNum,
+          p.turnNum  ?? DEFAULT_MAP_PARAMS.turnNum,
+          p.mirror   ?? DEFAULT_MAP_PARAMS.mirror,
+        );
+        json(res, 200, { data: toInlineData(map) });
       })
       .catch(() => badRequest(res, '不正なリクエストボディです'));
     return;
@@ -229,11 +234,7 @@ export function handleHttpRequest(
 
         const tmpDir  = fs.mkdtempSync(path.join(os.tmpdir(), 'u15-map-export-'));
         const tmpPath = path.join(tmpDir, `${sanitizeFilename(displayName)}.map`);
-        const gameMap: GameMap = {
-          field: data.field as MapObject[][], turn: data.turn, name: displayName,
-          size: data.size, teamFirstPoint: data.teamFirstPoint, textureDirPath: 'Jewel',
-        };
-        exportMap(gameMap, tmpPath);
+        exportMap(toGameMap(data, displayName), tmpPath);
 
         sendFileDownload(res, tmpPath, `${displayName}.map`, () => {
           fs.rm(tmpDir, { recursive: true, force: true }, () => {});

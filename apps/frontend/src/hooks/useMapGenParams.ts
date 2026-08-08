@@ -1,4 +1,5 @@
 import type { MapParams } from '@u15/ws-types';
+import { DEFAULT_MAP_PARAMS } from '@u15/ws-types';
 import { usePersistedState } from './usePersistedState';
 
 /**
@@ -23,7 +24,8 @@ export const MAP_SIZES = [
   { label: '広域 (21×17)', x: 21, y: 17 },
 ] as const;
 
-const DEFAULTS: MapGenParams = { sizeIdx: 0, blockNum: 20, itemNum: 51, turnNum: 100, mirror: true };
+// 数値の既定はサーバーと同じものを使う (ここだけ変えるとパラメータを送る前と後で盤面が変わる)
+const DEFAULTS: MapGenParams = { sizeIdx: 0, ...DEFAULT_MAP_PARAMS };
 
 const STORAGE_KEY = 'u15_map_gen_params';
 

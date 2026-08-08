@@ -1,6 +1,8 @@
 import { createRandomMap, importMap } from './GameSystem.js';
-import type { GameMap, MapObject } from './types.js';
+import { toGameMap, toInlineData } from './inlineMap.js';
+import type { GameMap } from './types.js';
 import type { InlineMapData, MapParams, MapSourceInfo } from '@u15/ws-types';
+import { DEFAULT_MAP_PARAMS } from '@u15/ws-types';
 
 /** 現在のマップが「どこから来たか」。リセット・リピート時に引き直すかどうかもこれで決まる。 */
 type Source =
@@ -10,7 +12,7 @@ type Source =
 
 export class MapManager {
   private currentMap: GameMap;
-  private params: MapParams = { itemNum: 51, blockNum: 20, turnNum: 100, mirror: true };
+  private params: MapParams = { ...DEFAULT_MAP_PARAMS };
   private source: Source = { kind: 'random' };
 
   constructor() {
@@ -57,25 +59,13 @@ export class MapManager {
   }
 
   loadInlineData(data: InlineMapData): void {
-    this.currentMap = {
-      field: data.field.map(r => [...r]) as MapObject[][],
-      size: { ...data.size },
-      turn: data.turn,
-      name: '[CUSTOM MAP]',
-      teamFirstPoint: [{ ...data.teamFirstPoint[0] }, { ...data.teamFirstPoint[1] }],
-      textureDirPath: 'Jewel',
-    };
+    this.currentMap = toGameMap(data, '[CUSTOM MAP]');
     this.source = { kind: 'editor' };
   }
 
   /** 現在配信中のマップをフロントエンドへ渡せる形 (InlineMapData) で返す (エディタ起点・現在マップ表示用) */
   getCurrentMapData(): InlineMapData {
-    return {
-      field: this.currentMap.field.map(r => [...r]),
-      size:  { ...this.currentMap.size },
-      turn:  this.currentMap.turn,
-      teamFirstPoint: [{ ...this.currentMap.teamFirstPoint[0] }, { ...this.currentMap.teamFirstPoint[1] }],
-    };
+    return toInlineData(this.currentMap);
   }
 }
 
