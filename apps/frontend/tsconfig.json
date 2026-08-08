@@ -5,9 +5,10 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
-    "outDir": "dist",
-    "rootDir": "src",
     "noEmit": true
   },
+  // rootDir は置かない。src/types/electron.d.ts が preload と型を共有するため
+  // apps/electron/src を参照しており、rootDir があると「rootDir の外」と怒られる。
+  // ビルドは vite が行い tsc は noEmit なので、rootDir を外しても出力先は変わらない。
   "include": ["src"]
 }

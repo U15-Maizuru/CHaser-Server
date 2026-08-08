@@ -102,7 +102,8 @@ function loadUrl(win: BrowserWindow, search: string): void {
 async function fetchDefaultRoom(retries = 20): Promise<string> {
   for (let i = 0; i < retries; i++) {
     try {
-      const res  = await fetch('http://localhost:8765/api/default-room');
+      // loadUrl と同じ理由で名前解決を介さない (localhost だと DNS に割り込まれて詰まりうる)
+      const res  = await fetch('http://127.0.0.1:8765/api/default-room');
       const data = await res.json() as { roomId?: string };
       if (data.roomId) return data.roomId;
     } catch {
@@ -113,79 +114,87 @@ async function fetchDefaultRoom(retries = 20): Promise<string> {
   return 'local'; // フォールバック
 }
 
-// ── 対戦表示ウィンドウ ─────────────────────────────────────────────────────
-let displayWindow: BrowserWindow | null = null;
+// ── ウィンドウ ─────────────────────────────────────────────────────────────
+//
+// 4種類のウィンドウはサイズとタイトル以外ほぼ同じ手順で作る。個別に書くと
+// preload の配線や「既に開いていたら focus」のガードが片方だけ抜ける
+// (実際、以前は display と control にだけガードが無かった) ため、生成はここに集約する。
+//
+// `mode` は URL のクエリとしてフロントエンドへ渡り、apps/frontend/src/App.tsx が
+// これを見て画面を出し分ける。E2E も `url().includes('mode=...')` でウィンドウを
+// 特定しているので、値を変えるときは両方を直すこと。
+type WindowMode = 'display' | 'control' | 'manual' | 'tournament';
 
-function createDisplayWindow(roomId: string): void {
-  displayWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    title: 'CHaser Server — 対戦画面',
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), ...WEB_PREFS },
-  });
-  displayWindow.removeMenu(); // 観覧用ウィンドウはネイティブメニューバー (File/Edit/...) を表示しない
-  loadUrl(displayWindow, `?room=${roomId}&mode=display`);
-  displayWindow.on('closed', () => { displayWindow = null; });
+interface WindowSpec {
+  /** 'CHaser Server — ' に続く部分 */
+  title:  string;
+  width:  number;
+  height: number;
+  /** 観覧用ウィンドウはネイティブメニューバー (File/Edit/...) を表示しない */
+  removeMenu: boolean;
+  /** 閉じたらアプリごと終了する (コントロールウィンドウのみ) */
+  quitOnClose?: boolean;
+  /** `?room=...&mode=...` に続けて足すクエリ */
+  extraSearch?: string;
 }
 
-// ── コントロールウィンドウ ────────────────────────────────────────────────
-let controlWindow: BrowserWindow | null = null;
+// 開いているウィンドウ。キーは mode (手動操作だけはスロットごとに2枚あるので 'manual:0' / 'manual:1')
+const openWindows = new Map<string, BrowserWindow>();
 
-function createControlWindow(roomId: string): void {
-  controlWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    title: 'CHaser Server — コントロール',
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), ...WEB_PREFS },
-  });
-  loadUrl(controlWindow, `?room=${roomId}&mode=control`);
-
-  controlWindow.on('closed', () => {
-    controlWindow = null;
-    app.quit();
-  });
+function getWindow(key: string): BrowserWindow | null {
+  const win = openWindows.get(key);
+  return win && !win.isDestroyed() ? win : null;
 }
 
-// ── 手動操作ウィンドウ (COOL / HOT 独立) ────────────────────────────────────
-const manualWindows: [BrowserWindow | null, BrowserWindow | null] = [null, null];
-const MANUAL_LABEL = ['COOL', 'HOT'] as const;
-
-function createManualWindow(roomId: string, slot: 0 | 1): void {
-  const existing = manualWindows[slot];
-  if (existing && !existing.isDestroyed()) {
+function createAppWindow(key: string, mode: WindowMode, roomId: string, spec: WindowSpec): void {
+  const existing = getWindow(key);
+  if (existing) {
     existing.focus();
     return;
   }
 
   const win = new BrowserWindow({
-    width: 360,
-    height: 560,
-    title: `CHaser Server — 手動操作 (${MANUAL_LABEL[slot]})`,
+    width:  spec.width,
+    height: spec.height,
+    title:  `CHaser Server — ${spec.title}`,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), ...WEB_PREFS },
   });
-  loadUrl(win, `?room=${roomId}&mode=manual&slot=${slot}`);
-  win.on('closed', () => { manualWindows[slot] = null; });
-  manualWindows[slot] = win;
+  if (spec.removeMenu) win.removeMenu();
+
+  loadUrl(win, `?room=${roomId}&mode=${mode}${spec.extraSearch ?? ''}`);
+
+  win.on('closed', () => {
+    openWindows.delete(key);
+    if (spec.quitOnClose) app.quit();
+  });
+  openWindows.set(key, win);
 }
 
-// ── 大会運営ウィンドウ (必要時のみ) ────────────────────────────────────────
-let tournamentWindow: BrowserWindow | null = null;
+const MANUAL_LABEL = ['COOL', 'HOT'] as const;
 
-function createTournamentWindow(roomId: string): void {
-  if (tournamentWindow && !tournamentWindow.isDestroyed()) {
-    tournamentWindow.focus();
-    return;
-  }
-  const win = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    title: 'CHaser Server — 大会運営',
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), ...WEB_PREFS },
+function openDisplayWindow(roomId: string): void {
+  createAppWindow('display', 'display', roomId, {
+    title: '対戦画面', width: 1280, height: 800, removeMenu: true,
   });
-  win.removeMenu();
-  loadUrl(win, `?room=${roomId}&mode=tournament`);
-  win.on('closed', () => { tournamentWindow = null; });
-  tournamentWindow = win;
+}
+
+function openControlWindow(roomId: string): void {
+  createAppWindow('control', 'control', roomId, {
+    title: 'コントロール', width: 1280, height: 800, removeMenu: false, quitOnClose: true,
+  });
+}
+
+function openManualWindow(roomId: string, slot: 0 | 1): void {
+  createAppWindow(`manual:${slot}`, 'manual', roomId, {
+    title: `手動操作 (${MANUAL_LABEL[slot]})`, width: 360, height: 560, removeMenu: false,
+    extraSearch: `&slot=${slot}`,
+  });
+}
+
+function openTournamentWindow(roomId: string): void {
+  createAppWindow('tournament', 'tournament', roomId, {
+    title: '大会運営', width: 1440, height: 900, removeMenu: true,
+  });
 }
 
 app.whenReady().then(async () => {
@@ -235,6 +244,7 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle('display:toggleFullscreen', () => {
+    const displayWindow = getWindow('display');
     if (!displayWindow) return false;
     const next = !displayWindow.isFullScreen();
     displayWindow.setFullScreen(next);
@@ -248,19 +258,20 @@ app.whenReady().then(async () => {
   console.log('[main] default room:', roomId);
 
   ipcMain.handle('manual:openWindow', (_e, slot: 0 | 1) => {
-    createManualWindow(roomId, slot);
+    openManualWindow(roomId, slot);
   });
 
   ipcMain.handle('tournament:openWindow', () => {
-    createTournamentWindow(roomId);
+    openTournamentWindow(roomId);
   });
 
-  createDisplayWindow(roomId);
-  createControlWindow(roomId);
+  openDisplayWindow(roomId);
+  openControlWindow(roomId);
 
+  // 開いていれば focus、閉じていれば作り直す (どちらも createAppWindow が面倒を見る)
   app.on('activate', () => {
-    if (!displayWindow) createDisplayWindow(roomId);
-    if (!controlWindow) createControlWindow(roomId);
+    openDisplayWindow(roomId);
+    openControlWindow(roomId);
   });
 }).catch(console.error);
 
