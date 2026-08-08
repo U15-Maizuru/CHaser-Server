@@ -12,12 +12,10 @@ import type { StandingsRankBy } from './standings.js';
 // 入力の配列は破壊せず、常に新しい配列を返す。
 
 /**
- * `group-rank` (予選リーグの N 位) を解く材料。予選を持たない大会では空でよく、
- * 渡さなければ従来どおりの挙動になる。
+ * `group-rank` (予選リーグの N 位) を解く材料。予選を持たない大会では空でよい。
  *
- * **引数は必ず末尾に足すこと** — resolveMatches は captureResult / confirmResult /
- * discardResult / setWalkover / reopenMatch から内部で呼ばれており、途中に差し込むと
- * 既存の呼び出しとテストを軒並み書き換えることになる。
+ * resolveMatches は captureResult / confirmResult / discardResult / setWalkover /
+ * reopenMatch のすべてから内部で呼ばれるので、この文脈もその全部を素通しで流れる。
  */
 export interface ResolveContext {
   /** group番号 → 参加者id (エントリー順)。順位計算の決定性はこの並びに依存する */

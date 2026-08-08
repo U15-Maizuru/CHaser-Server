@@ -70,7 +70,6 @@ export function StartupDialog({
 
   return (
     <div style={s.root}>
-      {/* Header */}
       <div style={s.header}>
         <span style={s.title}>{displayTitle}</span>
         <span style={s.subtitle}>セットアップ</span>

@@ -47,7 +47,7 @@ export function ManualControls({ slot, manualRequest, onAction }: Props) {
 
   return (
     <>
-      {/* pulse keyframe */}
+      {/* 手番のときにボタンを脈打たせる */}
       <style>{`
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
       `}</style>

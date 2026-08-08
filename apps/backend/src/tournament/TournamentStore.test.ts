@@ -497,12 +497,13 @@ describe('TournamentStore (既存形式に影響していないこと)', () => {
     expect(payload.qualifiers).toBeNull();
   });
 
-  it('リーグは従来どおり standings を配信し、groups は使わない', () => {
+  it('リーグは standings を配信し、groups は使わない', () => {
     writeTournament({ ...DEF_4, format: 'league' });
     const payload = buildStatePayload(loadTournament(ID)!, 'room', null);
 
     expect(payload.standings).not.toBeNull();
     expect(payload.groups).toBeNull();
-    expect(payload.stageLabels.every(l => !l.startsWith('予選'))).toBe(true);
+    // リーグの stage は回戦ではなく節。勝ち上がりの回戦名を当ててはいけない
+    expect(payload.stageLabels).toEqual(['第1節', '第2節', '第3節']);
   });
 });

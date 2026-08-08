@@ -42,7 +42,7 @@ describe('autoGroupAssign (蛇行配分)', () => {
     expect(sizesOf(7, 3)).toEqual([3, 2, 2]);
     expect(sizesOf(11, 4)).toEqual([3, 3, 3, 2]);
 
-    // 人数が揃うときは従来どおり単純な蛇行
+    // 人数が割り切れるときは単純な蛇行になる
     expect(autoGroupAssign(8, 2)).toEqual([0, 1, 1, 0, 0, 1, 1, 0]);
     expect(autoGroupAssign(6, 3)).toEqual([0, 1, 2, 2, 1, 0]);
   });
