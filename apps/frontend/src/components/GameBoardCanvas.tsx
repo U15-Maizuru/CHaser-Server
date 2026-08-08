@@ -3,22 +3,14 @@ import { Action, MapObject, VEIL_ALPHA_DEFAULT, VEIL_ALPHA_MIN, VEIL_ALPHA_MAX }
 import type { GameStateSnapshot, Point, ScanInfo } from '@u15/ws-types';
 import { useTextures, type TextureKey } from '../hooks/useTextures';
 import type { DecisiveEffect } from '../lib/decisiveEffect';
+import {
+  BOARD_COLOR, cellMapper, drawTexture,
+  drawBlockFallback, drawFloorFallback, drawItemFallback, drawPlayerFallback,
+} from '../lib/boardDraw';
 
 const DEFAULT_CELL = 36;
 
-const COLOR = {
-  floor:   '#d4cbb8',
-  block:   '#3a3330',
-  item:    '#f5c842',
-  cool:    '#3a82c4',
-  hot:     '#c43a3a',
-  outline: '#ffffff22',
-  // 決着演出の2色。tokens.ts のパステル値は暗い盤面の上では沈むため、canvas 専用の値を持つ。
-  // gold (勝者) と warn (自滅) は色相が近いので、色だけでなく「面のグロー vs 線のリング」
-  // という形の違いと明暗 (勝者は明るく、敗者は暗転) でも区別が付くように描く。
-  gold:    '#ffd24a', // 勝者・引き分け (tokens.ts の GOLD_BASE を盤面向けに明るくした値)
-  warn:    '#ff7a1a', // 自滅 (衝突/自縛/通信エラー)。gold と紛れないよう橙寄りにする
-} as const;
+const COLOR = BOARD_COLOR;
 
 // 隣接1マス移動のウォーキングアニメーション用の設定。
 // 固定の長さにすると turnDelay 設定や CPU/プロセス側の思考時間によっては次のターン更新より
@@ -210,24 +202,14 @@ export function GameBoardCanvas({
 
     ctx.clearRect(0, 0, W, H);
 
-    const cx = (col: number) => (flip ? size.x - col - 1 : col) * CELL;
-    const cy = (row: number) => (flip ? size.y - row - 1 : row) * CELL;
-
-    const drawImg = (key: TextureKey, x: number, y: number) => {
-      const img = textures[key];
-      if (img) ctx.drawImage(img, x, y, CELL, CELL);
-      return !!img;
-    };
+    const { cx, cy } = cellMapper(size, CELL, flip);
+    const drawImg = (key: TextureKey, x: number, y: number) =>
+      drawTexture(ctx, textures, key, x, y, CELL);
 
     // 1. Floor layer
     for (let r = 0; r < size.y; r++) {
       for (let c = 0; c < size.x; c++) {
-        if (!drawImg('Floor', cx(c), cy(r))) {
-          ctx.fillStyle = COLOR.floor;
-          ctx.fillRect(cx(c), cy(r), CELL, CELL);
-          ctx.strokeStyle = COLOR.outline;
-          ctx.strokeRect(cx(c) + 0.5, cy(r) + 0.5, CELL - 1, CELL - 1);
-        }
+        if (!drawImg('Floor', cx(c), cy(r))) drawFloorFallback(ctx, cx(c), cy(r), CELL);
       }
     }
 
@@ -245,13 +227,13 @@ export function GameBoardCanvas({
             ctx.translate(centerX, centerY);
             ctx.scale(pop.scale, pop.scale);
             ctx.translate(-centerX, -centerY);
-            if (!drawImg('Block', cx(c), cy(r))) drawBlock(ctx, cx(c), cy(r), CELL);
+            if (!drawImg('Block', cx(c), cy(r))) drawBlockFallback(ctx, cx(c), cy(r), CELL);
             ctx.restore();
           } else if (!drawImg('Block', cx(c), cy(r))) {
-            drawBlock(ctx, cx(c), cy(r), CELL);
+            drawBlockFallback(ctx, cx(c), cy(r), CELL);
           }
         } else if (cell === MapObject.ITEM) {
-          if (!drawImg('Item', cx(c), cy(r))) drawItem(ctx, cx(c), cy(r), CELL);
+          if (!drawImg('Item', cx(c), cy(r))) drawItemFallback(ctx, cx(c), cy(r), CELL);
         }
       }
     }
@@ -268,7 +250,7 @@ export function GameBoardCanvas({
       ctx.translate(centerX, centerY);
       ctx.scale(state.scale, state.scale);
       ctx.translate(-centerX, -centerY);
-      if (!drawImg('Item', cx(x), cy(y))) drawItem(ctx, cx(x), cy(y), CELL);
+      if (!drawImg('Item', cx(x), cy(y))) drawItemFallback(ctx, cx(x), cy(y), CELL);
       ctx.restore();
     }
 
@@ -279,7 +261,7 @@ export function GameBoardCanvas({
       const pos = positions[t];
       if (pos.x >= 0 && pos.y >= 0 && pos.x < size.x && pos.y < size.y) {
         if (!drawImg(playerKeys[t], cx(pos.x), cy(pos.y))) {
-          drawPlayer(ctx, cx(pos.x), cy(pos.y), playerColors[t], CELL);
+          drawPlayerFallback(ctx, cx(pos.x), cy(pos.y), playerColors[t], CELL);
         }
       }
     }
@@ -334,7 +316,7 @@ export function GameBoardCanvas({
           ctx.translate(centerX, centerY);
           ctx.scale(scale, scale);
           ctx.translate(-centerX, -centerY);
-          if (!drawImg('Block', cx(pos.x), cy(pos.y))) drawBlock(ctx, cx(pos.x), cy(pos.y), CELL);
+          if (!drawImg('Block', cx(pos.x), cy(pos.y))) drawBlockFallback(ctx, cx(pos.x), cy(pos.y), CELL);
           ctx.restore();
         } else if (mark.shape === 'surround') {
           // 閉じ込め・自縛: 敗者の上下左右のブロックを強調する。歩行補間の途中でも
@@ -347,7 +329,7 @@ export function GameBoardCanvas({
             // 盤外 (壁で塞がれている辺) は描くセルが無いのでスキップする
             if (nx < 0 || ny < 0 || nx >= size.x || ny >= size.y) continue;
             // 枠が下に隠れないよう、ブロックを描き直してからその上に枠を重ねる
-            if (!drawImg('Block', cx(nx), cy(ny))) drawBlock(ctx, cx(nx), cy(ny), CELL);
+            if (!drawImg('Block', cx(nx), cy(ny))) drawBlockFallback(ctx, cx(nx), cy(ny), CELL);
             if (accent) strokeCell(nx, ny, accent);
           }
           ctx.globalAlpha = 1;
@@ -739,34 +721,4 @@ export function GameBoardCanvas({
       style={{ display: 'block', imageRendering: 'pixelated' }}
     />
   );
-}
-
-function drawPlayer(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, cell: number) {
-  const pad = Math.max(2, Math.floor(cell * 0.11));
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.roundRect(x + pad, y + pad, cell - pad * 2, cell - pad * 2, Math.max(3, cell * 0.15));
-  ctx.fill();
-  ctx.fillStyle = '#ffffff55';
-  ctx.fillRect(x + pad + 2, y + pad + 2, (cell - pad * 2) / 2, Math.max(2, cell * 0.1));
-}
-
-function drawBlock(ctx: CanvasRenderingContext2D, x: number, y: number, cell: number) {
-  ctx.fillStyle = COLOR.block;
-  ctx.fillRect(x, y, cell, cell);
-  ctx.fillStyle = '#ffffff18';
-  ctx.fillRect(x, y, cell, Math.max(2, cell * 0.08));
-  ctx.fillRect(x, y, Math.max(2, cell * 0.08), cell);
-}
-
-function drawItem(ctx: CanvasRenderingContext2D, x: number, y: number, cell: number) {
-  const cx2 = x + cell / 2, cy2 = y + cell / 2, r = cell / 2 - Math.max(3, cell * 0.15);
-  ctx.fillStyle = COLOR.item;
-  ctx.beginPath();
-  ctx.arc(cx2, cy2, r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#ffffffaa';
-  ctx.beginPath();
-  ctx.arc(cx2 - r * 0.3, cy2 - r * 0.3, r * 0.3, 0, Math.PI * 2);
-  ctx.fill();
 }

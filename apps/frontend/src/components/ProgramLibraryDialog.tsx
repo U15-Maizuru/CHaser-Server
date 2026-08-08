@@ -3,6 +3,7 @@ import type { CatalogEntry } from '@u15/ws-types';
 import { FileDropZone } from './FileDropZone';
 import { LibraryBrowser, LibraryRow } from './LibraryBrowser';
 import { Button, Callout, Checkbox, Dialog, TEXT_SECONDARY } from '../ui';
+import { deleteProgram, fetchPrograms, setProgramDemoEnabled } from '../lib/api';
 
 interface Props {
   httpBase: string;
@@ -14,26 +15,14 @@ interface Props {
 export function ProgramLibraryDialog({ httpBase, onClose }: Props) {
   const [entries, setEntries] = useState<CatalogEntry[]>([]);
 
-  const fetchEntries = () => {
-    fetch(`${httpBase}/api/programs`)
-      .then(r => r.json())
-      .then((d: { entries: CatalogEntry[] }) => {
-        setEntries([...d.entries].sort((a, b) => b.uploadedAt - a.uploadedAt));
-      })
-      .catch(() => {});
-  };
+  const fetchEntries = () => { void fetchPrograms(httpBase).then(setEntries); };
 
   useEffect(fetchEntries, [httpBase]);
 
   const handleToggleDemoEnabled = (id: string, enabled: boolean) => {
-    fetch(`${httpBase}/api/programs/${id}`, {
-      method:  'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ demoEnabled: enabled }),
-    })
-      .then(res => res.json() as Promise<{ entry: CatalogEntry }>)
-      .then(({ entry }) => setEntries(prev => prev.map(e => (e.id === entry.id ? entry : e))))
-      .catch(() => {});
+    void setProgramDemoEnabled(httpBase, id, enabled).then((entry) => {
+      if (entry) setEntries(prev => prev.map(e => (e.id === entry.id ? entry : e)));
+    });
   };
 
   const handleDelete = (entry: CatalogEntry) => {
@@ -42,9 +31,7 @@ export function ProgramLibraryDialog({ httpBase, onClose }: Props) {
       + '他のルーム・対戦スロットで使用中の場合、次回の対戦開始時にエラーになります。',
     );
     if (!ok) return;
-    fetch(`${httpBase}/api/programs/${entry.id}`, { method: 'DELETE' })
-      .then(() => fetchEntries())
-      .catch(() => {});
+    void deleteProgram(httpBase, entry.id).then(fetchEntries);
   };
 
   return (

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { CatalogEntry } from '@u15/ws-types';
 import { BORDER_COLOR, TEXT_SECONDARY, TEXT_PRIMARY, TEXT_MUTED, BG_CARD, FONT_NUM, FONT_UI, RADIUS_SM } from '../ui';
+import { fetchPrograms } from '../lib/api';
 
 interface Props {
   httpBase:             string;
@@ -16,14 +17,7 @@ export function ProgramLibrarySection({ httpBase, selectedEntry, onSelect, onOpe
   const [query, setQuery]     = useState('');
   const [entries, setEntries] = useState<CatalogEntry[]>([]);
 
-  const fetchEntries = () => {
-    fetch(`${httpBase}/api/programs`)
-      .then(r => r.json())
-      .then((d: { entries: CatalogEntry[] }) => {
-        setEntries([...d.entries].sort((a, b) => b.uploadedAt - a.uploadedAt));
-      })
-      .catch(() => {});
-  };
+  const fetchEntries = () => { void fetchPrograms(httpBase).then(setEntries); };
 
   useEffect(() => {
     if (open) fetchEntries();

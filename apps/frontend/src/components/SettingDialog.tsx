@@ -7,6 +7,7 @@ import {
   Button, Callout, Checkbox, Chip, ChipRow, Dialog, NumberInput, Select, Tabs, TextInput,
   type TabDef,
 } from '../ui';
+import { fetchMusicFiles } from '../lib/api';
 
 interface Props {
   prefs:               DisplayPrefs;
@@ -49,10 +50,7 @@ export function SettingDialog({
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${httpBase}/api/music`)
-      .then(res => res.json() as Promise<{ files: string[] }>)
-      .then(({ files }) => { if (!cancelled) setMusicFiles(files); })
-      .catch(() => {});
+    void fetchMusicFiles(httpBase).then(files => { if (!cancelled) setMusicFiles(files); });
     return () => { cancelled = true; };
   }, [httpBase]);
 
@@ -239,9 +237,7 @@ export function SettingDialog({
                     const file = e.target.files?.[0];
                     if (!file) return;
                     await onUploadMusic(file);
-                    const res = await fetch(`${httpBase}/api/music`);
-                    const { files } = await res.json() as { files: string[] };
-                    setMusicFiles(files);
+                    setMusicFiles(await fetchMusicFiles(httpBase));
                     e.target.value = '';
                   }}
                 />

@@ -8,6 +8,8 @@ import {
   TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED, RADIUS_SM,
   Button, Checkbox, Dialog, NumberInput, Select, TextInput,
 } from '../ui';
+import { generateRandomMap } from '../lib/api';
+import { countObj, drawStaticBoard, EDITOR_GRID_COLOR } from '../lib/boardDraw';
 
 export interface EditableMap {
   field: MapObject[][];
@@ -40,10 +42,6 @@ function mirrorPoint(p: Point, size: Point): Point {
   return { x: cx * 2 - p.x, y: cy * 2 - p.y };
 }
 
-function countObj(field: MapObject[][], obj: MapObject): number {
-  return field.flat().filter(c => c === obj).length;
-}
-
 export function MapEditorDialog({ initialMap, theme, httpBase, onApply, onSaveToLibrary, onDownload, onClose }: Props) {
   const [map,      setMap]      = useState<EditableMap>(() => ({
     ...initialMap,
@@ -65,55 +63,15 @@ export function MapEditorDialog({ initialMap, theme, httpBase, onApply, onSaveTo
   const H = map.size.y * CELL;
 
   // ── Draw ────────────────────────────────────────────────────────────────────
+  // 編集中は反転しない (エディタは常に COOL 視点)。マスの当たりを見せるためグリッドを引く。
   const draw = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvasRef.current?.getContext('2d');
     if (!ctx) return;
     ctx.clearRect(0, 0, W, H);
-
-    const drawImg = (key: TextureKey, x: number, y: number): boolean => {
-      const img = tex[key];
-      if (img) { ctx.drawImage(img, x, y, CELL, CELL); return true; }
-      return false;
-    };
-
-    for (let r = 0; r < map.size.y; r++) {
-      for (let c = 0; c < map.size.x; c++) {
-        const x = c * CELL, y = r * CELL;
-        // floor
-        if (!drawImg('Floor', x, y)) {
-          ctx.fillStyle = '#d4cbb8';
-          ctx.fillRect(x, y, CELL, CELL);
-        }
-        // grid
-        ctx.strokeStyle = '#00000022';
-        ctx.strokeRect(x + 0.5, y + 0.5, CELL - 1, CELL - 1);
-        // object
-        const cell = map.field[r]?.[c] ?? MapObject.NOTHING;
-        if (cell === MapObject.BLOCK) {
-          if (!drawImg('Block', x, y)) { ctx.fillStyle = '#3a3330'; ctx.fillRect(x, y, CELL, CELL); }
-        } else if (cell === MapObject.ITEM) {
-          if (!drawImg('Item', x, y)) {
-            ctx.fillStyle = '#f5c842';
-            ctx.beginPath(); ctx.arc(x + CELL / 2, y + CELL / 2, CELL / 2 - 4, 0, Math.PI * 2); ctx.fill();
-          }
-        }
-      }
-    }
-    // players
-    for (const [i, img, color] of [
-      [0, tex['Cool'], '#3a82c4'],
-      [1, tex['Hot'],  '#c43a3a'],
-    ] as [number, HTMLImageElement | undefined, string][]) {
-      const p = map.teamFirstPoint[i];
-      const x = p.x * CELL, y = p.y * CELL;
-      if (img) { ctx.drawImage(img, x, y, CELL, CELL); }
-      else {
-        ctx.fillStyle = color;
-        ctx.fillRect(x + 3, y + 3, CELL - 6, CELL - 6);
-      }
-    }
+    drawStaticBoard(ctx, {
+      field: map.field, size: map.size, teamFirstPoint: map.teamFirstPoint,
+      textures: tex, cell: CELL, gridColor: EDITOR_GRID_COLOR,
+    });
   }, [map, tex, W, H]);
 
   useEffect(() => { draw(); }, [draw]);
@@ -170,16 +128,14 @@ export function MapEditorDialog({ initialMap, theme, httpBase, onApply, onSaveTo
     const size: Point = { x: sz.x, y: sz.y };
     setGenerating(true);
     try {
-      const res = await fetch(`${httpBase}/api/maps/random`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          size, blockNum: gen.blockNum, itemNum: gen.itemNum, turnNum: map.turn, mirror: symmetry,
-        }),
+      const data = await generateRandomMap(httpBase, {
+        size, blockNum: gen.blockNum, itemNum: gen.itemNum, turnNum: map.turn, mirror: symmetry,
       });
-      if (res.ok) {
-        const { data } = await res.json() as { data: { field: MapObject[][]; size: Point; turn: number; teamFirstPoint: [Point, Point] } };
-        setMap({ field: data.field, size: data.size, turn: data.turn, teamFirstPoint: data.teamFirstPoint });
+      if (data) {
+        setMap({
+          field: data.field as MapObject[][], size: data.size,
+          turn: data.turn, teamFirstPoint: data.teamFirstPoint,
+        });
       }
     } finally {
       setGenerating(false);

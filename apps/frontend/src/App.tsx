@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useGameState }      from './hooks/useGameState';
 import { useMatchConfig }    from './hooks/useMatchConfig';
 import { useMapGenParams, toMapParams } from './hooks/useMapGenParams';
-import { fetchCurrentMap, useCurrentMap } from './hooks/useCurrentMap';
+import { useCurrentMap } from './hooks/useCurrentMap';
+import { downloadMapFile, fetchCurrentMap, saveMapToLibrary, uploadMusic } from './lib/api';
 import { useEnvConfig }      from './hooks/useEnvConfig';
 import { useGamePhaseSound } from './hooks/useGamePhaseSound';
 import { useStartCountdown } from './hooks/useStartCountdown';
@@ -157,11 +158,7 @@ function ControlApp({ roomId }: { roomId: string }) {
     window.open(url.toString(), `tournament-${roomId}`);
   };
 
-  const handleUploadMusic = async (file: File) => {
-    const fd = new FormData();
-    fd.append('file', file);
-    await fetch(`${HTTP_BASE}/api/upload/music`, { method: 'POST', body: fd });
-  };
+  const handleUploadMusic = (file: File) => uploadMusic(HTTP_BASE, file);
 
   const openMapEditor = async () => {
     const data = await fetchCurrentMap(HTTP_BASE, roomId);
@@ -183,30 +180,12 @@ function ControlApp({ roomId }: { roomId: string }) {
 
   // ランダム生成・エディタ由来のマップを残す手段。ライブラリ保存もダウンロードも
   // 「今出ているマップ」に対して働くので、エディタとマップ列の両方から同じものを使う。
-  const saveMapToLibrary = (data: InlineMapData, displayName: string) => {
-    void fetch(`${HTTP_BASE}/api/maps/save-inline`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ displayName, data }),
-    });
+  const saveMap = (data: InlineMapData, displayName: string) => {
+    void saveMapToLibrary(HTTP_BASE, displayName, data);
   };
 
   const downloadMap = (data: InlineMapData, displayName: string) => {
-    void (async () => {
-      const res = await fetch(`${HTTP_BASE}/api/maps/export`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ displayName, data }),
-      });
-      if (!res.ok) return;
-      const blob = await res.blob();
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement('a');
-      a.href = url;
-      a.download = `${displayName}.map`;
-      a.click();
-      URL.revokeObjectURL(url);
-    })();
+    void downloadMapFile(HTTP_BASE, displayName, data);
   };
 
   if (!isConnected) {
@@ -249,7 +228,7 @@ function ControlApp({ roomId }: { roomId: string }) {
           theme={prefs.theme}
           httpBase={HTTP_BASE}
           onApply={handleMapEditorApply}
-          onSaveToLibrary={(map, name) => saveMapToLibrary(toInlineMapData(map), name)}
+          onSaveToLibrary={(map, name) => saveMap(toInlineMapData(map), name)}
           onDownload={(map, name) => downloadMap(toInlineMapData(map), name)}
           onClose={() => setShowMapEditor(false)}
         />
@@ -279,7 +258,7 @@ function ControlApp({ roomId }: { roomId: string }) {
               onApplyMapEntry={handleApplyMapEntry}
               onApplyMapParams={handleApplyMapParams}
               onOpenMapEditor={() => void openMapEditor()}
-              onSaveCurrentMap={name => { if (currentMap) saveMapToLibrary(currentMap, name); }}
+              onSaveCurrentMap={name => { if (currentMap) saveMap(currentMap, name); }}
               onDownloadCurrentMap={name => { if (currentMap) downloadMap(currentMap, name); }}
               onOpenMapLibrary={() => setShowMapLibrary(true)}
             />

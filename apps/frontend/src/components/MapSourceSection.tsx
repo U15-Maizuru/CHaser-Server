@@ -7,6 +7,7 @@ import {
   WIN_BASE, RADIUS_SM,
   FONT_NUM, FONT_UI,
 } from '../ui';
+import { fetchMaps } from '../lib/api';
 
 interface Props {
   httpBase: string;
@@ -60,12 +61,7 @@ export function MapSourceSection({
   // 一覧はライブラリタブを開いたときだけ取りに行く (ProgramLibrarySection と同じ遅延取得)
   useEffect(() => {
     if (!open || tab !== 'catalog') return;
-    fetch(`${httpBase}/api/maps`)
-      .then(r => r.json())
-      .then((d: { entries: MapCatalogEntry[] }) => {
-        setEntries([...d.entries].sort((a, b) => b.uploadedAt - a.uploadedAt));
-      })
-      .catch(() => {});
+    void fetchMaps(httpBase).then(setEntries);
   }, [open, tab, httpBase]);
 
   const toggleOpen = () => {
