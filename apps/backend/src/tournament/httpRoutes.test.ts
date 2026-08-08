@@ -5,7 +5,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { TournamentDefinition } from '@u15/ws-types';
-import { handleHttpRequest } from '../network/HttpServer.js';
+import { handleHttpRequest } from '../http/router.js';
 import { addCatalogEntry, catalogDir, ensureCatalogDir } from '../programCatalog.js';
 import { ensureTournamentDir, loadTournament, tournamentRootDir } from './TournamentStore.js';
 

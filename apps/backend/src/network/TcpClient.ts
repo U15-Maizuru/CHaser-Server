@@ -2,21 +2,11 @@ import net from 'node:net';
 import { aroundDataToString, methodFromString } from '../game/GameSystem.js';
 import { Action, type AroundData, type Method, Rote, Team } from '../game/types.js';
 import { BaseClient } from './BaseClient.js';
+import { sanitizeName } from '../playerName.js';
 
 const IGNORE_INVALID = 10;
 
 const UNKNOWN_METHOD: Method = { team: Team.UNKNOWN, action: Action.UNKNOWN, rote: Rote.UNKNOWN };
-
-/**
- * プレイヤー名として受け入れられる形に整える。
- * TCP で送られてきた名前と、プログラムのソースから拾った名前 (programName.ts) の
- * 両方でこれを通し、表示される値が経路によってブレないようにする。
- */
-export function sanitizeName(raw: string): string {
-  return raw
-    .replace(/[\r\n\u2028\u2029\u202A-\u202F\u200B\t\f\v\uFFFD]/g, "")
-    .slice(0, 100);
-}
 
 export class TcpClient extends BaseClient {
   private server: net.Server;

@@ -31,6 +31,30 @@ export function readJsonBody(req: IncomingMessage): Promise<unknown> {
   });
 }
 
+/**
+ * JSON ボディを読んでハンドラへ渡す。壊れたボディは共通の 400 で返す。
+ * ルートごとに .then().catch(() => badRequest(...)) を書き写すのをやめるための薄い包み。
+ */
+export function withJsonBody(
+  req: IncomingMessage, res: ServerResponse, handler: (body: unknown) => void,
+): void {
+  readJsonBody(req)
+    .then(handler)
+    .catch(() => badRequest(res, '不正なリクエストボディです'));
+}
+
+/**
+ * ルーム固有のルートが必ず要求する ?room=<id>&slot=0|1 を取り出す。
+ * 足りなければ 400 を返して null を返す (呼び出し側はそのまま return する)。
+ */
+export function requireRoomSlot(url: URL, res: ServerResponse): { room: string; slot: 0 | 1 } | null {
+  const slot = url.searchParams.get('slot');
+  const room = url.searchParams.get('room');
+  if (slot !== '0' && slot !== '1') { badRequest(res, 'slot は 0 か 1 を指定してください'); return null; }
+  if (!room) { badRequest(res, 'room パラメータが必要です'); return null; }
+  return { room, slot: slot === '0' ? 0 : 1 };
+}
+
 export function sanitizeFilename(name: string): string {
   return path.basename(name).replace(/\s+/g, '_').replace(/[^a-zA-Z0-9._\-　-鿿]/g, '_');
 }
@@ -42,17 +66,24 @@ function asciiFallbackName(name: string): string {
 }
 
 /**
- * ファイルをダウンロード用に配信する (日本語ファイル名対応の Content-Disposition 付き)。
+ * 日本語ファイル名でも落とせるダウンロードヘッダ。
+ * filename は古いブラウザ向けの ASCII、filename* が本来の名前。
+ */
+function contentDisposition(downloadName: string): string {
+  const encoded = encodeURIComponent(downloadName);
+  return `attachment; filename="${asciiFallbackName(downloadName)}"; filename*=UTF-8''${encoded}`;
+}
+
+/**
+ * ファイルをダウンロード用に配信する。
  * onSent は送信完了後に呼ぶ (一時ファイル削除用)。
  */
 export function sendFileDownload(
   res: ServerResponse, filePath: string, downloadName: string, onSent?: () => void,
 ): void {
-  const encoded = encodeURIComponent(downloadName);
   res.writeHead(200, {
     'Content-Type': 'application/octet-stream',
-    'Content-Disposition':
-      `attachment; filename="${asciiFallbackName(downloadName)}"; filename*=UTF-8''${encoded}`,
+    'Content-Disposition': contentDisposition(downloadName),
   });
   const stream = fs.createReadStream(filePath);
   stream.pipe(res);
@@ -67,11 +98,9 @@ export function sendTextDownload(
   res: ServerResponse, body: string | Buffer, downloadName: string, contentType: string,
   extraHeaders: Record<string, string> = {},
 ): void {
-  const encoded = encodeURIComponent(downloadName);
   res.writeHead(200, {
     'Content-Type': contentType,
-    'Content-Disposition':
-      `attachment; filename="${asciiFallbackName(downloadName)}"; filename*=UTF-8''${encoded}`,
+    'Content-Disposition': contentDisposition(downloadName),
     ...extraHeaders,
   });
   res.end(body);

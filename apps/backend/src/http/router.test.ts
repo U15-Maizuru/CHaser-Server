@@ -3,7 +3,7 @@ import path from 'node:path';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { ensureDirectories, handleHttpRequest } from './HttpServer.js';
+import { ensureDirectories, handleHttpRequest } from './router.js';
 import { RoomManager } from '../RoomManager.js';
 
 const ROOM_ID = 'test-http-server';

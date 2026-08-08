@@ -1,7 +1,7 @@
 import { RoomManager } from './RoomManager.js';
 import { WsServer }    from './network/WsServer.js';
 import { getLocalIP }  from './network/localIp.js';
-import { handleHttpRequest, ensureDirectories } from './network/HttpServer.js';
+import { handleHttpRequest, ensureDirectories } from './http/router.js';
 import { TournamentOrchestrator } from './tournament/TournamentOrchestrator.js';
 
 const PORT       = Number(process.env['PORT'] ?? 8765);

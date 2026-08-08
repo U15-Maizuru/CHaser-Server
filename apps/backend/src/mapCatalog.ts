@@ -5,29 +5,26 @@ import type { InlineMapData, MapCatalogEntry } from '@u15/ws-types';
 import { MapObject } from '@u15/ws-types';
 import { exportMap, importMap } from './game/GameSystem.js';
 import { toGameMap } from './game/inlineMap.js';
+import { JsonIndexStore } from './catalog/JsonIndexStore.js';
 
 // マップの永続保存先。room/slot に紐付かず、アプリ・システムの再起動をまたいで
 // 保持される (server/program-catalog, server/music と同じ層のグローバルディレクトリ)。
-const CATALOG_DIR = path.resolve('server/map-catalog');
-const INDEX_PATH  = path.join(CATALOG_DIR, 'index.json');
+const store = new JsonIndexStore<MapCatalogEntry>('server/map-catalog');
 
 export function ensureMapCatalogDir(): void {
-  fs.mkdirSync(CATALOG_DIR, { recursive: true });
-  if (!fs.existsSync(INDEX_PATH)) {
-    writeIndex([]);
-  }
+  store.ensureDir();
 }
 
 export function mapCatalogDir(): string {
-  return CATALOG_DIR;
+  return store.dir;
 }
 
 export function listMapCatalogEntries(): MapCatalogEntry[] {
-  return readIndex().filter(e => fs.existsSync(e.mapPath));
+  return store.read().filter(e => fs.existsSync(e.mapPath));
 }
 
 export function getMapCatalogEntry(id: string): MapCatalogEntry | undefined {
-  return readIndex().find(e => e.id === id);
+  return store.find(id);
 }
 
 /**
@@ -37,7 +34,7 @@ export function getMapCatalogEntry(id: string): MapCatalogEntry | undefined {
  */
 export function addMapCatalogEntry(displayName: string, tempPath: string): MapCatalogEntry | null {
   const id        = randomUUID();
-  const finalPath = path.join(CATALOG_DIR, `${id}.map`);
+  const finalPath = path.join(store.dir, `${id}.map`);
   fs.renameSync(tempPath, finalPath);
 
   const parsed = importMap(finalPath);
@@ -57,16 +54,14 @@ export function addMapCatalogEntry(displayName: string, tempPath: string): MapCa
     itemCount:  countObj(parsed.field, MapObject.ITEM),
   };
 
-  const entries = readIndex();
-  entries.push(entry);
-  writeIndex(entries);
+  store.add(entry);
   return entry;
 }
 
 /** マップエディタで組んだインラインデータを、既存の .map テキスト形式でカタログへ書き出して登録する。 */
 export function addMapCatalogEntryFromInline(displayName: string, data: InlineMapData): MapCatalogEntry {
   const id        = randomUUID();
-  const finalPath = path.join(CATALOG_DIR, `${id}.map`);
+  const finalPath = path.join(store.dir, `${id}.map`);
 
   const gameMap = toGameMap(data, displayName);
   exportMap(gameMap, finalPath);
@@ -86,33 +81,15 @@ export function addMapCatalogEntryFromInline(displayName: string, data: InlineMa
     itemCount:  countObj(gameMap.field, MapObject.ITEM),
   };
 
-  const entries = readIndex();
-  entries.push(entry);
-  writeIndex(entries);
+  store.add(entry);
   return entry;
 }
 
 export function deleteMapCatalogEntry(id: string): void {
-  const entries = readIndex();
-  const entry   = entries.find(e => e.id === id);
-  if (!entry) return;
-  if (fs.existsSync(entry.mapPath)) fs.unlinkSync(entry.mapPath);
-  writeIndex(entries.filter(e => e.id !== id));
+  const entry = store.remove(id);
+  if (entry && fs.existsSync(entry.mapPath)) fs.unlinkSync(entry.mapPath);
 }
 
 function countObj(field: MapObject[][], obj: MapObject): number {
   return field.flat().filter(c => c === obj).length;
-}
-
-function readIndex(): MapCatalogEntry[] {
-  try {
-    return JSON.parse(fs.readFileSync(INDEX_PATH, 'utf-8')) as MapCatalogEntry[];
-  } catch {
-    return [];
-  }
-}
-
-function writeIndex(entries: MapCatalogEntry[]): void {
-  fs.mkdirSync(CATALOG_DIR, { recursive: true });
-  fs.writeFileSync(INDEX_PATH, JSON.stringify(entries, null, 2));
 }
