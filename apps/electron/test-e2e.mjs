@@ -12,11 +12,11 @@
  */
 
 import { _electron as electron } from 'playwright';
-import { spawn }                 from 'node:child_process';
 import path                      from 'node:path';
 import fs                        from 'node:fs';
 import { fileURLToPath }         from 'node:url';
 import { killTree }              from './dist/killTree.js';
+import { VITE_PORT, isPortBusy, spawnVite, waitForPort } from './viteLauncher.cjs';
 
 const __dirname     = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT  = path.resolve(__dirname, '../..');
@@ -203,40 +203,18 @@ async function waitForGameStart(page, timeoutMs = 15000) {
 
 // ── Vite dev サーバー起動 ─────────────────────────────────────────────────────
 
+// 起動そのものは viteLauncher.cjs に置いてある (dev.js と共有するため)。
+// 既に誰かが 5173 を握っていれば起動しない。その場合は後始末の対象にもしないので null を返す。
 async function startViteServer() {
-  // 既に起動中かチェック
-  try {
-    const res = await fetch('http://localhost:5173').catch(() => null);
-    if (res) { console.log('  Vite server は既に起動中です'); return null; }
-  } catch { /* ignore */ }
+  if (await isPortBusy(VITE_PORT)) {
+    console.log('  Vite server は既に起動中です');
+    return null;
+  }
 
-  return new Promise((resolve, reject) => {
-    const proc = spawn('pnpm', ['--filter', '@u15/frontend', 'dev'], {
-      cwd: PROJECT_ROOT,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      shell: true,
-    });
-
-    let ready = false;
-    const timer = setTimeout(() => {
-      if (!ready) reject(new Error('Vite サーバー起動タイムアウト'));
-    }, 30000);
-
-    proc.stdout.on('data', (d) => {
-      // eslint-disable-next-line no-control-regex
-      const plain = d.toString().replace(/\x1b\[[0-9;]*m/g, '');
-      if (plain.includes('localhost:5173') && !ready) {
-        ready = true;
-        clearTimeout(timer);
-        setTimeout(() => resolve(proc), 800);
-      }
-    });
-
-    proc.on('error', reject);
-    proc.on('exit', (code) => {
-      if (!ready) reject(new Error(`Vite が終了: ${code}`));
-    });
-  });
+  const proc = spawnVite(['ignore', 'pipe', 'pipe']);
+  proc.on('error', (err) => { throw err; });
+  await waitForPort(VITE_PORT);
+  return proc;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -726,85 +704,6 @@ async function testFileDropZone(page) {
   await ss(page, '13_file_dropzone');
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// メイン
-// ═══════════════════════════════════════════════════════════════════════════
-
-async function main() {
-  const startAt = Date.now();
-  console.log('╔══════════════════════════════════════════════════╗');
-  console.log('║  CHaser Server — E2E 全自動テスト          ║');
-  console.log('╚══════════════════════════════════════════════════╝');
-
-  let viteProc = null;
-  let app      = null;
-
-  try {
-    // 1. Vite dev サーバー
-    console.log('\n[1/3] Vite dev サーバー起動中...');
-    viteProc = await startViteServer();
-    console.log('      http://localhost:5173 — OK');
-
-    // 2. Electron 起動
-    console.log('[2/3] Electron アプリ起動中...');
-    const env = { ...process.env, NODE_ENV: 'development' };
-    delete env.ELECTRON_RUN_AS_NODE;
-
-    app = await electron.launch({
-      executablePath: ELECTRON_BIN,
-      args:           [__dirname],
-      env,
-      timeout:        30000,
-    });
-
-    // Electron の stdout/stderr を読み捨てる。バックエンドを子プロセスとして起動する
-    // 構成上そこそこの量を出力するため、パイプを誰も読まないとバッファが埋まって
-    // メインプロセスが停止し、ウィンドウが生成されないままタイムアウトする。
-    app.process().stdout?.on('data', () => {});
-    app.process().stderr?.on('data', () => {});
-
-    // 2ウィンドウ構成: 表示ウィンドウが先に作成されるため、固定時間待機だと
-    // まだ登録されていないウィンドウ一覧を早取りしてそちらを拾ってしまうことがある。
-    // コントロールウィンドウ (mode=control) が現れるまでポーリングして待つ。
-    let page = null;
-    const windowDeadline = Date.now() + 20000;
-    while (Date.now() < windowDeadline) {
-      page = app.windows().find(w => w.url().includes('mode=control'));
-      if (page) break;
-      await wait(300);
-    }
-
-    const windows = app.windows();
-    console.log(`      Windows: ${windows.length} [${windows.map(w => w.url()).join(', ')}]`);
-
-    page = page
-        ?? windows.find(w => w.url().includes('5173'))
-        ?? await app.firstWindow();
-
-    await page.waitForSelector('button', { timeout: 15000 }).catch(() => {});
-    await wait(1000);
-
-    console.log('      Electron — OK');
-    console.log(`\n[3/3] テスト実行中... (スクリーンショット: ${SHOT_DIR})`);
-    console.log('─'.repeat(52));
-
-    // テスト用前処理: ターン表示時間を 0ms に設定 (テストを高速化)
-    // 保存先は useMatchConfig の 'u15_match_config' キー。App が接続後に一度だけ
-    // この値をサーバーへ送るため、書き込んだ後にリロードする必要がある。
-    await page.evaluate(() => {
-      try {
-        const raw = localStorage.getItem('u15_match_config');
-        const s = raw ? JSON.parse(raw) : {};
-        s.turnDelay = 0;
-        localStorage.setItem('u15_match_config', JSON.stringify(s));
-      } catch { /* ignore */ }
-    });
-    await page.reload();
-    await page.waitForSelector('button', { timeout: 10000 }).catch(() => {});
-    await wait(800);
-    console.log('  (ターン表示時間を 0ms に設定しました)');
-
-
 // ── 大会運営 ─────────────────────────────────────────────────────────────────
 
 const E2E_CUP_ID  = 'e2e-cup';
@@ -1209,6 +1108,83 @@ async function testTournament(app, page) {
   fs.rmSync(E2E_CUP_DIR, { recursive: true, force: true });
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// メイン
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function main() {
+  const startAt = Date.now();
+  console.log('╔══════════════════════════════════════════════════╗');
+  console.log('║  CHaser Server — E2E 全自動テスト          ║');
+  console.log('╚══════════════════════════════════════════════════╝');
+
+  let viteProc = null;
+  let app      = null;
+
+  try {
+    // 1. Vite dev サーバー
+    console.log('\n[1/3] Vite dev サーバー起動中...');
+    viteProc = await startViteServer();
+    console.log('      http://localhost:5173 — OK');
+
+    // 2. Electron 起動
+    console.log('[2/3] Electron アプリ起動中...');
+    const env = { ...process.env, NODE_ENV: 'development' };
+    delete env.ELECTRON_RUN_AS_NODE;
+
+    app = await electron.launch({
+      executablePath: ELECTRON_BIN,
+      args:           [__dirname],
+      env,
+      timeout:        30000,
+    });
+
+    // Electron の stdout/stderr を読み捨てる。バックエンドを子プロセスとして起動する
+    // 構成上そこそこの量を出力するため、パイプを誰も読まないとバッファが埋まって
+    // メインプロセスが停止し、ウィンドウが生成されないままタイムアウトする。
+    app.process().stdout?.on('data', () => {});
+    app.process().stderr?.on('data', () => {});
+
+    // 2ウィンドウ構成: 表示ウィンドウが先に作成されるため、固定時間待機だと
+    // まだ登録されていないウィンドウ一覧を早取りしてそちらを拾ってしまうことがある。
+    // コントロールウィンドウ (mode=control) が現れるまでポーリングして待つ。
+    let page = null;
+    const windowDeadline = Date.now() + 20000;
+    while (Date.now() < windowDeadline) {
+      page = app.windows().find(w => w.url().includes('mode=control'));
+      if (page) break;
+      await wait(300);
+    }
+
+    const windows = app.windows();
+    console.log(`      Windows: ${windows.length} [${windows.map(w => w.url()).join(', ')}]`);
+
+    page = page
+        ?? windows.find(w => w.url().includes('5173'))
+        ?? await app.firstWindow();
+
+    await page.waitForSelector('button', { timeout: 15000 }).catch(() => {});
+    await wait(1000);
+
+    console.log('      Electron — OK');
+    console.log(`\n[3/3] テスト実行中... (スクリーンショット: ${SHOT_DIR})`);
+    console.log('─'.repeat(52));
+
+    // テスト用前処理: ターン表示時間を 0ms に設定 (テストを高速化)
+    // 保存先は useMatchConfig の 'u15_match_config' キー。App が接続後に一度だけ
+    // この値をサーバーへ送るため、書き込んだ後にリロードする必要がある。
+    await page.evaluate(() => {
+      try {
+        const raw = localStorage.getItem('u15_match_config');
+        const s = raw ? JSON.parse(raw) : {};
+        s.turnDelay = 0;
+        localStorage.setItem('u15_match_config', JSON.stringify(s));
+      } catch { /* ignore */ }
+    });
+    await page.reload();
+    await page.waitForSelector('button', { timeout: 10000 }).catch(() => {});
+    await wait(800);
+    console.log('  (ターン表示時間を 0ms に設定しました)');
 
     // テストスイート実行
     await testSetupUI(page);
@@ -1231,8 +1207,8 @@ async function testTournament(app, page) {
       await app.close().catch(() => {});
       killTree(electronPid);
     }
-    // pnpm/cmd を挟んでいるので Vite の実体は孫プロセス。木ごと落とさないと
-    // 5173 を握ったまま残り、次回の実行が**前回のサーバー**につながって大量に失敗する
+    // Vite は esbuild を子として従えるので木ごと落とす。残ると 5173 を握ったままになり、
+    // 次回の実行が**前回のサーバー**につながって大量に失敗する
     if (viteProc) killTree(viteProc.pid);
   }
 

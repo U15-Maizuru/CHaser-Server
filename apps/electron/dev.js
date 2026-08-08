@@ -2,12 +2,11 @@
 // Dev launcher: Vite を起動してポート 5173 が準備完了してから Electron を起動する。
 // pnpm が ELECTRON_RUN_AS_NODE=1 を残す場合があるため削除してから electron を起動する。
 const { spawn, execSync } = require('child_process');
-const net      = require('net');
 const path     = require('path');
 const electron = require('electron');
 const { killTree } = require('./dist/killTree.js');
+const { VITE_PORT, isPortBusy, spawnVite, waitForPort } = require('./viteLauncher.cjs');
 
-const VITE_PORT    = 5173;
 const BACKEND_PORT = 8765;
 
 // Windows のコンソールコードページが UTF-8 (65001) でないと、Node/Electron が
@@ -62,16 +61,6 @@ function killAllChildren() {
 // バックエンドにつながってしまう (前の対戦状態が見える・変更が反映されない)。
 // 黙って壊れた状態で立ち上がるより、原因を示して止めるほうがよい。
 
-function isPortBusy(port) {
-  return new Promise((resolve) => {
-    const client = net.connect(port, '127.0.0.1', () => {
-      client.destroy();
-      resolve(true);
-    });
-    client.on('error', () => resolve(false));
-  });
-}
-
 async function preflight() {
   const busy = [];
   if (await isPortBusy(VITE_PORT))    busy.push(`${VITE_PORT} (Vite)`);
@@ -88,20 +77,9 @@ async function preflight() {
 }
 
 // ── Vite ─────────────────────────────────────────────────────────────────────
-// pnpm 経由 (shell: true) ではなく Vite の CLI を直接起動する。pnpm を挟むと
-// cmd → pnpm → cmd → vite と実体が3階層下に来て、後始末が難しくなるため。
-// --strictPort を付けるのは、ポートが埋まっていたときに黙って 5174 へ逃げないようにするため
-// (Electron は 5173 を決め打ちで開くので、逃げられると白画面になる)。
+// 起動そのものは viteLauncher.cjs に置いてある (E2E と共有するため)。
 function startVite() {
-  const frontendDir = path.resolve(__dirname, '../frontend');
-  const viteBin     = path.join(frontendDir, 'node_modules/vite/bin/vite.js');
-
-  vite = spawn(process.execPath, [viteBin, '--port', String(VITE_PORT), '--strictPort'], {
-    cwd:   frontendDir,
-    stdio: CHILD_STDIO,
-    env:   { ...process.env, NODE_ENV: 'development' },
-    shell: false,
-  });
+  vite = spawnVite(CHILD_STDIO);
 
   vite.on('error', (err) => {
     console.error('[dev] Vite の起動に失敗しました:', err.message);
@@ -114,26 +92,6 @@ function startVite() {
       console.error(`[dev] Vite が終了しました (code ${code})`);
       cleanupAndExit(code ?? 1);
     }
-  });
-}
-
-// ポート 5173 が開くまでポーリングして待つ (Vite に起動完了イベントがないため)
-const VITE_POLL_INTERVAL_MS = 500;
-const VITE_MAX_ATTEMPTS     = 120; // = VITE_POLL_INTERVAL_MS * VITE_MAX_ATTEMPTS 秒でタイムアウト
-let attempts = 0;
-function waitForVite() {
-  const client = net.connect(VITE_PORT, '127.0.0.1', () => {
-    client.destroy();
-    launchElectron();
-  });
-  client.on('error', () => {
-    attempts++;
-    if (attempts > VITE_MAX_ATTEMPTS) {
-      const timeoutSec = (VITE_POLL_INTERVAL_MS * VITE_MAX_ATTEMPTS) / 1000;
-      console.error(`[dev] Vite が ${timeoutSec} 秒以内に起動しませんでした`);
-      cleanupAndExit(1);
-    }
-    setTimeout(waitForVite, VITE_POLL_INTERVAL_MS);
   });
 }
 
@@ -160,8 +118,13 @@ process.on('SIGTERM', () => cleanupAndExit(0));
 // ターミナルごと閉じられた場合など、シグナル以外の経路で落ちるときも子を残さない
 process.on('exit', killAllChildren);
 
-preflight().then((ok) => {
+preflight().then(async (ok) => {
   if (!ok) { process.exit(1); return; }
   startVite();
-  waitForVite();
+  // Vite が受け付けるようになってから Electron を出す (先に出すと白画面のまま固まる)
+  await waitForPort(VITE_PORT);
+  launchElectron();
+}).catch((err) => {
+  console.error(`[dev] ${err.message}`);
+  cleanupAndExit(1);
 });

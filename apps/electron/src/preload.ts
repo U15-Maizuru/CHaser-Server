@@ -1,7 +1,11 @@
 // Preload runs in a sandboxed renderer context (contextIsolation: true).
 // Only 'electron' (not 'electron/renderer') is available here.
+import type { ElectronAPI } from './electronApi.js';
+
 const { contextBridge, ipcRenderer } = require('electron');
 
+// satisfies で ElectronAPI との食い違いをコンパイル時に検出する
+// (フロントエンド側も同じ型を参照しているので、片側だけの変更は型エラーになる)
 contextBridge.exposeInMainWorld('electronAPI', {
   openMapFile: (): Promise<string | null> =>
     ipcRenderer.invoke('dialog:openFile'),
@@ -26,4 +30,4 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   openTournamentWindow: (): Promise<void> =>
     ipcRenderer.invoke('tournament:openWindow'),
-});
+} satisfies ElectronAPI);
