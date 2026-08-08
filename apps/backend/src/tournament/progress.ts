@@ -1,11 +1,10 @@
 import type {
   LeaguePoints,
   MatchSlotRef,
-  TournamentFormat,
   TournamentMatch,
   TournamentMatchResult,
 } from '@u15/ws-types';
-import { compareByPlayOrder, hasBracket } from '@u15/ws-types';
+import { DEFAULT_LEAGUE_POINTS } from '@u15/ws-types';
 import { qualifierKey, resolveGroupRank } from './qualifiers.js';
 import type { StandingsRankBy } from './standings.js';
 
@@ -31,8 +30,6 @@ export interface ResolveContext {
   /** 運営が最終決定確認リストから削除した参加者。順位表から除いて繰り上げる */
   qualifierExclusions?: readonly string[];
 }
-
-const DEFAULT_LEAGUE_POINTS: LeaguePoints = { win: 3, draw: 1, loss: 0 };
 
 /** 確定済みの試合の勝者 participantId。両者棄権・bye 同士なら null */
 function winnerOf(m: TournamentMatch): string | null {
@@ -284,23 +281,4 @@ function clearFrom(
     delete next.rematchMapCatalogId;
     return next;
   });
-}
-
-/** 次に実施すべき試合 (ready のうち実施順が最も早いもの。3位決定戦は決勝より先) */
-export function nextReadyMatch(matches: TournamentMatch[]): TournamentMatch | null {
-  return [...matches]
-    .filter(m => m.status === 'ready')
-    .sort(compareByPlayOrder)[0] ?? null;
-}
-
-/**
- * 勝ち上がりの試合か (= 勝者不在のまま確定できない試合か)。
- *
- * 形式**と**試合の両方を見る:
- *   league             … 勝ち上がりが無いので常に false (引き分けはそのまま確定できる)
- *   single-elimination … 常に true
- *   予選のある形式      … 1つの大会に予選と決勝が同居するので、group の有無で分ける
- */
-export function isKnockoutMatch(format: TournamentFormat, m: TournamentMatch): boolean {
-  return hasBracket(format) && m.group === undefined;
 }

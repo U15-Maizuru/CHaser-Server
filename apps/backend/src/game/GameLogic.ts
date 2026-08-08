@@ -46,7 +46,7 @@ export function applyMethod(state: GameState, method: Method): GameState {
     teamScore: [...state.teamScore] as [number, number],
   };
 
-  // Team は COOL=0/HOT=1/UNKNOWN=2 の3値だが、teamPos は自チーム分の2要素タプル
+  // Team は COOL=0/HOT=1/UNKNOWN=2 の3値だが、teamPos はプレイヤー2人分の2要素タプル
   // (UNKNOWN が来ることはない) なので 0|1 として扱う
   const team = method.team as unknown as 0 | 1;
   const pos = next.teamPos[team];

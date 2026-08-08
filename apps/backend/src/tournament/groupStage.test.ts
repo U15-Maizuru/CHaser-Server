@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import type { MatchSlotRef, ParticipantDef, TournamentMatch } from '@u15/ws-types';
 import { autoGroupAssign, groupLabel } from '@u15/ws-types';
-import { assignGroups, buildGroupStage, groupStageCountOf } from './groupStage.js';
+import { groupStageCount } from '@u15/ws-types';
+import { assignGroups, buildGroupStage } from './groupStage.js';
 
 function people(n: number): ParticipantDef[] {
   return Array.from({ length: n }, (_, i) => ({
@@ -111,7 +112,7 @@ describe('buildGroupStage', () => {
 
   it('決勝トーナメントの stage は予選の節数ぶんずれ、id は決勝T内の相対で付く', () => {
     const ms     = buildGroupStage(people(8), OPTS);   // 予選3節
-    const offset = groupStageCountOf(ms);
+    const offset = groupStageCount(ms);
 
     expect(offset).toBe(3);
     expect(find(ms, 'SF1').stage).toBe(3);
@@ -159,26 +160,26 @@ describe('buildGroupStage', () => {
 
   it('進出人数を増やすと2の冪に切り上がり、bye 同士のカードは出ない', () => {
     const ms = buildGroupStage(people(12), { ...OPTS, advancePerGroup: 3 });   // 6人 → 8枠
-    const first = ms.filter(m => m.group === undefined && m.stage === groupStageCountOf(ms));
+    const first = ms.filter(m => m.group === undefined && m.stage === groupStageCount(ms));
     expect(first).toHaveLength(4);
     expect(first.some(m => m.slotA.kind === 'bye' && m.slotB.kind === 'bye')).toBe(false);
   });
 
   it('2回総当たりでは節が倍になる', () => {
-    const single = groupStageCountOf(buildGroupStage(people(8), OPTS));
-    const double = groupStageCountOf(buildGroupStage(people(8), { ...OPTS, doubleRoundRobin: true }));
+    const single = groupStageCount(buildGroupStage(people(8), OPTS));
+    const double = groupStageCount(buildGroupStage(people(8), { ...OPTS, doubleRoundRobin: true }));
     expect(double).toBe(single * 2);
   });
 });
 
 describe('groupStageCountOf', () => {
   it('予選を持たない試合グラフでは 0 (= ゲタ無し)', () => {
-    expect(groupStageCountOf([])).toBe(0);
+    expect(groupStageCount([])).toBe(0);
     const noGroups: TournamentMatch[] = [{
       id: 'FINAL', stage: 3, order: 0, label: '決勝',
       slotA: { kind: 'bye' }, slotB: { kind: 'bye' },
       resolvedA: null, resolvedB: null, byeA: true, byeB: true, status: 'pending',
     }];
-    expect(groupStageCountOf(noGroups)).toBe(0);
+    expect(groupStageCount(noGroups)).toBe(0);
   });
 });

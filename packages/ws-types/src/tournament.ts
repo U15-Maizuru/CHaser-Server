@@ -60,62 +60,122 @@ export function hasBracket(format: TournamentFormat): boolean {
  */
 export const BOT_PARTICIPANT_ID = '__bot__';
 
+/** 全形式に共通する対戦の条件 */
+export interface MatchRules {
+  /** 1試合を先後入替の2ゲームで行うか (公式ルールの既定。false は練習・リハーサル用) */
+  doubleMode: boolean;
+}
+
+/** どのマップで戦うか。解決順は bracketStages[stage] → catalogId → 毎回ランダム生成 */
+export interface MapPlan {
+  /** 大会全体で使う固定マップのライブラリ ID */
+  catalogId:     string | null;
+  /**
+   * 勝ち上がりの回戦ごとのマップ。null は catalogId に従う。
+   * 3位決定戦は決勝と同じ回戦なので決勝と同じマップになる。
+   *
+   * **index は決勝トーナメント相対。** 予選の節ぶんのゲタを当てるのは
+   * TournamentStore.resolveStageMaps の仕事で、作成 UI は決勝T の回戦しか出さない。
+   */
+  bracketStages: (string | null)[];
+}
+
+/** 総当たりの条件。予選リーグと単独リーグで共有する */
+export interface LeagueRules {
+  /** 勝ち点 (公式ルールは 勝利3 / 引き分け1 / 敗北0) */
+  points:           LeaguePoints;
+  /** 2回総当たりにするか */
+  doubleRoundRobin: boolean;
+}
+
 export interface LeaguePoints {
   win:  number;
   draw: number;
   loss: number;
 }
 
-export interface TournamentRules {
-  /** 1試合を先後入替の2ゲームで行うか (公式ルールの既定。false は練習・リハーサル用) */
-  doubleMode:       boolean;
-  /** 大会全体で固定マップを使う場合のマップライブラリ ID */
-  mapCatalogId:     string | null;
-  /**
-   * 勝ち上がりの回戦 (stage) ごとのマップ。index が stage、null は
-   * 「大会の設定 (mapCatalogId) に従う」。3位決定戦は決勝と同じ stage なので決勝と同じマップになる。
-   *
-   * **予選を持つ形式では index は決勝トーナメント相対。** 予選の節にゲタを当てるのは
-   * TournamentStore.resolveStageMaps の仕事で、作成 UI は決勝T の回戦しか出さない。
-   */
-  stageMaps:        (string | null)[];
-  /** league 以外: 3位決定戦を行うか */
-  thirdPlaceMatch:  boolean;
-  /** league / group-then-bracket: 勝ち点 (公式ルールは 勝利3 / 引き分け1 / 敗北0) */
-  leaguePoints:     LeaguePoints;
-  /** league / group-then-bracket: 2回総当たりにするか */
-  doubleRoundRobin: boolean;
-  /** group-then-bracket のみ: 予選リーグの数 (bot-then-bracket では常に1リーグ扱いで未使用) */
-  groupCount:       number;
-  /**
-   * 決勝トーナメントへ上がる人数。
-   *
-   * group-then-bracket … 各リーグから上がる人数 (合計 groupCount × これ)
-   * bot-then-bracket   … 予選が1グループなので、これがそのまま決勝T の出場人数
-   */
-  advancePerGroup:  number;
+export const DEFAULT_LEAGUE_POINTS: LeaguePoints = { win: 3, draw: 1, loss: 0 };
 
-  // --- bot-then-bracket のみ ---
-
-  /**
-   * 運営が用意する BOT のプログラム。全参加者がこれと1試合ずつ戦う。
-   * null は「未提出」で、当日 BOT_PARTICIPANT_ID へ紐付ける。
-   */
-  botProgram:       ParticipantProgram;
+/** BOT対戦予選の条件。全参加者が同じ BOT と同じマップで1試合ずつ戦う */
+export interface BotStageRules {
+  /** 運営が用意する BOT のプログラム。null は「未提出」で、当日 BOT_PARTICIPANT_ID へ紐付ける */
+  program:         ParticipantProgram;
   /** BOT の表示名。省略時は「運営BOT」 */
-  botName:          string | null;
+  name:            string | null;
   /**
-   * BOT対戦予選で使うマップ。**全参加者が同じ条件で測られる形式の根拠**なので、
-   * これか mapCatalogId のどちらかは必ず指定されている必要がある (definition.ts が検証する)。
+   * 予選専用のマップ。null なら MapPlan.catalogId を使う。
+   * **全参加者が同じ条件で測られる形式の根拠**なので、どちらかは必ず要る (definition.ts が検証する)。
    */
-  botStageMap:      string | null;
+  map:             string | null;
   /**
    * 参加者が第1ゲームでどちら側に座るか (0 = 先攻 / 1 = 後攻)。
    *
-   * 参加者ごとではなく**大会全体で1つ** — 全員が同一条件で戦うのがこの形式の要点なので、
-   * 個別に選ばせる余地はない。2ゲーム制では先後が入れ替わるため意味を持たない。
+   * 参加者ごとではなく**大会全体で1つ** — 全員が同一条件で戦うのがこの形式の要点。
+   * 2ゲーム制では先後が入れ替わるため意味を持たない。
    */
-  participantSide:  0 | 1;
+  participantSide: 0 | 1;
+}
+
+/**
+ * 大会の進め方。**形式ごとに持つ設定そのものが違う**ので判別共用体にしてある。
+ *
+ * 平坦な1つの設定袋にすると「この項目はこの形式のときだけ意味がある」という約束が
+ * コメントにしか無くなり、形式を増やすたびに読み手が全項目を照合する羽目になる。
+ */
+export type StageRules =
+  | {
+      format:          'single-elimination';
+      map:             MapPlan;
+      thirdPlaceMatch: boolean;
+    }
+  | {
+      format: 'league';
+      map:    MapPlan;
+      league: LeagueRules;
+    }
+  | {
+      format:          'group-then-bracket';
+      map:             MapPlan;
+      thirdPlaceMatch: boolean;
+      league:          LeagueRules;
+      /** 予選リーグの数 */
+      groupCount:      number;
+      /** 各リーグから決勝トーナメントへ上がる人数 (合計 groupCount × これ) */
+      advancePerGroup: number;
+    }
+  | {
+      format:          'bot-then-bracket';
+      map:             MapPlan;
+      thirdPlaceMatch: boolean;
+      bot:             BotStageRules;
+      /** 決勝トーナメントの出場人数 (予選が1グループなのでこれがそのまま総数) */
+      advanceCount:    number;
+    };
+
+/** 3位決定戦を行うか。リーグは勝ち上がりが無いので常に false */
+export function hasThirdPlaceMatch(stage: StageRules): boolean {
+  return stage.format !== 'league' && stage.thirdPlaceMatch;
+}
+
+/** 総当たりの条件。持たない形式では null */
+export function leagueRulesOf(stage: StageRules): LeagueRules | null {
+  return stage.format === 'league' || stage.format === 'group-then-bracket' ? stage.league : null;
+}
+
+/** BOT対戦予選の条件。持たない形式では null */
+export function botRulesOf(stage: StageRules): BotStageRules | null {
+  return stage.format === 'bot-then-bracket' ? stage.bot : null;
+}
+
+/**
+ * 予選1グループあたりの決勝トーナメント進出人数。予選を持たない形式では 0。
+ *
+ * BOT対戦予選は1グループなので、advanceCount がそのままこの値になる。
+ */
+export function advancePerGroupOf(stage: StageRules): number {
+  if (stage.format === 'group-then-bracket') return stage.advancePerGroup;
+  if (stage.format === 'bot-then-bracket')   return stage.advanceCount;
+  return 0;
 }
 
 /** 参加プログラムの指定方法。null は「未提出」(当日 tournament_assign_program で紐付ける) */
@@ -138,8 +198,8 @@ export interface TournamentDefinition {
   formatVersion: number;
   id:            string;
   name:          string;
-  format:        TournamentFormat;
-  rules:         TournamentRules;
+  match:         MatchRules;
+  stage:         StageRules;
   participants:  ParticipantDef[];
   /** 明示的な1回戦の並び。長さは2の冪、null は bye。省略時はシード順から自動生成 */
   bracket?:      { size: number; slots: (string | null)[] };
@@ -496,8 +556,8 @@ export interface TournamentSummary {
 export interface TournamentStatePayload {
   tournamentId: string;
   name:         string;
-  format:       TournamentFormat;
-  rules:        TournamentRules;
+  match:        MatchRules;
+  stage:        StageRules;
   participants: ResolvedParticipant[];
   matches:      TournamentMatch[];
   /** league のときのみ。予選リーグの順位は groups[].standings 側に入る */
@@ -527,11 +587,10 @@ export interface TournamentStatePayload {
   /** 自動進行 (オートプレイ / デモモード) の状態 */
   autoPlay:     TournamentAutoPlay;
   /**
-   * 回戦ごとの実効マップ (index = stage)。定義の rules.stageMaps に運営中の差し替えを
-   * 重ねた結果で、null は「大会の設定 (rules.mapCatalogId) に従う」。
-   * 表示・判定はこれだけを見ればよく、UI 側で解決順を再現しなくてよい。
+   * 回戦ごとの実効マップ。定義の MapPlan.bracketStages に運営中の差し替えを重ねた結果で、
+   * null は「MapPlan.catalogId に従う」。UI 側で解決順を再現しなくてよい。
    *
-   * **index は予選と決勝を通した stage 番号 (combined)。** 予選の節は常に null になる。
+   * **index は予選と決勝を通した stage 番号。** MapPlan.bracketStages が決勝T相対なのと違う。
    */
   stageMaps:    (string | null)[];
   /**
@@ -544,36 +603,38 @@ export interface TournamentStatePayload {
   updatedAt:    number;
 }
 
+/**
+ * 運営が当日その場で下した判断。
+ *
+ * **配布物である tournament.json ではなく state.json 側に持つ。** マップ・プログラムの
+ * catalogId はこの PC のライブラリでしか通じず、進出者の差し替えは進行に紐づくため。
+ */
+export interface OperatorDecisions {
+  /** 差し替えた回戦ごとのマップ (キーは予選込みの通し stage の10進表記) */
+  stageMaps:           Record<string, string | null>;
+  /** 差し替えた決勝進出者 (キーは `"<group>:<rank>"`)。自動判定より優先する */
+  qualifiers:          Record<string, string | null>;
+  /** 最終決定確認リストから削除した参加者。この人たちを除いた並びで進出者を決める */
+  exclusions:          string[];
+  /**
+   * 「この顔ぶれで決勝を始める」と確定したか。
+   *
+   * 予選が終わっていない状態では意味を持たない (payload では常に false に倒す) ので、
+   * 巻き戻しのたびにこのフラグを消して回る必要はない。
+   */
+  qualifiersConfirmed: boolean;
+}
+
+export const NO_OPERATOR_DECISIONS: OperatorDecisions = {
+  stageMaps: {}, qualifiers: {}, exclusions: [], qualifiersConfirmed: false,
+};
+
 /** 永続化される進行状態 (server/tournament/<id>/state.json) */
 export interface TournamentState {
   tournamentId: string;
   matches:      TournamentMatch[];
   /** participantId → プログラムライブラリのエントリ */
   programs:     Record<string, { catalogId: string; sha256: string } | undefined>;
-  /**
-   * 運営中に差し替えた回戦ごとのマップ (キーは stage の10進表記)。
-   * catalogId はこの PC のライブラリでしか通じないので、programs と同じく
-   * 配布物である tournament.json ではなくこちら側に持つ。
-   */
-  stageMapOverrides?: Record<string, string | null>;
-  /**
-   * 運営が差し替えた決勝進出者 (キーは `"<group>:<rank>"`)。自動判定より優先する。
-   * 同点で機械的に決められないときの逃げ道。stageMapOverrides と同じく、配布物である
-   * tournament.json ではなくこちら側に持つ。
-   */
-  qualifierOverrides?: Record<string, string | null>;
-  /**
-   * 運営が最終決定確認リストから削除した参加者。順位表からこの人たちを除いた並びで
-   * 決勝進出者を決める。qualifierOverrides と同じく、配布物である tournament.json では
-   * なくこちら側に持つ (進行に紐づく運営の判断だから)。
-   */
-  qualifierExclusions?: string[];
-  /**
-   * 運営が「この顔ぶれで決勝を始める」と確定したか。
-   *
-   * 予選が終わっていない状態では意味を持たない (payload では常に false に倒す) ので、
-   * 巻き戻しのたびにこのフラグを消して回る必要はない。
-   */
-  qualifiersConfirmed?: boolean;
+  decisions:    OperatorDecisions;
   updatedAt:    number;
 }

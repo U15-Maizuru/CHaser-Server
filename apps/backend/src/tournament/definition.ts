@@ -1,18 +1,20 @@
 import type {
+  BotStageRules,
   LeaguePoints,
+  LeagueRules,
+  MapPlan,
   ParticipantDef,
   ParticipantProgram,
+  StageRules,
   TournamentDefinition,
   TournamentFormat,
-  TournamentRules,
 } from '@u15/ws-types';
+import { DEFAULT_LEAGUE_POINTS } from '@u15/ws-types';
 
 // tournament.json の手書きバリデータ。
-// 既存方針どおりスキーマライブラリ (zod 等) は導入せず、日本語のエラーメッセージを返す。
+// スキーマライブラリは導入せず、運営がそのまま読める日本語のエラーメッセージを返す。
 
 export class DefinitionError extends Error {}
-
-const DEFAULT_LEAGUE_POINTS: LeaguePoints = { win: 3, draw: 1, loss: 0 };
 
 const FORMATS: TournamentFormat[] = [
   'single-elimination', 'league', 'group-then-bracket', 'bot-then-bracket',
@@ -41,6 +43,11 @@ function asBool(v: unknown, fallback: boolean): boolean {
 
 function asNumber(v: unknown, fallback: number): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+/** 空文字と未指定を null に寄せる (「指定なし」の表現を1つに保つ) */
+function asIdOrNull(v: unknown): string | null {
+  return typeof v === 'string' && v.trim() !== '' ? v.trim() : null;
 }
 
 /** 表示名から id を作る (id 省略時のフォールバック) */
@@ -72,57 +79,93 @@ function parseProgram(v: unknown, where: string): ParticipantProgram {
   throw new DefinitionError(`${where} には file か builtin のどちらかを指定してください`);
 }
 
-function parseRules(v: unknown): TournamentRules {
-  const o = v === undefined ? {} : asRecord(v, 'rules');
-  const lp = o['leaguePoints'] === undefined
-    ? DEFAULT_LEAGUE_POINTS
-    : (() => {
-        const p = asRecord(o['leaguePoints'], 'rules.leaguePoints');
-        return {
-          win:  asNumber(p['win'],  DEFAULT_LEAGUE_POINTS.win),
-          draw: asNumber(p['draw'], DEFAULT_LEAGUE_POINTS.draw),
-          loss: asNumber(p['loss'], DEFAULT_LEAGUE_POINTS.loss),
-        };
-      })();
-
+/**
+ * マップの指定。
+ *
+ * マップライブラリの ID はこの PC でしか通じないため、存在チェックはしない
+ * (別の PC で書かれた tournament.json を読めなくしないため)。見つからない ID は
+ * ServerManager.loadMap 側で黙って無視され、ランダム生成にフォールバックする。
+ */
+function parseMapPlan(v: unknown): MapPlan {
+  const o = v === undefined || v === null ? {} : asRecord(v, 'stage.map');
   return {
-    doubleMode:       asBool(o['doubleMode'], true),
-    mapCatalogId:     typeof o['mapCatalogId'] === 'string' ? o['mapCatalogId'] : null,
-    stageMaps:        parseStageMaps(o['stageMaps']),
-    thirdPlaceMatch:  asBool(o['thirdPlaceMatch'], false),
-    leaguePoints:     lp,
-    doubleRoundRobin: asBool(o['doubleRoundRobin'], false),
-    groupCount:       asNumber(o['groupCount'],      DEFAULT_GROUP_COUNT),
-    advancePerGroup:  asNumber(o['advancePerGroup'], DEFAULT_ADVANCE_PER_GROUP),
-    botProgram:       parseProgram(o['botProgram'], 'rules.botProgram'),
-    botName:          typeof o['botName']     === 'string' && o['botName'].trim() !== ''
-      ? o['botName'].trim() : null,
-    botStageMap:      typeof o['botStageMap'] === 'string' && o['botStageMap'] !== ''
-      ? o['botStageMap'] : null,
-    // 0 = 先攻 / 1 = 後攻。それ以外の値は先攻に倒す
-    participantSide:  o['participantSide'] === 1 ? 1 : 0,
+    catalogId:     asIdOrNull(o['catalogId']),
+    bracketStages: parseBracketStages(o['bracketStages']),
   };
 }
 
-/**
- * 回戦ごとのマップ。index が stage で、null / 未指定は「大会の設定に従う」。
- *
- * マップライブラリの ID はこの PC でしか通じないため、存在チェックはここではしない
- * (別の PC で書かれた tournament.json を読めなくしないため)。見つからない ID は
- * ServerManager.loadMap 側で黙って無視され、大会の設定へフォールバックする。
- */
-function parseStageMaps(v: unknown): (string | null)[] {
+function parseBracketStages(v: unknown): (string | null)[] {
   if (v === undefined || v === null) return [];
   if (!Array.isArray(v)) {
-    throw new DefinitionError('rules.stageMaps は配列である必要があります');
+    throw new DefinitionError('stage.map.bracketStages は配列である必要があります');
   }
   return v.map((s, i) => {
     if (s === null || s === undefined || s === '') return null;
     if (typeof s !== 'string') {
-      throw new DefinitionError(`rules.stageMaps[${i}] はマップの ID か null である必要があります`);
+      throw new DefinitionError(`stage.map.bracketStages[${i}] はマップの ID か null である必要があります`);
     }
     return s;
   });
+}
+
+function parseLeagueRules(v: unknown): LeagueRules {
+  const o = v === undefined || v === null ? {} : asRecord(v, 'stage.league');
+  return {
+    points:           parseLeaguePoints(o['points']),
+    doubleRoundRobin: asBool(o['doubleRoundRobin'], false),
+  };
+}
+
+function parseLeaguePoints(v: unknown): LeaguePoints {
+  if (v === undefined || v === null) return DEFAULT_LEAGUE_POINTS;
+  const p = asRecord(v, 'stage.league.points');
+  return {
+    win:  asNumber(p['win'],  DEFAULT_LEAGUE_POINTS.win),
+    draw: asNumber(p['draw'], DEFAULT_LEAGUE_POINTS.draw),
+    loss: asNumber(p['loss'], DEFAULT_LEAGUE_POINTS.loss),
+  };
+}
+
+function parseBotRules(v: unknown): BotStageRules {
+  const o = v === undefined || v === null ? {} : asRecord(v, 'stage.bot');
+  return {
+    program:         parseProgram(o['program'], 'stage.bot.program'),
+    name:            asIdOrNull(o['name']),
+    map:             asIdOrNull(o['map']),
+    // 0 = 先攻 / 1 = 後攻。それ以外の値は先攻に倒す
+    participantSide: o['participantSide'] === 1 ? 1 : 0,
+  };
+}
+
+/** 形式ごとに意味を持つ設定だけを読む。他の形式の項目が書いてあっても黙って捨てる */
+function parseStageRules(format: TournamentFormat, v: unknown): StageRules {
+  const o   = v === undefined || v === null ? {} : asRecord(v, 'stage');
+  const map = parseMapPlan(o['map']);
+
+  switch (format) {
+    case 'single-elimination':
+      return { format, map, thirdPlaceMatch: asBool(o['thirdPlaceMatch'], false) };
+
+    case 'league':
+      return { format, map, league: parseLeagueRules(o['league']) };
+
+    case 'group-then-bracket':
+      return {
+        format, map,
+        thirdPlaceMatch: asBool(o['thirdPlaceMatch'], false),
+        league:          parseLeagueRules(o['league']),
+        groupCount:      asNumber(o['groupCount'],      DEFAULT_GROUP_COUNT),
+        advancePerGroup: asNumber(o['advancePerGroup'], DEFAULT_ADVANCE_PER_GROUP),
+      };
+
+    case 'bot-then-bracket':
+      return {
+        format, map,
+        thirdPlaceMatch: asBool(o['thirdPlaceMatch'], false),
+        bot:             parseBotRules(o['bot']),
+        advanceCount:    asNumber(o['advanceCount'], DEFAULT_ADVANCE_PER_GROUP),
+      };
+  }
 }
 
 function parseParticipants(v: unknown): ParticipantDef[] {
@@ -160,7 +203,7 @@ function parseParticipants(v: unknown): ParticipantDef[] {
       seed = o['seed'];
     }
 
-    // 所属する予選リーグ。groupCount との突き合わせは rules を読んだあと (validateGroups)
+    // 所属する予選リーグ。groupCount との突き合わせは stage を読んだあと (validateGroupStage)
     let group: number | undefined;
     if (o['group'] !== undefined && o['group'] !== null) {
       if (typeof o['group'] !== 'number' || !Number.isInteger(o['group']) || o['group'] < 0) {
@@ -183,14 +226,17 @@ function parseParticipants(v: unknown): ParticipantDef[] {
  * リーグ分けそのもの (group 省略時の自動振り分け) は groupStage.ts の仕事なので、
  * ここでは「そもそも大会として成立するか」だけを見る。
  */
-function validateGroupStage(participants: ParticipantDef[], rules: TournamentRules): void {
-  const { groupCount, advancePerGroup } = rules;
+function validateGroupStage(
+  participants: ParticipantDef[],
+  stage: Extract<StageRules, { format: 'group-then-bracket' }>,
+): void {
+  const { groupCount, advancePerGroup } = stage;
 
   if (!Number.isInteger(groupCount) || groupCount < 2) {
-    throw new DefinitionError(`rules.groupCount は2以上の整数である必要があります (実際の値: ${groupCount})`);
+    throw new DefinitionError(`stage.groupCount は2以上の整数である必要があります (実際の値: ${groupCount})`);
   }
   if (!Number.isInteger(advancePerGroup) || advancePerGroup < 1) {
-    throw new DefinitionError(`rules.advancePerGroup は1以上の整数である必要があります (実際の値: ${advancePerGroup})`);
+    throw new DefinitionError(`stage.advancePerGroup は1以上の整数である必要があります (実際の値: ${advancePerGroup})`);
   }
   if (participants.length < groupCount * 2) {
     throw new DefinitionError(
@@ -215,23 +261,26 @@ function validateGroupStage(participants: ParticipantDef[], rules: TournamentRul
  * 参加者ごとに違う盤面になり、ポイントで順位を付ける前提が崩れる。
  * BOT プログラム自体は当日割り当てを許す (参加者の未提出と同じ扱い)。
  */
-function validateBotStage(participants: ParticipantDef[], rules: TournamentRules): void {
-  const { advancePerGroup } = rules;
+function validateBotStage(
+  participants: ParticipantDef[],
+  stage: Extract<StageRules, { format: 'bot-then-bracket' }>,
+): void {
+  const { advanceCount } = stage;
 
-  if (!Number.isInteger(advancePerGroup) || advancePerGroup < 2) {
+  if (!Number.isInteger(advanceCount) || advanceCount < 2) {
     throw new DefinitionError(
-      `rules.advancePerGroup (決勝トーナメント進出人数) は2以上の整数である必要があります (実際の値: ${advancePerGroup})`,
+      `stage.advanceCount (決勝トーナメント進出人数) は2以上の整数である必要があります (実際の値: ${advanceCount})`,
     );
   }
-  if (participants.length < advancePerGroup) {
+  if (participants.length < advanceCount) {
     throw new DefinitionError(
-      `決勝トーナメント進出人数 ${advancePerGroup} に対して参加者が足りません (実際の人数: ${participants.length})`,
+      `決勝トーナメント進出人数 ${advanceCount} に対して参加者が足りません (実際の人数: ${participants.length})`,
     );
   }
-  if (rules.botStageMap === null && rules.mapCatalogId === null) {
+  if (stage.bot.map === null && stage.map.catalogId === null) {
     throw new DefinitionError(
       'BOT対戦予選では全参加者が同じマップで戦う必要があります。'
-      + 'rules.botStageMap か rules.mapCatalogId でマップを指定してください',
+      + 'stage.bot.map か stage.map.catalogId でマップを指定してください',
     );
   }
 }
@@ -261,23 +310,24 @@ export function parseTournamentDefinition(raw: unknown, opts: ParseOptions = {})
 
   const name         = asString(o['name'] ?? id, 'name');
   const participants = parseParticipants(o['participants']);
-  const rules        = parseRules(o['rules']);
+  const stage        = parseStageRules(format as TournamentFormat, o['stage']);
+  const match        = { doubleMode: asBool(asRecord(o['match'] ?? {}, 'match')['doubleMode'], true) };
   const ids          = new Set(participants.map(p => p.id));
 
   const def: TournamentDefinition = {
     formatVersion: asNumber(o['formatVersion'], 1),
-    id, name, format: format as TournamentFormat, rules, participants,
+    id, name, match, stage, participants,
   };
 
   // 予選のある形式では、1回戦の顔ぶれは予選の結果で決まるので明示的な組み合わせ指定は
   // 意味を持たない。黙って無視すると「指定したのに効かない」になるため、はっきり断る
-  if (def.format === 'group-then-bracket' || def.format === 'bot-then-bracket') {
-    const what = def.format === 'group-then-bracket'
+  if (stage.format === 'group-then-bracket' || stage.format === 'bot-then-bracket') {
+    const what = stage.format === 'group-then-bracket'
       ? { name: '予選リーグ + 決勝トーナメント', pairs: 'リーグごとに自動生成されます' }
       : { name: 'BOT対戦予選 + 決勝トーナメント', pairs: '参加者ごとに BOT との1試合が自動生成されます' };
 
-    if (def.format === 'group-then-bracket') validateGroupStage(participants, rules);
-    else                                     validateBotStage(participants, rules);
+    if (stage.format === 'group-then-bracket') validateGroupStage(participants, stage);
+    else                                       validateBotStage(participants, stage);
 
     if (o['bracket'] !== undefined && o['bracket'] !== null) {
       throw new DefinitionError(`${what.name}では bracket を指定できません (1回戦は予選の順位で決まります)`);

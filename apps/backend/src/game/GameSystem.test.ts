@@ -91,7 +91,7 @@ describe('createRandomMap', () => {
     }
   });
 
-  it('チーム初期位置にアイテムがない (周囲8マス含む)', () => {
+  it('プレイヤー初期位置にアイテムがない (周囲8マス含む)', () => {
     const map = createRandomMap();
     for (const fp of map.teamFirstPoint) {
       for (let dy = -1; dy <= 1; dy++) {
@@ -106,7 +106,7 @@ describe('createRandomMap', () => {
     }
   });
 
-  it('チーム初期位置は外周マスに配置されない (開始直後の囲まれ判定を防ぐ)', () => {
+  it('プレイヤー初期位置は外周マスに配置されない (開始直後の囲まれ判定を防ぐ)', () => {
     for (let i = 0; i < 10; i++) {
       const map = createRandomMap();
       for (const fp of map.teamFirstPoint) {
@@ -118,7 +118,7 @@ describe('createRandomMap', () => {
     }
   });
 
-  it('チーム初期位置に隣接する4マスにブロックがない (開始直後の囲まれ判定を防ぐ)', () => {
+  it('プレイヤー初期位置に隣接する4マスにブロックがない (開始直後の囲まれ判定を防ぐ)', () => {
     for (let i = 0; i < 10; i++) {
       const map = createRandomMap();
       for (const fp of map.teamFirstPoint) {

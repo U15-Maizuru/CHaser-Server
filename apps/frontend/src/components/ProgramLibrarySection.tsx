@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { CatalogEntry } from '@u15/ws-types';
-import { BORDER_COLOR, TEXT_SECONDARY, TEXT_PRIMARY, TEXT_MUTED, BG_CARD, FONT_NUM, FONT_UI, RADIUS_SM } from '../styles/tokens';
+import { BORDER_COLOR, TEXT_SECONDARY, TEXT_PRIMARY, TEXT_MUTED, BG_CARD, FONT_NUM, FONT_UI, RADIUS_SM } from '../ui';
 
 interface Props {
   httpBase:             string;

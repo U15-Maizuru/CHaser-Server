@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { FileDropZone } from './FileDropZone';
-import { BORDER_COLOR, TEXT_SECONDARY, TEXT_PRIMARY, TEXT_MUTED, WIN_BASE, BG_CARD, FONT_NUM } from '../styles/tokens';
+import { BORDER_COLOR, TEXT_SECONDARY, TEXT_PRIMARY, TEXT_MUTED, WIN_BASE, BG_CARD, FONT_NUM } from '../ui';
 
 interface Props {
   slot:     0 | 1;

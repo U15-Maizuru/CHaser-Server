@@ -3,7 +3,7 @@ import { groupLabel, hasBotStage } from '@u15/ws-types';
 import {
   BG_CARD, BORDER_COLOR, FONT_UI, GOLD_BASE, RADIUS_SM,
   TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE,
-} from '../../styles/tokens';
+} from '../../ui';
 
 // 決勝トーナメントの進出者。
 //
@@ -15,7 +15,7 @@ export type SetQualifier = (participantId: string | null, cascade?: boolean) => 
 
 /** 枠の呼び名。BOT対戦予選は1グループしか無いのでリーグ名を付けない */
 export function slotLabelOf(state: TournamentStatePayload, group: number, rank: number): string {
-  return hasBotStage(state.format)
+  return hasBotStage(state.stage.format)
     ? `予選 ${rank}位`
     : `${groupLabel(group)}リーグ ${rank}位`;
 }

@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
-import { BG_ROOT, TEXT_PRIMARY, TEXT_MUTED, FONT_UI } from '../styles/tokens';
+import { BG_ROOT, TEXT_PRIMARY, TEXT_MUTED, FONT_UI } from '../ui';
 
 interface Props {
   children: ReactNode;

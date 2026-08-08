@@ -113,7 +113,7 @@ describe('decisiveEffectFrom — タイムアップ (アイテム数判定)', ()
 describe('decisiveEffectFrom — 引き分け', () => {
   const effect = decisiveEffectFrom(makeEnd({ winner: Winner.DRAW, reason: Reason.SCORE }));
 
-  it('両チームに同じ 🤝 の印が付く', () => {
+  it('両プレイヤーに同じ 🤝 の印が付く', () => {
     expect(effect?.marks).toHaveLength(2);
     expect(effect?.marks.map(m => m.team).sort()).toEqual([0, 1]);
     for (const m of effect!.marks) {

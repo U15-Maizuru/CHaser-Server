@@ -17,7 +17,7 @@ import {
   SHADOW_SM, BORDER_COLOR,
   RADIUS_SM, RADIUS_MD,
   FONT_UI, FONT_NUM,
-} from '../styles/tokens';
+} from '../ui';
 
 function clampNum(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(value, max));
@@ -224,7 +224,7 @@ function bonusColor(n: number): string {
   return TEXT_MUTED;
 }
 
-// ── SingleModeContent (2ゲーム制OFF: 自分側のチームだけを表示) ────────────────────
+// ── SingleModeContent (2ゲーム制OFF: 自分側のプレイヤーだけを表示) ────────────────────
 
 // 1ゲーム制では idxForSide(side, 0) === side なので、画面側 (side) がそのまま team-index になる。
 // 2ゲーム制の DoubleModeContent と同じく「1パネル = 自分側のプログラム」に揃え、左右で同じ表を
@@ -250,7 +250,7 @@ function SingleModeContent({ side, snapshot, roundResults, dim }: {
   return (
     <>
       <div style={{ ...s.teamBox, gap: dim.teamBoxGap, paddingBottom: dim.teamBoxPadB }}>
-        {/* グラデヘッダー: 自分側のチーム */}
+        {/* グラデヘッダー: 自分側のプレイヤー */}
         <div style={{
           ...s.teamHeader,
           gap: dim.headerGap,
@@ -435,7 +435,7 @@ function RoundLedger({ row, dim }: { row: RoundRowData; dim: PanelDim }) {
 
   return (
     <div style={{ ...s.teamBox, gap: dim.teamBoxGap, paddingBottom: dim.teamBoxPadB }}>
-      {/* グラデヘッダー: 第何ゲームか + そのゲームのチーム (COOL/HOT) + 勝敗 */}
+      {/* グラデヘッダー: 第何ゲームか + そのゲームのプレイヤー (COOL/HOT) + 勝敗 */}
       <div style={{
         ...s.teamHeader,
         gap: dim.headerGap,

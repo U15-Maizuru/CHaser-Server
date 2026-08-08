@@ -383,7 +383,7 @@ async function testCpuVsCpu(page) {
     ? pass('勝敗結果 (WIN / DRAW) が表示される')
     : fail('勝敗結果 (WIN / DRAW) が表示される');
 
-  // 1ゲーム制のサイドパネルは自チームだけを表示し、内訳 (一撃/総取り) と合計ポイントに絞る。
+  // 1ゲーム制のサイドパネルは自分側のプレイヤーだけを表示し、内訳 (一撃/総取り) と合計ポイントに絞る。
   // 勝ち点・アイテム数はここには出ない (勝敗はフッター、アイテム数は上部スコアバーが担当)
   resultText.includes('合計ポイント') && resultText.includes('一撃') && resultText.includes('総取り')
     ? pass('1ゲーム制のスコアパネル (一撃/総取り/合計ポイント) が表示される')
@@ -818,7 +818,7 @@ function writeE2ECup() {
     id: E2E_CUP_ID,
     name: 'E2E杯',
     format: 'single-elimination',
-    rules: { doubleMode: false },
+    match: { doubleMode: false },
     participants: [
       { id: 'e1', name: 'E2E-A', seed: 1, program: { builtin: 'cpu' } },
       { id: 'e2', name: 'E2E-B', seed: 2, program: { builtin: 'cpu' } },

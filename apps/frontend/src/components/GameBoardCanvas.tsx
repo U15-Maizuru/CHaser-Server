@@ -63,7 +63,7 @@ interface Props {
   flip?:    boolean;
   theme?:   string;
   cellSize?: number;   // 外部からセルサイズを指定 (省略時は DEFAULT_CELL)
-  darkMode?: boolean;  // true: 各チームの現在地周辺 (3x3) のみ明るく表示し、他は暗く覆う
+  darkMode?: boolean;  // true: 各プレイヤーの現在地周辺 (3x3) のみ明るく表示し、他は暗く覆う
   /** ダーク幕の濃さ (0-1)。会場のプロジェクタ/照明に合わせて設定から調整する */
   veilAlpha?: number;
   roundEnded?: boolean; // true: ゲームが終了した瞬間にダーク幕を上からワイプで解除する
@@ -154,7 +154,7 @@ export function GameBoardCanvas({
   const itemAnimStatesRef = useRef<Map<string, { scale: number; alpha: number }>>(new Map());
 
   // LOOK/SEARCH の探索範囲演出。snapshot.lastScan (サーバーが確定させたマス) をそのまま描く。
-  // チームごとに最大1件だけ保持する (同じチームが連続で探索したときに重ならないように)。
+  // プレイヤーごとに最大1件だけ保持する (同じプレイヤーが連続で探索したときに重ならないように)。
   const scanFxRef = useRef<ScanFx[]>([]);
 
   // 決着演出。decisiveAnimRef は最初のインパクト (リング拡散・ブロックのポップイン) の
@@ -285,7 +285,7 @@ export function GameBoardCanvas({
     }
 
     // 3b. 決着演出。どの決着理由でも勝者に 👑 が付き敗者は暗転するので、盤面を見れば
-    // 必ず勝敗が分かる。敗者側のバッジと形 (下敷き/囲まれ) と色 (攻撃側チーム色=相手のせい /
+    // 必ず勝敗が分かる。敗者側のバッジと形 (下敷き/囲まれ) と色 (攻撃側プレイヤー色=相手のせい /
     // 警告色=自滅) は、その上で「なぜ負けたか」を静止画でも読み取れるようにするためのもの。
     const decisiveNow = decisiveRef.current;
     if (decisiveNow) {
@@ -317,7 +317,7 @@ export function GameBoardCanvas({
         const pos     = positions[mark.team];
         const centerX = cx(pos.x) + CELL / 2;
         const centerY = cy(pos.y) + CELL / 2;
-        // 'opponent' = そのチームの相手の色 (= 敗者から見た攻撃側の色)
+        // 'opponent' = そのプレイヤーの相手の色 (= 敗者から見た攻撃側の色)
         const accent =
           mark.accent === 'opponent' ? (mark.team === 0 ? COLOR.hot : COLOR.cool) :
           mark.accent === 'warn'     ? COLOR.warn :
@@ -471,7 +471,7 @@ export function GameBoardCanvas({
     }
 
     // 5. LOOK/SEARCH の探索範囲。ダーク幕 (4) より後に描くことで、幕が出ていても
-    // 「どのチームがどこを調べたか」の枠が常に鮮明に出る。中身が見えるかどうかは
+    // 「どのプレイヤーがどこを調べたか」の枠が常に鮮明に出る。中身が見えるかどうかは
     // 上のマスク打ち抜き側が担当し、こちらは枠とタイントだけを受け持つ。
     for (const fx of scanFxRef.current) {
       const ratio = Math.min(1, (now - fx.start) / fx.duration);
@@ -486,7 +486,7 @@ export function GameBoardCanvas({
       const lineW = Math.max(2.5, CELL * 0.12);
 
       // 角丸枠を1本描く。盤外にはみ出した分は canvas 端で切れるので境界チェックは不要。
-      // 明るい床テクスチャの上でもチーム色が沈まないよう、外側に暗いハローを先に敷く。
+      // 明るい床テクスチャの上でもプレイヤー色が沈まないよう、外側に暗いハローを先に敷く。
       const strokeBounds = (box: Point[], a: number, round: number) => {
         const xs = box.map(c => cx(c.x));
         const ys = box.map(c => cy(c.y));

@@ -8,7 +8,7 @@ import {
   TEXT_SECONDARY, TEXT_MUTED, BORDER_COLOR,
   SHADOW_MD, RADIUS_SM, RADIUS_MD,
   FONT_UI,
-} from '../styles/tokens';
+} from '../ui';
 
 interface Props {
   slot:          0 | 1;

@@ -3,7 +3,7 @@ import type { ResolvedParticipant, TournamentFormat, TournamentMatch } from '@u1
 import { bracketLayout } from '../../lib/bracketLayout';
 import { FitArea } from '../FitArea';
 import { CARD_H, CARD_W, MatchCard } from './MatchCard';
-import { BORDER_COLOR, FONT_UI, TEXT_SECONDARY } from '../../styles/tokens';
+import { BORDER_COLOR, FONT_UI, TEXT_SECONDARY } from '../../ui';
 
 // トーナメント表。接続線だけ SVG、カードは絶対配置の DOM というハイブリッド。
 // こうするとカードは通常の DOM のままなので、省略表示・ホバー・クリックがそのまま効き、

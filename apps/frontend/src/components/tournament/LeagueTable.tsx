@@ -3,7 +3,7 @@ import { FitArea } from '../FitArea';
 import {
   BG_CARD, BG_ROOT, BORDER_COLOR, COOL_PALE, FONT_NUM, FONT_UI, GOLD_BASE, GOLD_LIGHT,
   RADIUS_SM, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE, WIN_LIGHT,
-} from '../../styles/tokens';
+} from '../../ui';
 
 // リーグの星取表 + 順位表。素の DOM (既存方針どおり CSS ファイルは作らない)。
 //
@@ -15,7 +15,7 @@ import {
 // 予選で本当に知りたいのは優勝者ではなく通過ラインなので、そこに線を引く。
 //
 // **星取表の行・列はエントリー順 (選手番号順) で固定する。** 順位順に並べ替えると
-// 試合が確定するたびに表の行が動き、観客も運営も同じチームを目で追えなくなる。
+// 試合が確定するたびに表の行が動き、観客も運営も同じプレイヤーを目で追えなくなる。
 // 順位で並ぶのは下段の順位表だけ。
 
 export interface LeagueTableProps {
@@ -33,7 +33,7 @@ export interface LeagueTableProps {
   /**
    * 見出し・星取表・順位表を「囲みの無い3つの塊」として並べて返す。
    *
-   * 予選リーグを横に並べるとき、リーグごとにチーム数が違うと星取表の高さが変わり、
+   * 予選リーグを横に並べるとき、リーグごとにプレイヤー数が違うと星取表の高さが変わり、
    * その下の順位表の位置がリーグ間でずれてしまう。呼び出し側で CSS グリッドの
    * 行にそろえられるよう、まとめる div を外して個々の塊を直接返す。
    */
@@ -99,7 +99,7 @@ export function LeagueTable({
         <table style={table}>
           <thead>
             <tr>
-              <th style={{ ...th, textAlign: 'left' }}>チーム</th>
+              <th style={{ ...th, textAlign: 'left' }}>プレイヤー</th>
               {order.map(id => (
                 <th
                   key={id}
@@ -171,7 +171,7 @@ export function LeagueTable({
           <thead>
             <tr>
               <th style={th}>順位</th>
-              <th style={{ ...th, textAlign: 'left' }}>チーム</th>
+              <th style={{ ...th, textAlign: 'left' }}>プレイヤー</th>
               <th style={th}>試合</th>
               <th style={th}>勝</th>
               <th style={th}>分</th>
@@ -306,7 +306,7 @@ const advanceSwatch: React.CSSProperties = {
   background: GOLD_LIGHT, borderBottom: `2px solid ${GOLD_BASE}`, boxSizing: 'border-box',
 };
 
-// これから行う試合。該当セルと、その2チームの見出しを金色で示す
+// これから行う試合。該当セルと、その2プレイヤーの見出しを金色で示す
 const cellUpcoming: React.CSSProperties = {
   background: GOLD_BASE, color: '#fff', fontWeight: 700,
 };

@@ -6,7 +6,7 @@ import {
   BG_CARD, BORDER_COLOR, COOL_COLOR, COOL_PALE, FONT_NUM, FONT_UI,
   GOLD_BASE, GOLD_LIGHT, HOT_COLOR, HOT_PALE, RADIUS_SM, SHADOW_SM,
   TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, TURN_BASE, WIN_BASE, WIN_LIGHT, WIN_PALE,
-} from '../../styles/tokens';
+} from '../../ui';
 
 // 1試合 (公式ルールの「試合」= 2ゲーム) のカード。
 // control / display / 専用ウィンドウの3画面で共用する。操作の有無は interactive で切り替える。

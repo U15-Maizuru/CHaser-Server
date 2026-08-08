@@ -91,16 +91,3 @@ export function buildGroupStage(
 
   return [...groupMatches, ...bracket];
 }
-
-/** 予選の節数 (= 決勝トーナメントの stage のゲタ)。予選が無ければ 0 */
-export function groupStageCountOf(matches: TournamentMatch[]): number {
-  return matches.reduce(
-    (max, m) => (m.group === undefined ? max : Math.max(max, m.stage + 1)), 0,
-  );
-}
-
-/** 予選リーグを全部消化したか。予選が無ければ false (「終わった」とは言えない) */
-export function isGroupStageDone(matches: TournamentMatch[]): boolean {
-  const group = matches.filter(m => m.group !== undefined);
-  return group.length > 0 && group.every(m => m.status === 'done');
-}

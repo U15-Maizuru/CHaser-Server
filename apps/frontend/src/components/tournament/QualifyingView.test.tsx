@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { stageRulesFor } from '../../test/tournamentFixture';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type {
+  StageRules,
   GroupStanding, ResolvedParticipant, StandingRow, TournamentMatch, TournamentStatePayload,
 } from '@u15/ws-types';
 import { displayQualifyingPhase, QualifyingView, isQualifyingFinished, shouldShowFinale } from './QualifyingView';
@@ -65,13 +67,9 @@ function state(
     tied: ambiguous, ambiguous, pending: !done, bye: false,
   });
   return {
-    tournamentId: 'cup', name: '予選あり杯', format: 'group-then-bracket',
-    rules: {
-      doubleMode: false, mapCatalogId: null, stageMaps: [], thirdPlaceMatch: false,
-      leaguePoints: { win: 3, draw: 1, loss: 0 }, doubleRoundRobin: false,
-      groupCount: 2, advancePerGroup: 2,
-      botProgram: null, botName: null, botStageMap: null, participantSide: 0,
-    },
+    tournamentId: 'cup', name: '予選あり杯',
+    match: { doubleMode: false },
+    stage: stageRulesFor('group-then-bracket'),
     participants,
     matches: [groupMatch(0, 'p1', 'p4', done), groupMatch(1, 'p2', 'p3', done), FINAL],
     standings: null,
@@ -100,7 +98,11 @@ describe('displayQualifyingPhase — 決勝進出者の確定を待つ', () => {
 
   it('予選を持たない形式は常に決勝側 (でないと表彰画面が永久に出ない)', () => {
     for (const format of ['single-elimination', 'league'] as const) {
-      const s = { ...state(true), format, matches: [{ ...FINAL, status: 'done' as const }] };
+      const s = {
+        ...state(true),
+        stage:   stageRulesFor(format),
+        matches: [{ ...FINAL, status: 'done' as const }],
+      };
       expect(displayQualifyingPhase(s)).toEqual({ phase: 'bracket', holdingResult: false });
       expect(shouldShowFinale(s, displayQualifyingPhase(s).phase)).toBe(true);
     }
@@ -173,7 +175,7 @@ describe('QualifyingView', () => {
     for (const el of legends) expect(el.textContent).not.toContain('未消化');
   });
 
-  it('チーム数が違っても順位表が同じグリッド行に載る (上端がそろう)', () => {
+  it('プレイヤー数が違っても順位表が同じグリッド行に載る (上端がそろう)', () => {
     // A=3人 / B=2人。素直に縦積みすると星取表の高さが違って順位表の位置がずれる
     const { container } = render(<QualifyingView state={state(false)} />);
     const grid = container.querySelector('[style*="grid"]') as HTMLElement;
@@ -244,8 +246,7 @@ describe('QualifyingView (BOT対戦予選)', () => {
     const s = state(done, opts);
     return {
       ...s,
-      format: 'bot-then-bracket',
-      rules: { ...s.rules, groupCount: 1, advancePerGroup: 2, botStageMap: 'map-1' },
+      stage: { ...stageRulesFor('bot-then-bracket'), advanceCount: 2 } as StageRules,
       // 1グループに全員。試合は各自 BOT と1試合
       groups: [{
         group: 0, label: 'A', participantIds: ['p1', 'p2', 'p3'],

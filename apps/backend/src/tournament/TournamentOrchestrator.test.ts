@@ -17,7 +17,7 @@ function cupDef(overrides: Record<string, unknown> = {}) {
     id: CUP,
     name: 'オーケストレータ杯',
     format: 'single-elimination',
-    rules: { doubleMode: false },
+    match: { doubleMode: false },
     participants: [
       { id: 'p1', name: 'A', seed: 1, program: { builtin: 'cpu' } },
       { id: 'p2', name: 'B', seed: 2, program: { builtin: 'cpu' } },
@@ -172,14 +172,14 @@ describe('TournamentOrchestrator', () => {
     });
 
     it('2ゲーム制の大会では doubleMode が ON になる', async () => {
-      writeCup(cupDef({ rules: { doubleMode: true } }));
+      writeCup(cupDef({ match: { doubleMode: true } }));
       orch.bind(ROOM, CUP);
       await orch.armMatch(ROOM, 'SF1');
       expect(rm.getRoom(ROOM)!.manager.getStatus().doubleMode).toBe(true);
     });
 
     it('reset → setDoubleMode → setClientType の順で呼ぶ', async () => {
-      writeCup(cupDef({ rules: { doubleMode: true } }));
+      writeCup(cupDef({ match: { doubleMode: true } }));
       orch.bind(ROOM, CUP);
 
       const manager = rm.getRoom(ROOM)!.manager;
@@ -269,7 +269,7 @@ describe('TournamentOrchestrator', () => {
 
     it('回戦ごとのマップがあればそれを読む (4人なら準決勝=stage0 / 決勝=stage1)', async () => {
       writeCup(cupDef({
-        rules: { doubleMode: false, mapCatalogId: 'cup-map', stageMaps: ['sf-map', 'final-map'] },
+        stage: { map: { catalogId: 'cup-map', bracketStages: ['sf-map', 'final-map'] } },
       }));
       orch.bind(ROOM, CUP);
 
@@ -288,7 +288,7 @@ describe('TournamentOrchestrator', () => {
 
     it('回戦の指定が null の回戦は大会全体の固定マップに従う', async () => {
       writeCup(cupDef({
-        rules: { doubleMode: false, mapCatalogId: 'cup-map', stageMaps: [null, 'final-map'] },
+        stage: { map: { catalogId: 'cup-map', bracketStages: [null, 'final-map'] } },
       }));
       orch.bind(ROOM, CUP);
 
@@ -299,7 +299,7 @@ describe('TournamentOrchestrator', () => {
     });
 
     it('再試合のマップ指定は回戦ごとのマップより優先される', async () => {
-      writeCup(cupDef({ rules: { doubleMode: false, stageMaps: ['sf-map', null] } }));
+      writeCup(cupDef({ stage: { map: { bracketStages: ['sf-map', null] } } }));
       orch.bind(ROOM, CUP);
       orch.setWalkover(ROOM, 'SF1', null);
       orch.discardResult(ROOM, 'SF1', 'rematch-map');
@@ -410,7 +410,7 @@ describe('TournamentOrchestrator', () => {
     });
 
     it('リーグでは引き分けをそのまま確定できる', () => {
-      writeCup(cupDef({ format: 'league', rules: { doubleMode: false } }));
+      writeCup(cupDef({ format: 'league' }));
       orch.bind(ROOM, CUP);
       orch.setWalkover(ROOM, 'L-D1M1', null);
 
@@ -428,7 +428,7 @@ describe('TournamentOrchestrator', () => {
     });
 
     it('固定マップの大会では、同点の再試合にマップ変更が要る', () => {
-      writeCup(cupDef({ rules: { doubleMode: false, mapCatalogId: 'fixed-map' } }));
+      writeCup(cupDef({ stage: { map: { catalogId: 'fixed-map' } } }));
       orch.bind(ROOM, CUP);
       orch.setWalkover(ROOM, 'SF1', null);
 
@@ -441,7 +441,7 @@ describe('TournamentOrchestrator', () => {
 
     it('その回戦だけマップ固定でも、同点の再試合にはマップ変更が要る', () => {
       // 大会全体はランダムでも、回戦を指定していれば引き直されないので同じ扱いにする
-      writeCup(cupDef({ rules: { doubleMode: false, stageMaps: ['sf-map', null] } }));
+      writeCup(cupDef({ stage: { map: { bracketStages: ['sf-map', null] } } }));
       orch.bind(ROOM, CUP);
       orch.setWalkover(ROOM, 'SF1', null);
 
@@ -454,7 +454,7 @@ describe('TournamentOrchestrator', () => {
     });
 
     it('勝敗がついた試合のやり直しにはマップ変更は要らない', () => {
-      writeCup(cupDef({ rules: { doubleMode: false, mapCatalogId: 'fixed-map' } }));
+      writeCup(cupDef({ stage: { map: { catalogId: 'fixed-map' } } }));
       orch.bind(ROOM, CUP);
       orch.setWalkover(ROOM, 'SF1', 0);
 
@@ -477,7 +477,7 @@ describe('TournamentOrchestrator', () => {
 
   describe('setStageMap (運営中の回戦マップ差し替え)', () => {
     it('差し替えると実効値が変わり、配信される', () => {
-      writeCup(cupDef({ rules: { doubleMode: false, stageMaps: ['sf-map', null] } }));
+      writeCup(cupDef({ stage: { map: { bracketStages: ['sf-map', null] } } }));
       orch.bind(ROOM, CUP);
       expect(lastState()!.stageMaps).toEqual(['sf-map', null]);
 
@@ -486,18 +486,18 @@ describe('TournamentOrchestrator', () => {
     });
 
     it('null に戻すと大会の設定に従う', () => {
-      writeCup(cupDef({ rules: { doubleMode: false, stageMaps: ['sf-map', null] } }));
+      writeCup(cupDef({ stage: { map: { bracketStages: ['sf-map', null] } } }));
       orch.bind(ROOM, CUP);
       orch.setStageMap(ROOM, 0, null);
       expect(lastState()!.stageMaps).toEqual([null, null]);
     });
 
     it('差し替えは state.json に残り、次の arm で使われる', async () => {
-      writeCup(cupDef({ rules: { doubleMode: false } }));
+      writeCup(cupDef());
       orch.bind(ROOM, CUP);
       orch.setStageMap(ROOM, 0, 'sf-map');
 
-      expect(loadTournament(CUP)!.state.stageMapOverrides).toEqual({ '0': 'sf-map' });
+      expect(loadTournament(CUP)!.state.decisions.stageMaps).toEqual({ '0': 'sf-map' });
 
       const spy = vi.spyOn(rm.getRoom(ROOM)!.manager, 'loadMap');
       await orch.armMatch(ROOM, 'SF1');
@@ -506,7 +506,7 @@ describe('TournamentOrchestrator', () => {
     });
 
     it('準備済みの試合と同じ回戦なら、その場で読み直す', async () => {
-      writeCup(cupDef({ rules: { doubleMode: false } }));
+      writeCup(cupDef());
       orch.bind(ROOM, CUP);
       await orch.armMatch(ROOM, 'SF1');
 
@@ -669,7 +669,7 @@ describe('TournamentOrchestrator', () => {
      */
     const groupCup = (overrides: Record<string, unknown> = {}) => cupDef({
       format: 'group-then-bracket',
-      rules: { doubleMode: false, groupCount: 2, advancePerGroup: 2 },
+      stage: { groupCount: 2, advancePerGroup: 2 },
       participants: Array.from({ length: 6 }, (_, i) => ({
         id: `p${i + 1}`, name: `T${i + 1}`, seed: i + 1, program: { builtin: 'cpu' },
       })),
@@ -879,16 +879,18 @@ describe('TournamentOrchestrator', () => {
   // ── BOT対戦予選 + 決勝トーナメント ──────────────────────────────────────
   describe('BOT対戦予選 + 決勝トーナメント', () => {
     /** 6人が同じ BOT と1試合ずつ。上位4名が決勝トーナメントへ */
-    const botCup = ({ rules, ...overrides }: Record<string, unknown> = {}) => cupDef({
+    const botCup = ({ bot, ...overrides }: Record<string, unknown> = {}) => cupDef({
       format: 'bot-then-bracket',
       participants: Array.from({ length: 6 }, (_, i) => ({
         id: `p${i + 1}`, name: `T${i + 1}`, seed: i + 1, program: { builtin: 'cpu' },
       })),
       ...overrides,
-      rules: {
-        doubleMode: false, advancePerGroup: 4,
-        botProgram: { builtin: 'cpu' }, botName: '運営BOT', botStageMap: 'fixed-map',
-        ...(rules as object ?? {}),
+      stage: {
+        advanceCount: 4,
+        bot: {
+          program: { builtin: 'cpu' }, name: '運営BOT', map: 'fixed-map',
+          ...(bot as object ?? {}),
+        },
       },
     });
 
@@ -927,7 +929,7 @@ describe('TournamentOrchestrator', () => {
     });
 
     it('参加者後攻の設定なら BOT が slotA になる', () => {
-      writeCup(botCup({ rules: { participantSide: 1 } }));
+      writeCup(botCup({ bot: { participantSide: 1 } }));
       orch.bind(ROOM, CUP);
       const qualifying = lastState()!.matches.filter(m => m.group !== undefined);
       expect(qualifying.every(m => m.resolvedA === '__bot__')).toBe(true);

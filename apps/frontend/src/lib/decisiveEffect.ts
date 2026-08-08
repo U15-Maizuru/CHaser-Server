@@ -8,7 +8,7 @@ import { Reason, Winner } from '@u15/ws-types';
 // その上で「なぜ負けたか」を追加で説明する役割を持つ。
 //
 // 敗因は「相手に仕掛けられた」ものと「自滅」が対になっている (アタック↔衝突、閉じ込め↔自縛)。
-// この対は敗者リングの色で見分ける — 攻撃側チーム色なら相手のせい、警告色なら自滅。
+// この対は敗者リングの色で見分ける — 攻撃側プレイヤー色なら相手のせい、警告色なら自滅。
 
 export type DecisiveKind = 'attack' | 'collision' | 'trapped' | 'confined' | 'fouled' | 'score';
 
@@ -16,7 +16,7 @@ export type DecisiveKind = 'attack' | 'collision' | 'trapped' | 'confined' | 'fo
 export type MarkShape = 'crush' | 'surround' | 'none';
 
 /**
- * リングの色。'opponent' は描画時に「そのチームの相手の色」に解決する
+ * リングの色。'opponent' は描画時に「そのプレイヤーの相手の色」に解決する
  * (= 敗者から見た攻撃側の色)。null ならリングを描かない。
  */
 export type MarkAccent = 'gold' | 'opponent' | 'warn';
@@ -34,7 +34,7 @@ export interface TeamMark {
 
 export interface DecisiveEffect {
   kind:  DecisiveKind;
-  /** 通常は勝者+敗者の2件。引き分けも両チーム分の2件 */
+  /** 通常は勝者+敗者の2件。引き分けも両プレイヤー分の2件 */
   marks: TeamMark[];
 }
 
@@ -77,7 +77,7 @@ export function decisiveEffectFrom(gameEnd: GameEndPayload | null): DecisiveEffe
 
   const { kind, ...shape } = loserShape;
 
-  // 引き分けは勝敗が無いので、両チームに同じ印を付ける
+  // 引き分けは勝敗が無いので、両プレイヤーに同じ印を付ける
   if (gameEnd.winner === Winner.DRAW) {
     return { kind, marks: [{ team: 0, ...DRAW_MARK }, { team: 1, ...DRAW_MARK }] };
   }

@@ -9,7 +9,7 @@ import { TournamentPanel } from './TournamentPanel';
 import {
   BG_CARD, BG_ROOT, BORDER_COLOR, FONT_UI, RADIUS_MD, SHADOW_MD,
   TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
-} from '../../styles/tokens';
+} from '../../ui';
 
 // ?mode=tournament — 運営席の専用ウィンドウ。
 // 左に全体のトーナメント表 / リーグ表、右に運営パネル。
@@ -47,7 +47,7 @@ export function TournamentMode({ wsUrl, roomId, httpBase }: TournamentModeProps)
             <div style={{ display: 'flex', gap: 6 }}>
               <button style={btn} onClick={() => download('json')}>JSON</button>
               <button style={btn} onClick={() => download('matches.csv')}>試合CSV</button>
-              {(t.format === 'league' || hasQualifying(t.format)) && (
+              {(t.stage.format === 'league' || hasQualifying(t.stage.format)) && (
                 <button style={btn} onClick={() => download('standings.csv')}>順位CSV</button>
               )}
             </div>
@@ -59,12 +59,12 @@ export function TournamentMode({ wsUrl, roomId, httpBase }: TournamentModeProps)
             <div style={empty}>
               右のパネルで大会を選ぶと、ここにトーナメント表が表示されます。
             </div>
-          ) : hasQualifying(t.format) ? (
+          ) : hasQualifying(t.stage.format) ? (
             <QualifyingView
               state={t} interactive selectedId={selected} onSelect={setSelected}
               showTabs maxScale={1.6}
             />
-          ) : t.format === 'league' ? (
+          ) : t.stage.format === 'league' ? (
             <LeagueTable
               matches={t.matches}
               participants={t.participants}
@@ -79,7 +79,7 @@ export function TournamentMode({ wsUrl, roomId, httpBase }: TournamentModeProps)
             <BracketView
               matches={t.matches}
               participants={t.participants}
-              format={t.format}
+              format={t.stage.format}
               upcomingId={t.armedMatchId}
               interactive
               selectedId={selected}

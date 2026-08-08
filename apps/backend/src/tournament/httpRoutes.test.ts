@@ -100,7 +100,7 @@ describe('/api/tournament', () => {
 
     expect(res.status).toBe(200);
     const after = loadTournament('cup-a')!;
-    expect(after.def.format).toBe('league');
+    expect(after.def.stage.format).toBe('league');
     expect(after.state.matches[0]!.id).toMatch(/^L-/); // リーグの試合グラフに作り直された
   });
 

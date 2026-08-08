@@ -6,7 +6,7 @@ import {
   COOL_COLOR, HOT_COLOR, WIN_BASE,
   BORDER_COLOR, SHADOW_MD, RADIUS_MD, RADIUS_LG,
   FONT_UI, FONT_NUM,
-} from '../styles/tokens';
+} from '../ui';
 
 const PHASE_LABEL: Record<string, string> = {
   setup:    'セットアップ中',

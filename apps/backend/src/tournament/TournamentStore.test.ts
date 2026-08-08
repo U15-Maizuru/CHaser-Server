@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { NO_OPERATOR_DECISIONS } from '@u15/ws-types';
 import { catalogDir, ensureCatalogDir, getCatalogEntry, listCatalogEntries } from '../programCatalog.js';
 import { buildZip } from '../test/buildZip.js';
 import {
@@ -37,7 +38,7 @@ function writeTournament(def: unknown, programs: Record<string, string> = {}, id
 const DEF_4 = {
   name: '4人トーナメント',
   format: 'single-elimination',
-  rules: { doubleMode: true },
+  match: { doubleMode: true },
   participants: [
     { id: 'p1', name: 'A', seed: 1, program: { file: 'programs/a.py' } },
     { id: 'p2', name: 'B', seed: 2, program: { builtin: 'cpu' } },
@@ -367,7 +368,8 @@ describe('TournamentStore (予選リーグ + 決勝トーナメント)', () => {
   const DEF_GROUP = {
     name: '予選リーグ大会',
     format: 'group-then-bracket',
-    rules: { doubleMode: true, groupCount: 2, advancePerGroup: 2 },
+    match: { doubleMode: true },
+    stage: { groupCount: 2, advancePerGroup: 2 },
     participants: Array.from({ length: 8 }, (_, i) => ({
       id: `p${i + 1}`, name: `T${i + 1}`, seed: i + 1, program: { builtin: 'cpu' },
     })),
@@ -403,7 +405,7 @@ describe('TournamentStore (予選リーグ + 決勝トーナメント)', () => {
   it('回戦ごとのマップは決勝トーナメント相対で書き、予選の節には効かない', () => {
     writeTournament({
       ...DEF_GROUP,
-      rules: { ...DEF_GROUP.rules, stageMaps: ['sf-map', 'final-map'] },
+      stage: { ...DEF_GROUP.stage, map: { bracketStages: ['sf-map', 'final-map'] } },
     }, {}, GID);
     const loaded = loadTournament(GID)!;
     const payload = buildStatePayload(loaded, 'room', null);
@@ -458,11 +460,11 @@ describe('TournamentStore (予選リーグ + 決勝トーナメント)', () => {
     const loaded = loadTournament(GID)!;
     saveState({
       ...loaded.state,
-      qualifierOverrides: { '0:1': 'nobody', '0:2': 'p1' },
+      decisions: { ...NO_OPERATOR_DECISIONS, qualifiers: { '0:1': 'nobody', '0:2': 'p1' } },
     });
 
     const after = loadTournament(GID)!;
-    expect(after.state.qualifierOverrides).toEqual({ '0:2': 'p1' });
+    expect(after.state.decisions.qualifiers).toEqual({ '0:2': 'p1' });
   });
 });
 
@@ -480,13 +482,13 @@ describe('TournamentStore (既存形式に影響していないこと)', () => {
     writeTournament({ ...DEF_4, format: undefined });
     const loaded = loadTournament(ID)!;
 
-    expect(loaded.def.format).toBe('single-elimination');
+    expect(loaded.def.stage.format).toBe('single-elimination');
     expect(loaded.state.matches.every(m => m.group === undefined)).toBe(true);
     expect(loaded.state.matches.some(m => m.slotA.kind === 'group-rank')).toBe(false);
   });
 
   it('トーナメントの回戦ごとのマップはゲタ無しで解決される', () => {
-    writeTournament({ ...DEF_4, rules: { stageMaps: ['sf', 'final'] } });
+    writeTournament({ ...DEF_4, stage: { map: { bracketStages: ['sf', 'final'] } } });
     const payload = buildStatePayload(loadTournament(ID)!, 'room', null);
 
     expect(payload.stageMaps).toEqual(['sf', 'final']);

@@ -7,7 +7,6 @@ import {
   discardResult,
   downstreamOf,
   hasConfirmedDownstream,
-  nextReadyMatch,
   reopenMatch,
   resolveMatches,
   setWalkover,
@@ -211,50 +210,6 @@ describe('downstreamOf / reopenMatch', () => {
     let ms = resolveMatches(buildBracket(people(4), OPTS));
     ms = play(ms, 'SF1', 0);
     expect(hasConfirmedDownstream(ms, 'SF1')).toBe(false);
-  });
-});
-
-describe('nextReadyMatch', () => {
-  it('stage / order が最小の ready を返す', () => {
-    const ms = resolveMatches(buildBracket(people(8), OPTS));
-    expect(nextReadyMatch(ms)!.id).toBe('QF1');
-  });
-
-  it('ready が無ければ null', () => {
-    let ms = resolveMatches(buildBracket(people(2), OPTS));
-    ms = play(ms, 'FINAL', 0);
-    expect(nextReadyMatch(ms)).toBeNull();
-  });
-
-  it('3位決定戦を決勝より先に案内する', () => {
-    // 準決勝が両方終わると決勝と3位決定戦が同時に ready になる。
-    // 依存関係は無いので順序は運営の都合で決まる — 決勝を締めくくりにする
-    let ms = resolveMatches(buildBracket(people(4), { thirdPlaceMatch: true }));
-    ms = play(ms, 'SF1', 0);
-    ms = play(ms, 'SF2', 1);
-
-    expect(ms.find(m => m.id === 'FINAL')!.status).toBe('ready');
-    expect(ms.find(m => m.id === 'THIRD')!.status).toBe('ready');
-    expect(nextReadyMatch(ms)!.id).toBe('THIRD');
-
-    // 3位決定戦が終われば決勝が案内される
-    ms = play(ms, 'THIRD', 0);
-    expect(nextReadyMatch(ms)!.id).toBe('FINAL');
-  });
-
-  it('表示順 (order) は決勝が先のまま — 実施順と表示順は別物', () => {
-    const ms = resolveMatches(buildBracket(people(4), { thirdPlaceMatch: true }));
-    const final = ms.find(m => m.id === 'FINAL')!;
-    const third = ms.find(m => m.id === 'THIRD')!;
-    expect(final.stage).toBe(third.stage);
-    expect(final.order).toBeLessThan(third.order);
-  });
-
-  it('3位決定戦が無ければ決勝がそのまま次の試合', () => {
-    let ms = resolveMatches(buildBracket(people(4), OPTS));
-    ms = play(ms, 'SF1', 0);
-    ms = play(ms, 'SF2', 1);
-    expect(nextReadyMatch(ms)!.id).toBe('FINAL');
   });
 });
 

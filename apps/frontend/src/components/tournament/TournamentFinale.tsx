@@ -7,7 +7,7 @@ import {
   RADIUS_MD, SHADOW_MD, SHADOW_SM,
   TEXT_PRIMARY, TEXT_SECONDARY,
   FONT_UI,
-} from '../../styles/tokens';
+} from '../../ui';
 
 // 大会の全試合が確定したあと、観戦用画面に出す表彰画面。
 //
@@ -47,7 +47,7 @@ export function TournamentFinale({ state, displayTitle }: TournamentFinaleProps)
 
       {/* 最終結果の表。次の試合はもう無いので upcoming の強調は渡さない */}
       <div style={s.figure}>
-        {state.format === 'league' ? (
+        {state.stage.format === 'league' ? (
           <LeagueTable
             matches={state.matches}
             participants={state.participants}

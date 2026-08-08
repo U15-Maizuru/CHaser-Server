@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { CatalogEntry } from '@u15/ws-types';
+import { extractDeclaredName } from './programName.js';
 
 // 対戦用プログラムの永続保存先。room/slot に紐付かず、アプリ・システムの再起動を
 // またいで保持される (server/maps, server/music と同じ層のグローバルディレクトリ)。
@@ -20,11 +21,14 @@ export function catalogDir(): string {
 }
 
 export function listCatalogEntries(): CatalogEntry[] {
-  return readIndex().filter(e => fs.existsSync(e.programPath));
+  return readIndex()
+    .filter(e => fs.existsSync(e.programPath))
+    .map(withDeclaredName);
 }
 
 export function getCatalogEntry(id: string): CatalogEntry | undefined {
-  return readIndex().find(e => e.id === id);
+  const entry = readIndex().find(e => e.id === id);
+  return entry && withDeclaredName(entry);
 }
 
 /**
@@ -49,7 +53,25 @@ export function addCatalogEntry(displayName: string, tempPath: string): CatalogE
   const entries = readIndex();
   entries.push(entry);
   writeIndex(entries);
-  return entry;
+  return withDeclaredName(entry);
+}
+
+/**
+ * プログラムが名乗るプレイヤー名をソースから読み取って付け足す。
+ *
+ * index.json には保存しない。JSON は undefined を落とすため「名前が無い」ことを
+ * 保存できず、結局どちらにせよ毎回読み直すことになるので、都度パースに統一する
+ * (対象は数十件の小さな .py で、カタログを引くのはダイアログを開いたときだけ)。
+ * 読めない・パースできない場合は名前なしとして扱い、カタログ自体は壊さない。
+ */
+function withDeclaredName(entry: CatalogEntry): CatalogEntry {
+  if (path.extname(entry.programPath).toLowerCase() !== '.py') return entry;
+  try {
+    const declaredName = extractDeclaredName(fs.readFileSync(entry.programPath, 'utf-8'));
+    return declaredName === undefined ? entry : { ...entry, declaredName };
+  } catch {
+    return entry;
+  }
 }
 
 export function deleteCatalogEntry(id: string): void {

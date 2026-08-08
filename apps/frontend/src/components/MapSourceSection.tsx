@@ -6,7 +6,7 @@ import {
   TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
   WIN_BASE, RADIUS_SM,
   FONT_NUM, FONT_UI,
-} from '../styles/tokens';
+} from '../ui';
 
 interface Props {
   httpBase: string;

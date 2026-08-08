@@ -1,6 +1,6 @@
 import { useGameState } from '../hooks/useGameState';
 import { ManualControls } from './ManualControls';
-import { BG_ROOT, TEXT_MUTED, FONT_UI } from '../styles/tokens';
+import { BG_ROOT, TEXT_MUTED, FONT_UI } from '../ui';
 
 export function ManualMode({ wsUrl, roomId, slot }: { wsUrl: string; roomId: string; slot: 0 | 1 }) {
   const state = useGameState(wsUrl, roomId);

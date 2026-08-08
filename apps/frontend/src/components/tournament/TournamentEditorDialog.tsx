@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import type {
-  CatalogEntry, MapCatalogEntry, ParticipantDef, TournamentDefinition,
-  TournamentFormat, TournamentStatePayload, TournamentSummary,
+  BotStageRules, CatalogEntry, LeagueRules, MapCatalogEntry, MapPlan, ParticipantDef, StageRules,
+  TournamentDefinition, TournamentFormat, TournamentStatePayload, TournamentSummary,
 } from '@u15/ws-types';
 import {
-  autoGroupAssign, bracketSizeFor, BOT_PARTICIPANT_ID, groupLabel, stageCountFor, stageLabel,
+  autoGroupAssign, botRulesOf, bracketSizeFor, BOT_PARTICIPANT_ID, groupLabel,
+  hasThirdPlaceMatch, leagueRulesOf, stageCountFor, stageLabel,
 } from '@u15/ws-types';
 import { autoSlots, fitSlots, matchCountOf, slotPairs } from '../../lib/bracketSlots';
 import {
   BG_CARD, BG_ROOT, BORDER_COLOR, COOL_COLOR, FONT_UI, GOLD_BASE, HOT_COLOR,
   RADIUS_MD, RADIUS_SM, SHADOW_MD, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE,
-} from '../../styles/tokens';
+} from '../../ui';
 
 // 大会データ (tournament.json) を画面で作る / 直すためのダイアログ。
 //
@@ -40,8 +41,38 @@ interface DraftParticipant {
   program: string;
   /** program==='file' のときの元指定。編集で失わないよう保持する */
   file?: { file: string; displayName?: string };
+  /**
+   * 直前にプログラム側の宣言名 (CatalogEntry.declaredName) から自動で入れた name。
+   * name がこれと一致している間は「まだ手を入れていない初期値」とみなして
+   * プログラムの選び直しに追従させ、一致しなくなったら手入力として保護する。
+   * 保存対象ではない (buildDefinition は name しか見ない)。
+   */
+  nameFromProgram?: string;
   /** 所属する予選リーグ。undefined は「自動で振り分ける」 */
   group?: number;
+}
+
+/**
+ * フォームの平坦な下書きを、形式ごとの StageRules に組み直す。
+ *
+ * フォームは形式を切り替えても入力値を保持したい (行き来しても消えない) ので全項目を
+ * 平坦に持つ。保存するときだけ、その形式が意味を持つ項目だけを取り出す。
+ */
+function buildStageRules(
+  format: TournamentFormat,
+  map:    MapPlan,
+  league: LeagueRules,
+  extra:  { thirdPlaceMatch: boolean; groupCount: number; advancePerGroup: number; bot: BotStageRules },
+): StageRules {
+  const { thirdPlaceMatch, groupCount, advancePerGroup, bot } = extra;
+  switch (format) {
+    case 'single-elimination': return { format, map, thirdPlaceMatch };
+    case 'league':             return { format, map, league };
+    case 'group-then-bracket':
+      return { format, map, thirdPlaceMatch, league, groupCount, advancePerGroup };
+    case 'bot-then-bracket':
+      return { format, map, thirdPlaceMatch, bot, advanceCount: advancePerGroup };
+  }
 }
 
 /**
@@ -208,25 +239,36 @@ export function TournamentEditorDialog({
   function applyDefinition(def: TournamentDefinition, state: TournamentStatePayload | null) {
     setId(def.id);
     setName(def.name);
-    setFormat(def.format);
-    setDoubleMode(def.rules.doubleMode);
-    setThirdPlaceMatch(def.rules.thirdPlaceMatch);
-    setDoubleRoundRobin(def.rules.doubleRoundRobin);
-    setMapCatalogId(def.rules.mapCatalogId ?? '');
-    setStageMaps((def.rules.stageMaps ?? []).map(m => m ?? ''));
-    setLeaguePoints(def.rules.leaguePoints);
-    setGroupCount(def.rules.groupCount);
-    setAdvancePerGroup(def.rules.advancePerGroup);
-    setBotName(def.rules.botName ?? '');
-    setBotStageMap(def.rules.botStageMap ?? '');
-    setParticipantSide(def.rules.participantSide);
+    const stage  = def.stage;
+    const league = leagueRulesOf(stage);
+    const bot    = botRulesOf(stage);
+
+    setFormat(stage.format);
+    setDoubleMode(def.match.doubleMode);
+    setThirdPlaceMatch(hasThirdPlaceMatch(stage));
+    setMapCatalogId(stage.map.catalogId ?? '');
+    setStageMaps(stage.map.bracketStages.map(m => m ?? ''));
+    if (league) {
+      setDoubleRoundRobin(league.doubleRoundRobin);
+      setLeaguePoints(league.points);
+    }
+    if (stage.format === 'group-then-bracket') {
+      setGroupCount(stage.groupCount);
+      setAdvancePerGroup(stage.advancePerGroup);
+    }
+    if (stage.format === 'bot-then-bracket') setAdvancePerGroup(stage.advanceCount);
+    if (bot) {
+      setBotName(bot.name ?? '');
+      setBotStageMap(bot.map ?? '');
+      setParticipantSide(bot.participantSide);
+    }
 
     // BOT のプログラム。参加者と同じく、ライブラリ割り当ては state 側から拾う
     const botAssigned = state?.participants.find(p => p.isBot)?.programCatalogId ?? null;
-    if (def.rules.botProgram?.kind === 'builtin') {
+    if (bot?.program?.kind === 'builtin') {
       setBotProgram('cpu');
-    } else if (def.rules.botProgram?.kind === 'file') {
-      const f = def.rules.botProgram;
+    } else if (bot?.program?.kind === 'file') {
+      const f = bot.program;
       setBotFile(f.displayName === undefined
         ? { file: f.file }
         : { file: f.file, displayName: f.displayName });
@@ -260,7 +302,7 @@ export function TournamentEditorDialog({
       return { ...base, program: catalogId ? `lib:${catalogId}` : '' };
     }));
 
-    if (def.format === 'single-elimination' && def.bracket?.slots?.length) {
+    if (def.stage.format === 'single-elimination' && def.bracket?.slots?.length) {
       setManualBracket(true);
       setSlots(fitSlots(def.bracket.slots, ordered.map(p => p.id)));
     }
@@ -307,6 +349,32 @@ export function TournamentEditorDialog({
 
   const patchAt = (i: number, patch: Partial<DraftParticipant>) => {
     updateParticipants(participants.map((p, j) => (j === i ? { ...p, ...patch } : p)));
+  };
+
+  /**
+   * プログラムを選び直す。プログラム側に名前が書かれていれば、それをプレイヤー名の
+   * 初期値として入れる。対象は「空欄」か「前回そうやって自動で入れた値のまま」の
+   * ときだけで、一度手で書いた名前はプログラムを替えても上書きしない。
+   * 自動で入れた名前は、名前を書いていないプログラムに替えたら空欄へ戻す
+   * (選んでいないプログラム由来の名前が残らないように)。
+   */
+  const selectProgramAt = (i: number, program: string) => {
+    const declared = program.startsWith('lib:')
+      ? programs.find(pr => pr.id === program.slice(4))?.declaredName
+      : undefined;
+
+    updateParticipants(participants.map((p, j) => {
+      if (j !== i) return p;
+      const autoFilled = p.nameFromProgram !== undefined && p.name === p.nameFromProgram;
+      const next: DraftParticipant = {
+        ...p,
+        program,
+        name: p.name === '' || autoFilled ? declared ?? '' : p.name,
+      };
+      if (declared === undefined) delete next.nameFromProgram;
+      else next.nameFromProgram = declared;
+      return next;
+    }));
   };
 
   const toggleManualBracket = (on: boolean) => {
@@ -458,32 +526,33 @@ export function TournamentEditorDialog({
           : null,
     }));
 
+    const map: MapPlan = {
+      catalogId: mapCatalogId === '' ? null : mapCatalogId,
+      // 回戦数ぶんだけ保存する (参加者を減らして回戦が減ったときの残骸を持ち越さない)
+      bracketStages: Array.from({ length: stageCount }, (_, i) => stageMapAt(i) || null),
+    };
+    const league: LeagueRules = { points: leaguePoints, doubleRoundRobin };
+
     const def: TournamentDefinition = {
       formatVersion: 1,
       id,
-      name:   name.trim(),
-      format,
-      rules: {
-        doubleMode,
-        mapCatalogId: mapCatalogId === '' ? null : mapCatalogId,
-        // 回戦数ぶんだけ保存する (参加者を減らして回戦が減ったときの残骸を持ち越さない)
-        stageMaps: Array.from({ length: stageCount }, (_, i) => stageMapAt(i) || null),
-        thirdPlaceMatch,
-        leaguePoints,
-        doubleRoundRobin,
-        groupCount,
-        advancePerGroup,
-        // BOT のプログラムは参加者と同じ二層構造 — ライブラリ割り当て (lib:) は
-        // 配布物である tournament.json に書かず、/assign で state.json 側へ保存する
-        botProgram: botProgram === 'cpu'
-          ? { kind: 'builtin', builtin: 'cpu' }
-          : botProgram === 'file' && botFile
-            ? { kind: 'file', ...botFile }
-            : null,
-        botName:     botName.trim() === '' ? null : botName.trim(),
-        botStageMap: botStageMap === '' ? null : botStageMap,
-        participantSide,
-      },
+      name:  name.trim(),
+      match: { doubleMode },
+      stage: buildStageRules(format, map, league, {
+        thirdPlaceMatch, groupCount, advancePerGroup,
+        bot: {
+          // BOT のプログラムは参加者と同じ二層構造 — ライブラリ割り当て (lib:) は
+          // 配布物である tournament.json に書かず、/assign で state.json 側へ保存する
+          program: botProgram === 'cpu'
+            ? { kind: 'builtin', builtin: 'cpu' }
+            : botProgram === 'file' && botFile
+              ? { kind: 'file', ...botFile }
+              : null,
+          name: botName.trim() === '' ? null : botName.trim(),
+          map:  botStageMap === '' ? null : botStageMap,
+          participantSide,
+        },
+      }),
       participants: defs,
     };
 
@@ -843,7 +912,7 @@ export function TournamentEditorDialog({
                   <textarea
                     style={{ ...input, minHeight: 72, resize: 'vertical' }} value={bulk}
                     aria-label="参加者をまとめて追加"
-                    placeholder={'1行に1チーム\n舞鶴A\n舞鶴B'}
+                    placeholder={'1行に1プレイヤー\n舞鶴A\n舞鶴B'}
                     onChange={e => setBulk(e.target.value)}
                   />
                   <button style={btnSmall} onClick={addBulk}>この内容で追加</button>
@@ -857,13 +926,13 @@ export function TournamentEditorDialog({
                   <span style={seedNo}>{i + 1}</span>
                   <input
                     style={{ ...input, flex: 1, minWidth: 0 }} value={p.name}
-                    aria-label={`参加者${i + 1} の名前`} placeholder="チーム名"
+                    aria-label={`参加者${i + 1} の名前`} placeholder="プレイヤー名"
                     onChange={e => patchAt(i, { name: e.target.value })}
                   />
                   <select
                     style={{ ...select, width: 190 }} value={p.program}
                     aria-label={`参加者${i + 1} のプログラム`}
-                    onChange={e => patchAt(i, { program: e.target.value })}
+                    onChange={e => selectProgramAt(i, e.target.value)}
                   >
                     <option value="">未提出（当日割り当て）</option>
                     <option value="cpu">内蔵CPU</option>

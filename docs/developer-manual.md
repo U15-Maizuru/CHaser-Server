@@ -128,6 +128,7 @@ U15-server-maizuru/
 │   │       ├── index.ts            エントリポイント (U15_MODE 分岐)
 │   │       ├── RoomManager.ts      部屋ライフサイクル管理
 │   │       ├── programCatalog.ts   対戦用プログラムライブラリ (CRUD カタログ、全ルーム共通)
+│   │       ├── programName.ts      プログラムのソースから名乗るプレイヤー名を読み取る
 │   │       ├── mapCatalog.ts       マップライブラリ (CRUD カタログ、全ルーム共通)
 │   │       ├── libTemplates.ts     既定ライブラリ (pyCHaser 等) を各ルームの libs/ に配置
 │   │       ├── assets/
@@ -208,7 +209,7 @@ U15-server-maizuru/
 │   ├── map-catalog/                マップライブラリ (CRUD カタログ、全ルーム共通)
 │   ├── music/                      BGM ファイル (全ルーム共通)
 │   └── rooms/<roomId>/
-│       ├── programs/cool/          COOL チームのアップロードプログラム
+│       ├── programs/cool/          COOL プレイヤーのアップロードプログラム
 │       ├── programs/hot/
 │       ├── libs/cool/              pyCHaser 等の既定ライブラリ + カスタムライブラリ
 │       └── libs/hot/
@@ -302,7 +303,7 @@ interface RoundResult, ServerStatusPayload, ClientStatusPayload
 type ServerPhase, ClientType, ClientState
 
 // プログラム/マップの各ライブラリ (カタログ) を表す型
-interface CatalogEntry { id, displayName, programPath, programType, runtimeCommand, uploadedAt, demoEnabled }
+interface CatalogEntry { id, displayName, programPath, programType, runtimeCommand, uploadedAt, demoEnabled, declaredName? }
 interface MapCatalogEntry { id, displayName, mapPath, uploadedAt, size, turn, blockCount, itemCount }
 interface MapParams { itemNum, blockNum, turnNum, mirror, size? }
 interface InlineMapData { field, size, turn, teamFirstPoint }
@@ -544,7 +545,7 @@ Python AI プログラムはサーバーに TCP 接続して以下のプロト�
 ### 接続
 
 ```
-Client → Server: "[チーム名]\r\n"
+Client → Server: "[プレイヤー名]\r\n"
 ```
 
 ### ターンプロトコル (1ターン = 3フェーズ)
@@ -814,7 +815,7 @@ App.tsx (ErrorBoundary でラップ)
 | 役割 | プログラム | マップ |
 |---|---|---|
 | 管理 (追加・DL・削除) | `ProgramLibraryDialog` (フッター「プログラム管理...」) | `MapLibraryDialog` (フッター「マップ管理...」) |
-| 選択 (対戦で使うもの) | `ProgramLibrarySection` (チームパネル内) | `MapSourceSection` (マップ列内) |
+| 選択 (対戦で使うもの) | `ProgramLibrarySection` (プレイヤーパネル内) | `MapSourceSection` (マップ列内) |
 
 マップの選択は3ソースから行い、サーバーが `MapManager.source` として覚える:
 
@@ -988,7 +989,7 @@ pnpm --filter @u15/backend test
 | ゲーム進行・判定 | `game/GameLogic.test.ts`, `game/GameSystem.test.ts`, `game/Game.test.ts` |
 | ServerManager の分割クラス | `game/ServerManager.test.ts`, `game/MapManager.test.ts`, `game/SlotManager.test.ts` |
 | ネットワーク | `network/TcpClient.test.ts`, `network/WsServer.test.ts`, `network/HttpServer.test.ts` |
-| ルーム・カタログ | `RoomManager.test.ts`, `programCatalog.test.ts`, `mapCatalog.test.ts`, `libTemplates.test.ts` |
+| ルーム・カタログ | `RoomManager.test.ts`, `programCatalog.test.ts`, `programName.test.ts`, `mapCatalog.test.ts`, `libTemplates.test.ts` |
 | クライアント | `clients/ProcessClient.test.ts` |
 | 大会運営 | `tournament/bracket.test.ts`, `league.test.ts`, `standings.test.ts`, `progress.test.ts`, `definition.test.ts`, `TournamentStore.test.ts`, `TournamentOrchestrator.test.ts`, `zip.test.ts`, `exporter.test.ts`, `httpRoutes.test.ts` |
 
@@ -1316,7 +1317,7 @@ ZIP を書く実装 (`zip.writeZip`) は元々テスト用ヘルパー (`test/bu
 リーグ表は `fit` のとき星取表と順位表を横に並べる (縦積みだと高さで頭打ちになる)。
 
 **星取表の並びはエントリー順で固定**: 行・列は `participants` (= seed 順) をそのまま使う。
-順位順に並べ替えると、試合が確定するたびに表の行が動いて観客も運営も同じチームを追えなくなる。
+順位順に並べ替えると、試合が確定するたびに表の行が動いて観客も運営も同じプレイヤーを追えなくなる。
 順位で並ぶのは下段の順位表だけ。
 
 **これから行う試合の強調**: `armedMatchId` (「この試合を準備」で確定) を
@@ -1337,6 +1338,29 @@ ZIP を書く実装 (`zip.writeZip`) は元々テスト用ヘルパー (`test/bu
 編集時は `GET /api/tournament/:id` の `state.participants[].programCatalogId` から復元する。
 別の PC へ持ち出すときは、この割り当てを `program.file` に焼き直してプログラムの実体ごと
 固める書き出し (13-5-1) を使う。
+
+**プレイヤー名の初期値 (`CatalogEntry.declaredName`)**: 参加者の名前欄は、プログラムを
+選んだときにプログラム自身が名乗る名前で埋まる。抽出は backend の `programName.ts`
+(`extractDeclaredName`) が担当し、`Client(name='…')` の文字列リテラル →
+argparse の `--name` の `default` の順に見る。Python はパースせず、雛形
+(`assets/lib-templates/pyCHaser.py`) の使われ方に合わせた正規表現で拾うだけ。
+拾えなければ `undefined` で、名前欄は空欄のまま手入力に任せる。
+
+> **雛形のままの `default='player'` も除外せずそのまま採用する。** 実際にスコアバーへ
+> 出るのがその値である以上、隠すと表示と実態が食い違う。
+
+`declaredName` は `index.json` に保存しない。JSON は `undefined` を落とすので
+「名前が無い」ことを保存できず結局毎回読み直すことになるため、`listCatalogEntries` /
+`getCatalogEntry` / `addCatalogEntry` で都度パースする方に統一している
+(対象は数十件の小さな `.py` で、カタログを引くのはダイアログを開いたときだけ)。
+名前の整形は TCP 経路と同じ `sanitizeName` (`network/TcpClient.ts`) を通し、
+どちらの経路でも表示がブレないようにする。
+
+上書き規則は `selectProgramAt` にある。`DraftParticipant.nameFromProgram` に
+「自動で入れた値」を控えておき、`name` がそれと一致している間だけプログラムの
+選び直しに追従させる。一度手で書き換えたら一致しなくなるので、以後は上書きしない。
+名前を持たないプログラムへ替えたときは、選んでいないプログラム由来の名前が残らないよう
+空欄へ戻す。`nameFromProgram` は保存対象ではない (`buildDefinition` は `name` しか見ない)。
 
 **シード配置の共有**: 「手動で指定する」の初期値は、サーバーが自動生成するのと
 寸分違わぬ並びでなければならない。そのため `seedOrder` / `bracketSizeFor` / `stageCountFor` /
@@ -1505,7 +1529,7 @@ id は予選が `G1-D1M1` (Gリーグ番号-D節-M試合)、決勝が従来ど�
 
 #### リーグ表の並べ方
 
-予選リーグを横に並べるとき、**リーグごとにチーム数が違うと星取表の高さが変わり、
+予選リーグを横に並べるとき、**リーグごとにプレイヤー数が違うと星取表の高さが変わり、
 その下の順位表の位置がずれる。** `LeagueTable` に `gridCells` を渡すと、まとめる div を
 外して「見出し / 星取表 / 順位表」の3つの塊をそのまま返すので、呼び出し側の CSS グリッド
 (3行 × リーグ数列、`grid-auto-flow: column`) の行にそろう。

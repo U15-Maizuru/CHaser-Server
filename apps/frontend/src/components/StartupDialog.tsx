@@ -13,7 +13,7 @@ import {
   RADIUS_MD, RADIUS_SM,
   SHADOW_SM,
   FONT_UI, FONT_NUM,
-} from '../styles/tokens';
+} from '../ui';
 
 interface Props {
   status:               ServerStatusPayload;
@@ -91,7 +91,7 @@ export function StartupDialog({
         <div style={s.midSetStrip}>
           第{(status.currentRound ?? 0) + 1}ゲーム — マップと対戦ルールは第1ゲームと共通です
           （先攻・後攻が入れ替わるため、盤面は180°反転して表示されます）。
-          両チームの再接続を待って「ゲームスタート」を押してください。
+          両プレイヤーの再接続を待って「ゲームスタート」を押してください。
         </div>
       )}
 

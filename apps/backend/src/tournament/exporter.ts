@@ -2,7 +2,8 @@ import type { StandingRow, TournamentMatch } from '@u15/ws-types';
 import { groupLabel, hasBotStage } from '@u15/ws-types';
 import { computeStandings } from './standings.js';
 import {
-  groupStandingsOf, qualifiersOf, rankByOf, resolveParticipants, type LoadedTournament,
+  groupStandingsOf, leaguePointsOf, qualifiersOf, rankByOf, resolveParticipants,
+  type LoadedTournament,
 } from './TournamentStore.js';
 
 // 大会結果の書き出し。大会後の記録・表彰に使う。
@@ -49,7 +50,7 @@ export function matchesCsv(loaded: LoadedTournament): string {
 
   const header = [
     '試合ID', '区分', '回戦', '試合名', '状態',
-    'チームA', 'チームB',
+    'プレイヤーA', 'プレイヤーB',
     'A勝利数', 'B勝利数', '引分',
     'A合計ポイント', 'B合計ポイント',
     '勝者', '決め手', '備考',
@@ -68,7 +69,7 @@ export function matchesCsv(loaded: LoadedTournament): string {
     const base: unknown[] = [
       m.id,
       m.group === undefined         ? '決勝T'
-      : hasBotStage(loaded.def.format) ? '予選'
+      : hasBotStage(loaded.def.stage.format) ? '予選'
       :                                `予選${groupLabel(m.group)}`,
       m.stage + 1, m.label, statusLabel(m),
       m.byeA ? '(不戦)' : nameOf(m.resolvedA),
@@ -102,13 +103,13 @@ export function matchesCsv(loaded: LoadedTournament): string {
 }
 
 const STANDINGS_HEADER = [
-  '順位', 'チーム', '試合数', '勝', '分', '敗', '勝ち点', '合計ポイント', '同順位',
+  '順位', 'プレイヤー', '試合数', '勝', '分', '敗', '勝ち点', '合計ポイント', '同順位',
 ];
 
 // BOT対戦予選は勝ち点で順位を付けないので勝ち点列を出さず、代わりに順位を決めた内訳を出す
 // (「合計 → 一撃 → アイテム」の順に見れば、同点がどこで割れたのかが読める)
 const BOT_STANDINGS_HEADER = [
-  '順位', 'チーム', '結果', '合計ポイント', '一撃ボーナス', 'アイテムポイント', '総取りボーナス', '同順位',
+  '順位', 'プレイヤー', '結果', '合計ポイント', '一撃ボーナス', 'アイテムポイント', '総取りボーナス', '同順位',
 ];
 
 /**
@@ -120,7 +121,7 @@ const BOT_STANDINGS_HEADER = [
 export function standingsCsv(loaded: LoadedTournament): string {
   const ps     = resolveParticipants(loaded);
   const nameOf = (id: string) => ps.find(p => p.id === id)?.name ?? id;
-  const bot    = hasBotStage(loaded.def.format);
+  const bot    = hasBotStage(loaded.def.stage.format);
 
   const row = (s: StandingRow): unknown[] => (bot
     ? [
@@ -162,7 +163,7 @@ function standingsOf(loaded: LoadedTournament): StandingRow[] {
   const ps = resolveParticipants(loaded);
   return computeStandings(
     ps.filter(p => !p.isBot).map(p => p.id),
-    loaded.state.matches, loaded.def.rules.leaguePoints, rankByOf(loaded.def),
+    loaded.state.matches, leaguePointsOf(loaded.def), rankByOf(loaded.def),
   );
 }
 
@@ -172,11 +173,12 @@ export function resultJson(loaded: LoadedTournament): string {
   return JSON.stringify({
     id:           loaded.def.id,
     name:         loaded.def.name,
-    format:       loaded.def.format,
-    rules:        loaded.def.rules,
+    format:       loaded.def.stage.format,
+    match:        loaded.def.match,
+    stage:        loaded.def.stage,
     participants: ps,
     matches:      loaded.state.matches,
-    standings:    loaded.def.format === 'league' ? standingsOf(loaded) : null,
+    standings:    loaded.def.stage.format === 'league' ? standingsOf(loaded) : null,
     groups:       groupStandingsOf(loaded),
     qualifiers:   qualifiersOf(loaded),
     exportedAt:   new Date().toISOString(),

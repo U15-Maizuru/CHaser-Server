@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { hasThirdPlaceMatch } from '@u15/ws-types';
 import { addCatalogEntry, catalogDir, ensureCatalogDir, getCatalogEntry } from '../programCatalog.js';
 import { readZip } from './zip.js';
 import { buildTournamentBundle } from './bundle.js';
@@ -40,7 +41,8 @@ const DEF = {
   id: ID,
   name: '書き出し杯',
   format: 'single-elimination',
-  rules: { doubleMode: true, thirdPlaceMatch: true },
+  match: { doubleMode: true },
+  stage: { thirdPlaceMatch: true },
   participants: [
     { id: 'p1', name: 'ファイル指定', seed: 1, program: { file: 'programs/a.py' } },
     { id: 'p2', name: '組み込みCPU',  seed: 2, program: { builtin: 'cpu' } },
@@ -148,7 +150,7 @@ describe('buildTournamentBundle', () => {
 
     const loaded = loadTournament(ID)!;
     expect(loaded.def.name).toBe('書き出し杯');
-    expect(loaded.def.rules.thirdPlaceMatch).toBe(true);
+    expect(hasThirdPlaceMatch(loaded.def.stage)).toBe(true);
 
     // プログラムが実体ごと復元され、そのまま運営できる状態になっていること
     expect(Object.keys(loaded.state.programs).sort()).toEqual(['p1', 'p3']);

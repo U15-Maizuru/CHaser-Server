@@ -4,7 +4,7 @@ import {
   BG_CARD, BORDER_COLOR, TEXT_SECONDARY, TEXT_MUTED, TEXT_PRIMARY,
   COOL_COLOR, WIN_BASE, WIN_PALE,
   RADIUS_SM, FONT_NUM,
-} from '../styles/tokens';
+} from '../ui';
 
 interface Props {
   endpoint:   string;

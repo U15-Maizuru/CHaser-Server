@@ -21,7 +21,7 @@ const DEF = {
   id: ID,
   name: 'エクスポート杯',
   format: 'single-elimination',
-  rules: { doubleMode: true },
+  match: { doubleMode: true },
   participants: [
     { id: 'p1', name: '舞鶴A', seed: 1, program: { builtin: 'cpu' } },
     { id: 'p2', name: 'カンマ,を含む名前', seed: 2, program: { builtin: 'cpu' } },
@@ -78,7 +78,7 @@ describe('エクスポート', () => {
     expect(lines[1]).toContain('FINAL');
   });
 
-  it('チーム名のカンマがエスケープされる', () => {
+  it('プレイヤー名のカンマがエスケープされる', () => {
     const csv = matchesCsv(loadTournament(ID)!);
     expect(csv).toContain('"カンマ,を含む名前"');
   });
@@ -112,7 +112,7 @@ describe('エクスポート', () => {
     writeCup({ ...DEF, format: 'league' });
     const csv = standingsCsv(loadTournament(ID)!);
     const lines = csv.replace(/^﻿/, '').trim().split('\r\n');
-    expect(lines[0]).toBe('順位,チーム,試合数,勝,分,敗,勝ち点,合計ポイント,同順位');
+    expect(lines[0]).toBe('順位,プレイヤー,試合数,勝,分,敗,勝ち点,合計ポイント,同順位');
     expect(lines).toHaveLength(3); // ヘッダ + 2人
   });
 

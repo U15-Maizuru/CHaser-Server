@@ -67,6 +67,40 @@ describe('programCatalog', () => {
     expect(listCatalogEntries()).toEqual([]);
   });
 
+  describe('declaredName (プログラムが名乗るプレイヤー名)', () => {
+    const withName = "player = Client(port=2009, name='舞鶴A', host='localhost')";
+
+    it('ソースに名前があれば付く', () => {
+      const entry = addCatalogEntry('main.py', makeTempFile('main.py', withName));
+      expect(entry.declaredName).toBe('舞鶴A');
+      expect(getCatalogEntry(entry.id)?.declaredName).toBe('舞鶴A');
+      expect(listCatalogEntries()[0]?.declaredName).toBe('舞鶴A');
+    });
+
+    it('ソースに名前が無ければ付かない', () => {
+      const entry = addCatalogEntry('main.py', makeTempFile('main.py'));
+      expect(entry.declaredName).toBeUndefined();
+      expect(listCatalogEntries()[0]?.declaredName).toBeUndefined();
+    });
+
+    it('この機能より前に登録された index.json のエントリにも後から付く', () => {
+      const entry = addCatalogEntry('main.py', makeTempFile('main.py', withName));
+      // declaredName を持たない当時の形に戻す
+      const indexPath = path.join(catalogDir(), 'index.json');
+      const raw = JSON.parse(fs.readFileSync(indexPath, 'utf-8')) as Record<string, unknown>[];
+      for (const e of raw) delete e['declaredName'];
+      fs.writeFileSync(indexPath, JSON.stringify(raw));
+
+      expect(listCatalogEntries()[0]?.declaredName).toBe('舞鶴A');
+      expect(getCatalogEntry(entry.id)?.declaredName).toBe('舞鶴A');
+    });
+
+    it('.py 以外は読まない', () => {
+      const entry = addCatalogEntry('bot.exe', makeTempFile('bot.exe', withName));
+      expect(entry.declaredName).toBeUndefined();
+    });
+  });
+
   it('setDemoEnabled はデモ対象フラグを更新する', () => {
     const entry = addCatalogEntry('main.py', makeTempFile('main.py'));
     const updated = setDemoEnabled(entry.id, false);

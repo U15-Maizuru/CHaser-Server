@@ -7,7 +7,7 @@ import {
   STATE_READY, STATE_CONNECTED, STATE_WAITING,
   SHADOW_SM, RADIUS_MD,
   FONT_UI, FONT_NUM,
-} from '../styles/tokens';
+} from '../ui';
 
 interface Props {
   slot:            0 | 1;

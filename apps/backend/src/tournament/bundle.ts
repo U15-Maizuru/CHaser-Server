@@ -2,10 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Buffer } from 'node:buffer';
 import type { ParticipantDef, ParticipantProgram, TournamentDefinition } from '@u15/ws-types';
-import { BOT_PARTICIPANT_ID, hasBotStage } from '@u15/ws-types';
+import { BOT_PARTICIPANT_ID } from '@u15/ws-types';
 import { getCatalogEntry } from '../programCatalog.js';
 import { DEFAULT_ZIP_LIMITS, writeZip, type ZipWriteEntry } from './zip.js';
-import { tournamentRootDir, type LoadedTournament } from './TournamentStore.js';
+import { botDisplayName, tournamentRootDir, type LoadedTournament } from './TournamentStore.js';
 
 // 大会データそのものの書き出し。「そのまま /api/tournament/upload に食わせれば
 // 別の PC で即運営できる .zip」を作るのが目的で、結果の書き出し (exporter.ts) とは別物。
@@ -123,18 +123,21 @@ export function buildTournamentBundle(loaded: LoadedTournament): BundleResult {
     program: bundleProgram(p.id, p.name, p.program, i),
   }));
 
-  // rules.mapCatalogId / rules.stageMaps / rules.botStageMap はこの PC のマップライブラリ ID
-  // なので移動先では解決しない。それでも残す — 見つからない ID は黙って無視される決まり
-  // (definition.ts) で、消すと元の PC で読み直したときにマップ設定が飛んでしまう。
+  // stage.map の中身はこの PC のマップライブラリ ID なので移動先では解決しない。
+  // それでも残す — 見つからない ID は黙って無視される決まり (definition.ts) で、
+  // 消すと元の PC で読み直したときにマップ設定が飛んでしまう。
   const def: TournamentDefinition = { ...loaded.def, participants: bundled };
 
-  if (hasBotStage(loaded.def.format)) {
-    def.rules = {
-      ...loaded.def.rules,
-      botProgram: bundleProgram(
-        BOT_PARTICIPANT_ID, loaded.def.rules.botName ?? '運営BOT',
-        loaded.def.rules.botProgram, loaded.def.participants.length,
-      ),
+  if (def.stage.format === 'bot-then-bracket') {
+    const bot = def.stage.bot;
+    def.stage = {
+      ...def.stage,
+      bot: {
+        ...bot,
+        program: bundleProgram(
+          BOT_PARTICIPANT_ID, botDisplayName(bot), bot.program, loaded.def.participants.length,
+        ),
+      },
     };
   }
 

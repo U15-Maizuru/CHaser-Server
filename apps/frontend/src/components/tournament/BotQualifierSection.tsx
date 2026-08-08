@@ -1,8 +1,9 @@
 import type { TournamentStatePayload } from '@u15/ws-types';
+import { advancePerGroupOf } from '@u15/ws-types';
 import {
   BG_CARD, BG_ROOT, BORDER_COLOR, FONT_NUM, FONT_UI, GOLD_BASE, HOT_COLOR, RADIUS_SM,
   TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE,
-} from '../../styles/tokens';
+} from '../../ui';
 
 // BOT対戦予選の決勝進出者を決める「最終決定確認リスト」。
 //
@@ -24,7 +25,7 @@ export interface BotQualifierSectionProps {
 
 export function BotQualifierSection({ state, onExclude, onConfirm }: BotQualifierSectionProps) {
   const candidates = state.qualifierCandidates ?? [];
-  const advance    = state.rules.advancePerGroup;
+  const advance    = advancePerGroupOf(state.stage);
   const nameOf     = (id: string) => state.participants.find(p => p.id === id)?.name ?? id;
 
   // 予選が終わっていなければ候補が出ない (バックエンドが空を配る)
@@ -78,7 +79,7 @@ export function BotQualifierSection({ state, onExclude, onConfirm }: BotQualifie
             <thead>
               <tr>
                 <th style={th}>順位</th>
-                <th style={{ ...th, textAlign: 'left' }}>チーム</th>
+                <th style={{ ...th, textAlign: 'left' }}>プレイヤー</th>
                 <th style={th}>ポイント</th>
                 <th style={th}>一撃</th>
                 <th style={th}>アイテム</th>

@@ -107,7 +107,7 @@ export interface RoundResult {
   round:          0 | 1;
   winner:         Winner;
   reason:         Reason;
-  /** 各チームの取得アイテム数 (COOL, HOT の順) */
+  /** 各プレイヤーの取得アイテム数 (COOL, HOT の順) */
   scores:         [number, number];
   remainingTurns: number;
   /**
@@ -202,6 +202,12 @@ export interface CatalogEntry {
   runtimeCommand: string;
   uploadedAt:     number;
   demoEnabled:    boolean; // デモモードのランダム対戦候補に含めるか
+  /**
+   * プログラムのソースから読み取った、そのプログラムが名乗るプレイヤー名
+   * (= 対戦画面のスコアバーに出る名前)。大会エディタでプレイヤー名の初期値に使う。
+   * ソースに書かれていなければ undefined。
+   */
+  declaredName?:  string;
 }
 
 /** 現在のマップの出どころ。'random' のときだけリセット・リピートで引き直す */

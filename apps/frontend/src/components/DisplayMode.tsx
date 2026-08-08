@@ -30,7 +30,7 @@ import {
   SHADOW_MD, SHADOW_SM,
   RADIUS_MD,
   FONT_UI, FONT_NUM,
-} from '../styles/tokens';
+} from '../ui';
 
 export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId: string; httpBase: string }) {
   const state   = useGameState(wsUrl, roomId);
@@ -234,9 +234,9 @@ function SetupWaiting({ serverStatus, displayTitle, tournament, groupPhase, curr
       {/* 大会運営中は勝ち上がりを観客に見せる (待機中の間だけ) */}
       {tournament && (
         <div style={sw.bracket}>
-          {hasQualifying(tournament.format) ? (
+          {hasQualifying(tournament.stage.format) ? (
             <QualifyingView state={tournament} phase={groupPhase} />
-          ) : tournament.format === 'league' ? (
+          ) : tournament.stage.format === 'league' ? (
             <LeagueTable
               matches={tournament.matches}
               participants={tournament.participants}
@@ -263,7 +263,7 @@ function MapPreview({ map, theme, flip, label }: {
   map: InlineMapData; theme: string; flip: boolean; label: string;
 }) {
   const tex = useTextures(theme);
-  // 15×17 のマップでチームカードと釣り合う大きさ
+  // 15×17 のマップでプレイヤーカードと釣り合う大きさ
   const cellSize = Math.max(4, Math.min(12, Math.floor(200 / Math.max(map.size.x, map.size.y))));
   const itemCount = map.field.flat().filter(c => c === MapObject.ITEM).length;
   return (
@@ -349,7 +349,7 @@ const sw: Record<string, React.CSSProperties> = {
   upcomingLabel: { fontSize: 14, color: TEXT_SECONDARY },
   upcomingNames: { fontSize: 22, fontWeight: 800, color: TEXT_PRIMARY },
 
-  // 第1ゲームの結果 (2ゲーム制のインターミッション)。左右の並びは下のチームカードと揃える
+  // 第1ゲームの結果 (2ゲーム制のインターミッション)。左右の並びは下のプレイヤーカードと揃える
   recap: {
     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
     padding: '18px 32px',

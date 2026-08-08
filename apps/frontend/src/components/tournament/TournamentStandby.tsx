@@ -8,7 +8,7 @@ import {
   BG_ROOT, RADIUS_MD, SHADOW_SM,
   TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE, WIN_LIGHT, WIN_PALE,
   FONT_UI,
-} from '../../styles/tokens';
+} from '../../ui';
 
 // 試合と試合の間の観戦用画面。トーナメント表 / リーグ表だけを画面いっぱいに見せる。
 //
@@ -53,9 +53,9 @@ export function TournamentStandby({
       </div>
 
       <div style={s.figure}>
-        {hasQualifying(state.format) ? (
+        {hasQualifying(state.stage.format) ? (
           <QualifyingView state={state} finishedMatchId={finished?.id ?? null} phase={groupPhase} />
-        ) : state.format === 'league' ? (
+        ) : state.stage.format === 'league' ? (
           <LeagueTable
             matches={state.matches}
             participants={state.participants}

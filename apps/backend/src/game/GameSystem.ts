@@ -231,7 +231,7 @@ export function importMap(filename: string): GameMap | null {
       map.size = { ...map.size, x: map.field[row].length };
       row++;
     } else {
-      // チーム初期位置 (C: / H:)
+      // プレイヤー初期位置 (C: / H:)
       for (let i = 0; i < TEAM_COUNT; i++) {
         if (key === getTeamName(i as Team)[0]) {
           const [x, y] = val.split(',').map(Number);

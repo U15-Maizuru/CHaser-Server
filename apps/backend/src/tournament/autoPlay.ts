@@ -3,8 +3,7 @@ import type {
   TournamentFormat,
   TournamentMatch,
 } from '@u15/ws-types';
-import { hasQualifying } from '@u15/ws-types';
-import { isKnockoutMatch, nextReadyMatch } from './progress.js';
+import { hasQualifying, isKnockoutMatch, nextReadyMatch } from '@u15/ws-types';
 
 // オートプレイ (自動進行) の「次の一手」を決める純関数。
 //

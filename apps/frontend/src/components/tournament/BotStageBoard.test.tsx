@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { stageRulesFor } from '../../test/tournamentFixture';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import type {
   QualifierCandidate, ResolvedParticipant, StandingRow, TournamentMatch, TournamentStatePayload,
@@ -60,14 +61,9 @@ function state(
     standing(`p${i + 1}`, i + 1, i < finished ? 1 : 0, i < finished ? 100 - i * 10 : 0));
 
   return {
-    tournamentId: 'cup', name: 'BOT予選杯', format: 'bot-then-bracket',
-    rules: {
-      doubleMode: false, mapCatalogId: null, stageMaps: [], thirdPlaceMatch: false,
-      leaguePoints: { win: 3, draw: 1, loss: 0 }, doubleRoundRobin: false,
-      groupCount: 1, advancePerGroup: 4,
-      botProgram: { kind: 'builtin', builtin: 'cpu' }, botName: '運営BOT',
-      botStageMap: 'map-1', participantSide: 0,
-    },
+    tournamentId: 'cup', name: 'BOT予選杯',
+    match: { doubleMode: false },
+    stage: stageRulesFor('bot-then-bracket'),
     participants,
     matches: NAMES.map((_, i) => botMatch(i, i < finished)),
     standings: null,
@@ -86,7 +82,7 @@ function state(
   };
 }
 
-/** 順位リスト (右) の本文行から、チーム名を並び順に取り出す */
+/** 順位リスト (右) の本文行から、プレイヤー名を並び順に取り出す */
 function rankedNames(): string[] {
   const table = screen.getByText(/^試合結果/).parentElement!.querySelector('table');
   if (!table) return [];

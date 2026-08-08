@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { stageRulesFor } from '../../test/tournamentFixture';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type {
+  StageRules,
   QualifierCandidate, ResolvedParticipant, TournamentStatePayload,
 } from '@u15/ws-types';
 import { BotQualifierSection } from './BotQualifierSection';
@@ -30,13 +32,9 @@ function state(
   candidates: QualifierCandidate[], confirmed = false,
 ): TournamentStatePayload {
   return {
-    tournamentId: 'cup', name: 'BOT予選杯', format: 'bot-then-bracket',
-    rules: {
-      doubleMode: false, mapCatalogId: null, stageMaps: [], thirdPlaceMatch: false,
-      leaguePoints: { win: 3, draw: 1, loss: 0 }, doubleRoundRobin: false,
-      groupCount: 1, advancePerGroup: 2,
-      botProgram: null, botName: null, botStageMap: 'map-1', participantSide: 0,
-    },
+    tournamentId: 'cup', name: 'BOT予選杯',
+    match: { doubleMode: false },
+    stage: { ...stageRulesFor('bot-then-bracket'), advanceCount: 2 } as StageRules,
     participants,
     matches: [],
     standings: null, groups: null, qualifiers: null,

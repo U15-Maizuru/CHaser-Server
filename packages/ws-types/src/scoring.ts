@@ -11,7 +11,7 @@ import { Winner } from './protocol.js';
 import type { RoundResult } from './protocol.js';
 
 // 2ゲーム制: 画面の物理的な左右 (side) とゲーム番号 (round) から、その画面側に表示すべき
-// チーム番号 (team-index, 0=COOL/1=HOT) を求める。第2ゲームは先攻/後攻が入れ替わるため、
+// プレイヤー番号 (team-index, 0=COOL/1=HOT) を求める。第2ゲームは先攻/後攻が入れ替わるため、
 // 同じ side でも round が変われば idx も入れ替わる。
 export function idxForSide(side: 0 | 1, round: 0 | 1): 0 | 1 {
   return ((side + round) % 2) as 0 | 1;

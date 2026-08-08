@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { leagueRulesOf } from '@u15/ws-types';
 import { DefinitionError, parseTournamentDefinition } from './definition.js';
 
 const OK = {
@@ -18,47 +19,46 @@ describe('parseTournamentDefinition', () => {
     const def = parse(OK);
     expect(def.id).toBe('cup');
     expect(def.name).toBe('テスト大会');
-    expect(def.format).toBe('single-elimination');
+    expect(def.stage.format).toBe('single-elimination');
     expect(def.participants).toHaveLength(2);
     expect(def.participants[0]!.program).toEqual({ kind: 'file', file: 'programs/a.py' });
     expect(def.participants[1]!.program).toEqual({ kind: 'builtin', builtin: 'cpu' });
   });
 
-  it('rules は既定値で埋まる', () => {
+  it('match / stage は既定値で埋まる', () => {
     const def = parse(OK);
-    expect(def.rules).toEqual({
-      doubleMode: true,
-      mapCatalogId: null,
-      stageMaps: [],
+    expect(def.match).toEqual({ doubleMode: true });
+    expect(def.stage).toEqual({
+      format:          'single-elimination',
+      map:             { catalogId: null, bracketStages: [] },
       thirdPlaceMatch: false,
-      leaguePoints: { win: 3, draw: 1, loss: 0 },
-      doubleRoundRobin: false,
-      groupCount: 2,
-      advancePerGroup: 2,
-      botProgram: null,
-      botName: null,
-      botStageMap: null,
-      participantSide: 0,
     });
   });
 
-  describe('rules.stageMaps (回戦ごとのマップ)', () => {
-    const withStageMaps = (stageMaps: unknown) => parse({ ...OK, rules: { stageMaps } });
+  it('形式が意味を持たない設定は捨てる', () => {
+    // 平坦だった頃の名残で league の項目が書いてあっても、トーナメントには持ち込まない
+    const def = parse({ ...OK, stage: { league: { doubleRoundRobin: true } } });
+    expect(def.stage).not.toHaveProperty('league');
+  });
+
+  describe('stage.map.bracketStages (回戦ごとのマップ)', () => {
+    const withStages = (bracketStages: unknown) =>
+      parse({ ...OK, stage: { map: { bracketStages } } }).stage.map.bracketStages;
 
     it('マップ ID と null の配列を読める', () => {
-      expect(withStageMaps(['m1', null, 'm2']).rules.stageMaps).toEqual(['m1', null, 'm2']);
+      expect(withStages(['m1', null, 'm2'])).toEqual(['m1', null, 'm2']);
     });
 
     it('空文字は「大会の設定に従う」(null) として扱う', () => {
-      expect(withStageMaps(['', 'm2']).rules.stageMaps).toEqual([null, 'm2']);
+      expect(withStages(['', 'm2'])).toEqual([null, 'm2']);
     });
 
     it('配列でなければエラー', () => {
-      expect(() => withStageMaps('m1')).toThrow(/rules.stageMaps は配列/);
+      expect(() => withStages('m1')).toThrow(/bracketStages は配列/);
     });
 
     it('要素が文字列でも null でもなければエラー', () => {
-      expect(() => withStageMaps([1])).toThrow(/rules.stageMaps\[0\]/);
+      expect(() => withStages([1])).toThrow(/bracketStages\[0\]/);
     });
   });
 
@@ -160,9 +160,11 @@ describe('parseTournamentDefinition', () => {
     expect(def.schedule!.pairs).toEqual([['p1', 'p2']]);
   });
 
-  it('leaguePoints を上書きできる', () => {
-    const def = parse({ ...OK, rules: { leaguePoints: { win: 2, draw: 1, loss: -1 } } });
-    expect(def.rules.leaguePoints).toEqual({ win: 2, draw: 1, loss: -1 });
+  it('勝ち点を上書きできる', () => {
+    const def = parse({
+      ...OK, format: 'league', stage: { league: { points: { win: 2, draw: 1, loss: -1 } } },
+    });
+    expect(leagueRulesOf(def.stage)?.points).toEqual({ win: 2, draw: 1, loss: -1 });
   });
 });
 
@@ -178,9 +180,8 @@ describe('予選リーグ + 決勝トーナメント', () => {
     parseTournamentDefinition({ ...GROUP_OK, ...o }, { fallbackId: 'cup' });
 
   it('groupCount / advancePerGroup は既定 2/2', () => {
-    const def = parseGroup({});
-    expect(def.rules.groupCount).toBe(2);
-    expect(def.rules.advancePerGroup).toBe(2);
+    const stage = parseGroup({}).stage;
+    expect(stage).toMatchObject({ groupCount: 2, advancePerGroup: 2 });
   });
 
   it('participants[].group を読む', () => {
@@ -192,11 +193,11 @@ describe('予選リーグ + 決勝トーナメント', () => {
   });
 
   it('リーグ数が2未満なら弾く', () => {
-    expect(() => parseGroup({ rules: { groupCount: 1 } })).toThrow(/groupCount/);
+    expect(() => parseGroup({ stage: { groupCount: 1 } })).toThrow(/groupCount/);
   });
 
   it('進出人数が0以下なら弾く', () => {
-    expect(() => parseGroup({ rules: { advancePerGroup: 0 } })).toThrow(/advancePerGroup/);
+    expect(() => parseGroup({ stage: { advancePerGroup: 0 } })).toThrow(/advancePerGroup/);
   });
 
   it('各リーグ2人に満たない人数なら弾く', () => {
@@ -221,65 +222,75 @@ describe('BOT対戦予選 + 決勝トーナメント', () => {
   const BOT_OK = {
     name: 'BOT予選大会',
     format: 'bot-then-bracket',
-    rules: { botStageMap: 'map-1', advancePerGroup: 4 },
+    stage: { bot: { map: 'map-1' }, advanceCount: 4 },
     participants: Array.from({ length: 6 }, (_, i) => ({
       id: `p${i + 1}`, name: `T${i + 1}`, program: null,
     })),
   };
-  const parseBot = (o: Record<string, unknown>) =>
+
+  /** stage は1階層深いので、上書きも stage 単位でマージする */
+  const parseBot = (stage: Record<string, unknown> = {}, o: Record<string, unknown> = {}) =>
     parseTournamentDefinition(
-      { ...BOT_OK, ...o, rules: { ...BOT_OK.rules, ...(o['rules'] as object ?? {}) } },
+      {
+        ...BOT_OK, ...o,
+        stage: { ...BOT_OK.stage, ...stage, bot: { ...BOT_OK.stage.bot, ...(stage['bot'] as object ?? {}) } },
+      },
       { fallbackId: 'cup' },
     );
 
+  const botStage = (stage: Record<string, unknown> = {}, o: Record<string, unknown> = {}) => {
+    const s = parseBot(stage, o).stage;
+    if (s.format !== 'bot-then-bracket') throw new Error('bot-then-bracket として読めていない');
+    return s;
+  };
+
   it('最小構成を読める', () => {
-    const def = parseBot({});
-    expect(def.format).toBe('bot-then-bracket');
-    expect(def.rules.botStageMap).toBe('map-1');
-    expect(def.rules.advancePerGroup).toBe(4);
+    const s = botStage();
+    expect(s.bot.map).toBe('map-1');
+    expect(s.advanceCount).toBe(4);
   });
 
-  it('botProgram を参加者と同じ書式で読む', () => {
-    expect(parseBot({ rules: { botProgram: { file: 'programs/bot.py' } } }).rules.botProgram)
+  it('bot.program を参加者と同じ書式で読む', () => {
+    expect(botStage({ bot: { program: { file: 'programs/bot.py' } } }).bot.program)
       .toEqual({ kind: 'file', file: 'programs/bot.py' });
-    expect(parseBot({ rules: { botProgram: { builtin: 'cpu' } } }).rules.botProgram)
+    expect(botStage({ bot: { program: { builtin: 'cpu' } } }).bot.program)
       .toEqual({ kind: 'builtin', builtin: 'cpu' });
   });
 
-  it('botName は空文字なら null (既定名にフォールバックさせる)', () => {
-    expect(parseBot({ rules: { botName: '運営くん' } }).rules.botName).toBe('運営くん');
-    expect(parseBot({ rules: { botName: '  ' } }).rules.botName).toBeNull();
+  it('bot.name は空文字なら null (既定名にフォールバックさせる)', () => {
+    expect(botStage({ bot: { name: '運営くん' } }).bot.name).toBe('運営くん');
+    expect(botStage({ bot: { name: '  ' } }).bot.name).toBeNull();
   });
 
   it('participantSide は 0 (先攻) が既定で、1 のときだけ後攻になる', () => {
-    expect(parseBot({}).rules.participantSide).toBe(0);
-    expect(parseBot({ rules: { participantSide: 1 } }).rules.participantSide).toBe(1);
+    expect(botStage().bot.participantSide).toBe(0);
+    expect(botStage({ bot: { participantSide: 1 } }).bot.participantSide).toBe(1);
     // 想定外の値は先攻に倒す (壊れた定義でも読めなくしない)
-    expect(parseBot({ rules: { participantSide: 7 } }).rules.participantSide).toBe(0);
+    expect(botStage({ bot: { participantSide: 7 } }).bot.participantSide).toBe(0);
   });
 
   it('マップが決まっていなければ弾く (全参加者同一条件がこの形式の根拠)', () => {
-    expect(() => parseBot({ rules: { botStageMap: null } })).toThrow(/同じマップ/);
+    expect(() => parseBot({ bot: { map: null } })).toThrow(/同じマップ/);
     // 大会全体の固定マップでもよい
-    expect(() => parseBot({ rules: { botStageMap: null, mapCatalogId: 'map-9' } })).not.toThrow();
+    expect(() => parseBot({ bot: { map: null }, map: { catalogId: 'map-9' } })).not.toThrow();
   });
 
   it('進出人数が2未満なら弾く (決勝が組めない)', () => {
-    expect(() => parseBot({ rules: { advancePerGroup: 1 } })).toThrow(/advancePerGroup/);
+    expect(() => parseBot({ advanceCount: 1 })).toThrow(/advanceCount/);
   });
 
   it('進出人数に参加者が足りなければ弾く', () => {
-    expect(() => parseBot({
-      participants: BOT_OK.participants.slice(0, 3), rules: { advancePerGroup: 4 },
+    expect(() => parseBot({ advanceCount: 4 }, {
+      participants: BOT_OK.participants.slice(0, 3),
     })).toThrow(/参加者が足りません/);
   });
 
   it('BOT プログラム未提出は許す (当日割り当てるため)', () => {
-    expect(parseBot({}).rules.botProgram).toBeNull();
+    expect(botStage().bot.program).toBeNull();
   });
 
   it('対戦カードは自動生成なので bracket / schedule は指定できない', () => {
-    expect(() => parseBot({ bracket: { slots: ['p1', 'p2'] } })).toThrow(/bracket/);
-    expect(() => parseBot({ schedule: { pairs: [['p1', 'p2']] } })).toThrow(/schedule/);
+    expect(() => parseBot({}, { bracket: { slots: ['p1', 'p2'] } })).toThrow(/bracket/);
+    expect(() => parseBot({}, { schedule: { pairs: [['p1', 'p2']] } })).toThrow(/schedule/);
   });
 });

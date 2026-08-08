@@ -7,7 +7,12 @@ const IGNORE_INVALID = 10;
 
 const UNKNOWN_METHOD: Method = { team: Team.UNKNOWN, action: Action.UNKNOWN, rote: Rote.UNKNOWN };
 
-function sanitizeName(raw: string): string {
+/**
+ * プレイヤー名として受け入れられる形に整える。
+ * TCP で送られてきた名前と、プログラムのソースから拾った名前 (programName.ts) の
+ * 両方でこれを通し、表示される値が経路によってブレないようにする。
+ */
+export function sanitizeName(raw: string): string {
   return raw
     .replace(/[\r\n\u2028\u2029\u202A-\u202F\u200B\t\f\v\uFFFD]/g, "")
     .slice(0, 100);
@@ -41,7 +46,7 @@ export class TcpClient extends BaseClient {
     });
   }
 
-  /** Resolves once a client connects and sends its team name. */
+  /** Resolves once a client connects and sends its player name. */
   waitForClient(): Promise<void> {
     return new Promise((resolve) => {
       this.server.once('connection', (socket) => {
@@ -54,7 +59,7 @@ export class TcpClient extends BaseClient {
         socket.on('error', () => this.onDisconnect());
         this.emit('connected');
 
-        // First data arriving on the socket is the team name.
+        // First data arriving on the socket is the player name.
         socket.once('data', (data) => {
           const str = data.toString('utf8');
           const nlIdx = str.indexOf('\n');

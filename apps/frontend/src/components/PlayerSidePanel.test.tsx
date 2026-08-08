@@ -3,7 +3,7 @@ import { render } from '@testing-library/react';
 import type { GameStateSnapshot, RoundResult, ServerStatusPayload } from '@u15/ws-types';
 import { DEFAULT_DISPLAY_PREFS, Reason, Winner } from '@u15/ws-types';
 import { PlayerSidePanel } from './PlayerSidePanel';
-import { PENALTY_COLOR, WIN_BASE } from '../styles/tokens';
+import { PENALTY_COLOR, WIN_BASE } from '../ui';
 
 // 2ゲーム制パネルの明細表示の検証。ボーナスの符号と色 (加点=ミント / 減点=オレンジ) は
 // 決着理由に依存するため、CPU 対戦では狙って再現しづらい。ここでゲーム結果を直接

@@ -5,10 +5,9 @@ import { useTextures, type TextureKey } from '../hooks/useTextures';
 import { MAP_SIZES, useMapGenParams } from '../hooks/useMapGenParams';
 import {
   BG_ROOT, BG_CARD, BORDER_COLOR, COOL_COLOR, COOL_PALE,
-  TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
-  WIN_BASE, SHADOW_MD, RADIUS_MD, RADIUS_SM,
-  FONT_UI, FONT_NUM,
-} from '../styles/tokens';
+  TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED, RADIUS_SM,
+  Button, Checkbox, Dialog, NumberInput, Select, TextInput,
+} from '../ui';
 
 export interface EditableMap {
   field: MapObject[][];
@@ -212,108 +211,81 @@ export function MapEditorDialog({ initialMap, theme, httpBase, onApply, onSaveTo
   const items  = countObj(map.field, MapObject.ITEM);
 
   return (
-    <div style={s.overlay} onClick={onClose}>
-      <div style={s.dialog} onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div style={s.header}>
-          <span style={s.title}>マップエディタ</span>
-          <button style={s.closeBtn} onClick={onClose}>✕</button>
-        </div>
+    <Dialog title="マップエディタ" onClose={onClose} maxHeight="95vh" bodyStyle={s.content}>
+      <canvas
+        ref={canvasRef}
+        width={W} height={H}
+        style={s.canvas}
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={onMouseUp}
+        onMouseLeave={onMouseUp}
+      />
 
-        <div style={s.content}>
-          {/* Canvas */}
-          <canvas
-            ref={canvasRef}
-            width={W} height={H}
-            style={{ display: 'block', cursor: 'crosshair', imageRendering: 'pixelated', border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM }}
-            onMouseDown={onMouseDown}
-            onMouseMove={onMouseMove}
-            onMouseUp={onMouseUp}
-            onMouseLeave={onMouseUp}
-          />
+      <div style={s.sidebar}>
+        <Label>フィールドサイズ</Label>
+        <Select value={gen.sizeIdx} onChange={e => setGen({ sizeIdx: Number(e.target.value) })}>
+          {MAP_SIZES.map((sz, i) => <option key={i} value={i}>{sz.label}</option>)}
+        </Select>
+        <Button size="sm" onClick={handleRandom} disabled={generating}>
+          {generating ? '生成中...' : 'ランダム生成'}
+        </Button>
+        <span style={s.hint}>サイズはランダム生成でのみ反映されます</span>
 
-          {/* Sidebar */}
-          <div style={s.sidebar}>
-            {/* サイズ */}
-            <Label>フィールドサイズ</Label>
-            <select value={gen.sizeIdx} onChange={e => setGen({ sizeIdx: Number(e.target.value) })} style={s.select}>
-              {MAP_SIZES.map((sz, i) => <option key={i} value={i}>{sz.label}</option>)}
-            </select>
-            <button style={s.btnSm} onClick={handleRandom} disabled={generating}>
-              {generating ? '生成中...' : 'ランダム生成'}
-            </button>
-            <span style={s.hint}>サイズはランダム生成でのみ反映されます</span>
+        <Divider />
 
-            <Divider />
+        <Label>ツール</Label>
+        {(['nothing', 'block', 'item', 'start'] as Tool[]).map(t => (
+          <ToolBtn key={t} active={tool === t} onClick={() => setTool(t)}>
+            {TOOL_LABELS[t]}
+          </ToolBtn>
+        ))}
+        <label style={s.checkRow}>
+          <Checkbox checked={symmetry} onChange={e => setSymmetry(e.target.checked)} />
+          <span style={s.checkLabel}>対称配置</span>
+        </label>
 
-            {/* ツール */}
-            <Label>ツール</Label>
-            {(['nothing', 'block', 'item', 'start'] as Tool[]).map(t => (
-              <ToolBtn key={t} active={tool === t} onClick={() => setTool(t)}>
-                {TOOL_LABELS[t]}
-              </ToolBtn>
-            ))}
-            <div style={s.checkRow}>
-              <input type="checkbox" checked={symmetry} onChange={e => setSymmetry(e.target.checked)} />
-              <span style={s.checkLabel}>対称配置</span>
-            </div>
+        <Divider />
 
-            <Divider />
+        <Label>ターン数</Label>
+        <NumberInput
+          min={10} max={500} step={10}
+          value={map.turn}
+          onChange={e => setMap(prev => ({ ...prev, turn: Number(e.target.value) }))}
+        />
 
-            {/* ターン */}
-            <Label>ターン数</Label>
-            <input
-              type="number" min={10} max={500} step={10}
-              value={map.turn}
-              onChange={e => setMap(prev => ({ ...prev, turn: Number(e.target.value) }))}
-              style={s.numInput}
-            />
+        <Divider />
 
-            <Divider />
+        <Label>オブジェクト数</Label>
+        <div style={s.countRow}><span style={s.countLabel}>ブロック</span><span>{blocks}</span></div>
+        <div style={s.countRow}><span style={s.countLabel}>アイテム</span><span>{items}</span></div>
 
-            {/* カウント */}
-            <Label>オブジェクト数</Label>
-            <div style={s.countRow}><span style={s.countLabel}>ブロック</span><span>{blocks}</span></div>
-            <div style={s.countRow}><span style={s.countLabel}>アイテム</span><span>{items}</span></div>
+        <Divider />
 
-            <Divider />
+        <Button size="sm" onClick={handleClear}>全消し</Button>
 
-            <button style={s.btnSm} onClick={handleClear}>全消し</button>
+        <Divider />
 
-            <Divider />
+        {/* ランダム生成・編集したマップを残す手段。名前が無いと保存先が決まらない */}
+        <Label>マップ名</Label>
+        <TextInput
+          value={name}
+          onChange={e => setName(e.target.value)}
+          placeholder="保存・DL 用の名前"
+        />
+        <Button size="sm" disabled={!trimmedName} onClick={handleSaveToLibrary}>
+          ライブラリに保存
+        </Button>
+        <Button size="sm" disabled={!trimmedName} onClick={handleDownload}>
+          ダウンロード
+        </Button>
 
-            {/* このマップを残す */}
-            <Label>マップ名</Label>
-            <input
-              type="text"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="保存・DL 用の名前"
-              style={s.textInput}
-            />
-            <button
-              style={{ ...s.btnSm, ...(trimmedName ? {} : s.btnDisabled) }}
-              disabled={!trimmedName}
-              onClick={handleSaveToLibrary}
-            >
-              ライブラリに保存
-            </button>
-            <button
-              style={{ ...s.btnSm, ...(trimmedName ? {} : s.btnDisabled) }}
-              disabled={!trimmedName}
-              onClick={handleDownload}
-            >
-              ダウンロード
-            </button>
+        <Divider />
 
-            <Divider />
-
-            <button style={s.btnPrimary} onClick={handleApply}>適用して閉じる</button>
-            <button style={s.btnSm} onClick={onClose}>キャンセル</button>
-          </div>
-        </div>
+        <Button variant="primary" size="md" onClick={handleApply}>適用して閉じる</Button>
+        <Button size="sm" onClick={onClose}>キャンセル</Button>
       </div>
-    </div>
+    </Dialog>
   );
 }
 
@@ -340,55 +312,20 @@ function ToolBtn({ active, onClick, children }: { active: boolean; onClick: () =
 }
 
 const s: Record<string, React.CSSProperties> = {
-  overlay: {
-    position: 'fixed', inset: 0, background: 'rgba(30,24,48,0.4)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
+  content: { display: 'flex', gap: 12, padding: 12, background: BG_ROOT },
+  canvas: {
+    display: 'block', cursor: 'crosshair', imageRendering: 'pixelated',
+    border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM,
   },
-  dialog: {
-    background: BG_CARD, borderRadius: RADIUS_MD, boxShadow: SHADOW_MD,
-    display: 'flex', flexDirection: 'column', maxHeight: '95vh', overflow: 'hidden',
-    color: TEXT_PRIMARY, fontFamily: FONT_UI,
-  },
-  header: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    padding: '12px 16px', borderBottom: `1px solid ${BORDER_COLOR}`, flexShrink: 0,
-  },
-  title:    { fontSize: 14, fontWeight: 800 },
-  closeBtn: { background: 'none', border: 'none', color: TEXT_MUTED, fontSize: 16, cursor: 'pointer' },
-  content:  { display: 'flex', flex: 1, minHeight: 0, gap: 12, padding: 12, overflow: 'auto', background: BG_ROOT },
-  sidebar:  { display: 'flex', flexDirection: 'column', gap: 6, minWidth: 130 },
-  select: {
-    padding: '4px 8px', background: BG_CARD, border: `1px solid ${BORDER_COLOR}`,
-    borderRadius: RADIUS_SM, color: TEXT_PRIMARY, fontSize: 11,
-  },
-  numInput: {
-    width: 80, padding: '4px 8px', background: BG_CARD,
-    border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM, color: TEXT_PRIMARY,
-    fontSize: 12, fontFamily: FONT_NUM,
-  },
-  textInput: {
-    width: '100%', boxSizing: 'border-box', padding: '4px 8px', background: BG_CARD,
-    border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM, color: TEXT_PRIMARY,
-    fontSize: 11, fontFamily: FONT_UI,
-  },
+  sidebar:  { display: 'flex', flexDirection: 'column', gap: 6, width: 150, flexShrink: 0 },
   hint: { fontSize: 9, lineHeight: 1.5, color: TEXT_MUTED },
   toolBtn: {
-    padding: '6px 0', border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM,
+    padding: '6px 0 6px 8px', border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM,
     background: BG_CARD, color: TEXT_SECONDARY, fontSize: 11, cursor: 'pointer', textAlign: 'left',
-    paddingLeft: 8,
   },
   toolBtnActive: { border: `1px solid ${COOL_COLOR}`, background: COOL_PALE, color: COOL_COLOR },
-  checkRow:  { display: 'flex', alignItems: 'center', gap: 6 },
+  checkRow:   { display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' },
   checkLabel: { fontSize: 11, color: TEXT_SECONDARY },
-  countRow:  { display: 'flex', justifyContent: 'space-between', fontSize: 12 },
+  countRow:   { display: 'flex', justifyContent: 'space-between', fontSize: 12 },
   countLabel: { color: TEXT_SECONDARY },
-  btnSm: {
-    padding: '6px 0', border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM,
-    background: BG_CARD, color: TEXT_SECONDARY, fontSize: 11, cursor: 'pointer',
-  },
-  btnPrimary: {
-    padding: '8px 0', border: 'none', borderRadius: RADIUS_SM,
-    background: WIN_BASE, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
-  },
-  btnDisabled: { opacity: 0.4, cursor: 'not-allowed' },
 };

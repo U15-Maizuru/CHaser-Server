@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { TournamentStatePayload } from '@u15/ws-types';
-import { hasBotStage, hasQualifying } from '@u15/ws-types';
+import { advancePerGroupOf, hasBotStage, hasQualifying } from '@u15/ws-types';
 import { isTournamentComplete } from '../../lib/tournamentResult';
 import { FitArea } from '../FitArea';
 import { BotStageBoard } from './BotStageBoard';
@@ -8,7 +8,7 @@ import { BracketView } from './BracketView';
 import { LeagueTable } from './LeagueTable';
 import {
   BORDER_COLOR, COOL_COLOR, FONT_UI, RADIUS_SM, TEXT_PRIMARY, TEXT_SECONDARY,
-} from '../../styles/tokens';
+} from '../../ui';
 
 // 「予選 + 決勝トーナメント」の全体像。予選の表と決勝トーナメント表を切り替えて見せる。
 //
@@ -41,7 +41,7 @@ export function autoQualifyingPhase(state: TournamentStatePayload): {
   // 予選を持たない形式に「予選表」は無いので、常に決勝側 (通常のトーナメント表 / リーグ表)。
   // ここを 'groups' に倒すと、観戦画面の表彰画面 (shouldShowFinale) が
   // **トーナメント・リーグの大会で永久に出ない**
-  if (!hasQualifying(state.format))  return { phase: 'bracket', holdingResult: false };
+  if (!hasQualifying(state.stage.format))  return { phase: 'bracket', holdingResult: false };
   if (!isQualifyingFinished(state))  return { phase: 'groups',  holdingResult: false };
   if (state.qualifiersConfirmed)     return { phase: 'bracket', holdingResult: false };
   return { phase: 'groups', holdingResult: true };
@@ -65,7 +65,7 @@ export function displayQualifyingPhase(state: TournamentStatePayload | null): {
 
 /** 予選の呼び名。見出し・タブ・据え置きの文言で使う */
 export function qualifyingLabel(state: TournamentStatePayload): string {
-  return hasBotStage(state.format) ? 'BOT対戦予選' : '予選リーグ';
+  return hasBotStage(state.stage.format) ? 'BOT対戦予選' : '予選リーグ';
 }
 
 /**
@@ -122,7 +122,7 @@ export function QualifyingView({
     <BracketView
       matches={bracketMatches}
       participants={state.participants}
-      format={state.format}
+      format={state.stage.format}
       upcomingId={state.armedMatchId}
       finishedId={finishedMatchId}
       interactive={interactive}
@@ -131,7 +131,7 @@ export function QualifyingView({
       fit
       maxScale={maxScale}
     />
-  ) : hasBotStage(state.format) ? (
+  ) : hasBotStage(state.stage.format) ? (
     <BotStageBoard
       state={state}
       maxScale={maxScale}
@@ -145,7 +145,7 @@ export function QualifyingView({
     <FitArea maxScale={maxScale}>
       {/*
         見出し / 星取表 / 順位表 を3行のグリッドに流し込む (列 = リーグ)。
-        リーグごとにチーム数が違うと星取表の高さが変わるので、素直に縦積みすると
+        リーグごとにプレイヤー数が違うと星取表の高さが変わるので、素直に縦積みすると
         その下の順位表の位置がリーグ間でずれる。行の高さはいちばん高い塊にそろうため、
         グリッドに載せれば星取表の高さに関係なく順位表の上端がそろう。
       */}
@@ -161,7 +161,7 @@ export function QualifyingView({
             participants={state.participants.filter(p => g.participantIds.includes(p.id))}
             standings={g.standings}
             // 順位表は「決勝トーナメントへ上がる順位まで」を強調する
-            advanceCount={state.rules.advancePerGroup}
+            advanceCount={advancePerGroupOf(state.stage)}
             qualifiedIds={overriddenQualifiers(state, g.group)}
             upcomingMatchId={state.armedMatchId}
             finishedMatchId={finishedMatchId}
@@ -205,7 +205,7 @@ const root: React.CSSProperties = {
 const board_: React.CSSProperties = { flex: 1, minHeight: 0 };
 
 // 列 = リーグ、行 = 見出し / 星取表 / 順位表。行の高さが最大値にそろうので、
-// チーム数の違うリーグ同士でも順位表の上端が一直線に並ぶ
+// プレイヤー数の違うリーグ同士でも順位表の上端が一直線に並ぶ
 const groupsGrid: React.CSSProperties = {
   display: 'grid', gridTemplateRows: 'auto auto auto',
   // **列方向に流すこと。** 既定 (row) だと1リーグぶんの3つが横に並んでしまい、

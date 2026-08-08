@@ -1,12 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import type { ParticipantDef } from '@u15/ws-types';
-import { buildBracket, bracketSizeFor, orderBySeed, seedOrder } from './bracket.js';
+import { bracketSizeFor, seedOrder } from '@u15/ws-types';
+import { buildBracket, orderBySeed } from './bracket.js';
 import { captureResult, confirmResult, resolveMatches } from './progress.js';
 
 function people(n: number): ParticipantDef[] {
   return Array.from({ length: n }, (_, i) => ({
     id: `p${String(i + 1).padStart(2, '0')}`,
-    name: `チーム${i + 1}`,
+    name: `プレイヤー${i + 1}`,
     seed: i + 1,
     program: null,
   }));

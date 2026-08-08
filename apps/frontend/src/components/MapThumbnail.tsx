@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { MapObject } from '@u15/ws-types';
 import type { Point } from '@u15/ws-types';
 import type { TextureKey } from '../hooks/useTextures';
-import { BORDER_COLOR, RADIUS_SM } from '../styles/tokens';
+import { BORDER_COLOR, RADIUS_SM } from '../ui';
 
 interface Props {
   field:          MapObject[][];

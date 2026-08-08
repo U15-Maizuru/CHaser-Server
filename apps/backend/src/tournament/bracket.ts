@@ -4,10 +4,8 @@ import { bracketSizeFor, seedOrder, stageLabel } from '@u15/ws-types';
 // トーナメント (勝ち上がり) の試合グラフを組み立てる純関数。
 // 結果の反映・slot の解決は progress.ts が行う。ここは構造だけを作る。
 //
-// 1回戦の並べ方 (seedOrder / bracketSizeFor) と回戦名 (stageLabel) は大会データ作成 UI と
-// 共有するため @u15/ws-types にある。ここからも従来どおり import できるよう re-export しておく。
-
-export { bracketSizeFor, seedOrder, stageLabel };
+// 1回戦の並べ方 (seedOrder / bracketSizeFor) と回戦名 (stageLabel) は、大会データ作成 UI が
+// 同じ並びを初期値として見せる必要があるので @u15/ws-types にある。
 
 /**
  * 参加者を「選手番号」順に並べる。

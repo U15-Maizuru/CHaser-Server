@@ -18,7 +18,7 @@ import {
   SHADOW_SM, SHADOW_MD, BORDER_COLOR,
   RADIUS_SM, RADIUS_LG,
   FONT_UI, FONT_NUM,
-} from '../styles/tokens';
+} from '../ui';
 
 interface Props {
   snapshot:        GameStateSnapshot   | null;
@@ -334,7 +334,7 @@ export function MainWindow({
               ? 'minmax(0, 1fr) auto minmax(0, 1fr)'
               : 'auto minmax(0, 1fr) auto',
           }}>
-            {/* 列1 (左): 左側チームが勝者のときだけ結果ピルを表示。それ以外は空 */}
+            {/* 列1 (左): 左側プレイヤーが勝者のときだけ結果ピルを表示。それ以外は空 */}
             {gameEnd && leftIsWinner && (
               <span style={{
                 ...s.resultPill, gridColumn: '1',
@@ -361,7 +361,7 @@ export function MainWindow({
               <span style={s.drawPill}>{drawText(gameEnd)}</span>
             )}
 
-            {/* 列3 (右): 右側チームが勝者のときだけ結果ピルを表示。列1と対称構造
+            {/* 列3 (右): 右側プレイヤーが勝者のときだけ結果ピルを表示。列1と対称構造
                 (アクションボタンは BottomBar.tsx が別途担当するため、ここでは扱わない) */}
             {gameEnd && rightIsWinner && (
               <span style={{

@@ -1,9 +1,10 @@
 import type { StandingRow, TournamentMatch, TournamentStatePayload } from '@u15/ws-types';
+import { advancePerGroupOf } from '@u15/ws-types';
 import { FitArea } from '../FitArea';
 import {
   BG_CARD, BG_ROOT, BORDER_COLOR, COOL_PALE, FONT_NUM, FONT_UI, GOLD_BASE, GOLD_LIGHT,
   RADIUS_SM, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE, WIN_LIGHT,
-} from '../../styles/tokens';
+} from '../../ui';
 
 // BOT対戦予選の進行画面。エントリーリスト (左) と 試合結果の順位リスト (右) の2枚。
 //
@@ -45,7 +46,7 @@ export function BotStageBoard({
     (state.qualifierCandidates ?? []).filter(c => c.excluded).map(c => c.participantId),
   );
 
-  const advanceCount = state.rules.advancePerGroup;
+  const advanceCount = advancePerGroupOf(state.stage);
   // 通過圏は「削除されていない人の中での位置」で塗る。削除は運営が確認リストで行う操作なので、
   // その結果がそのまま観客の見る通過ラインに反映される
   const ranked = standings.filter(s => !excluded.has(s.participantId));
@@ -62,7 +63,7 @@ export function BotStageBoard({
         <thead>
           <tr>
             <th style={th}>No.</th>
-            <th style={{ ...th, textAlign: 'left' }}>チーム</th>
+            <th style={{ ...th, textAlign: 'left' }}>プレイヤー</th>
             <th style={th}>状態</th>
           </tr>
         </thead>
@@ -109,7 +110,7 @@ export function BotStageBoard({
           <thead>
             <tr>
               <th style={th}>順位</th>
-              <th style={{ ...th, textAlign: 'left' }}>チーム</th>
+              <th style={{ ...th, textAlign: 'left' }}>プレイヤー</th>
               <th style={th}>結果</th>
               <th style={th}>ポイント</th>
               <th style={th}>一撃</th>

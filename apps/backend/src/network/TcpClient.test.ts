@@ -29,7 +29,7 @@ describe('TcpClient', () => {
     server.close();
   });
 
-  it('クライアント接続とチーム名取得', async () => {
+  it('クライアント接続とプレイヤー名取得', async () => {
     const connectPromise = server.waitForClient();
     const sock = await connectClient(TEST_PORT);
     sock.write('TestTeam\n');

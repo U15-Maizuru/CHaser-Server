@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { leagueRulesOf } from '@u15/ws-types';
+import { stageRulesFor } from '../../test/tournamentFixture';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { TournamentDefinition } from '@u15/ws-types';
 import { TournamentEditorDialog } from './TournamentEditorDialog';
@@ -31,7 +33,8 @@ beforeEach(() => {
     if (url.endsWith('/api/programs')) {
       return Promise.resolve(jsonRes({
         entries: [
-          { id: 'cat-1', displayName: '舞鶴A v3' },
+          // cat-1 はソースにプレイヤー名が書かれているプログラム、cat-2 は書かれていないもの
+          { id: 'cat-1', displayName: '舞鶴A v3', declaredName: '舞鶴A' },
           { id: 'cat-2', displayName: '舞鶴B v1' },
         ],
       }));
@@ -132,9 +135,9 @@ describe('TournamentEditorDialog — 新規作成', () => {
     await waitFor(() => expect(sentDefinition().name).toBe('第1回 舞鶴杯'));
     const def = sentDefinition();
     expect(def.id).toBe('maizuru-2026');
-    expect(def.format).toBe('single-elimination');
-    expect(def.rules.doubleMode).toBe(true);
-    expect(def.rules.mapCatalogId).toBeNull();
+    expect(def.stage.format).toBe('single-elimination');
+    expect(def.match.doubleMode).toBe(true);
+    expect(def.stage.map.catalogId).toBeNull();
     expect(def.participants.map(p => p.name)).toEqual(['舞鶴A', '舞鶴B', '舞鶴C']);
     // 表示順がそのまま選手番号になる (小さいほど第1ゲームで先攻)
     expect(def.participants.map(p => p.seed)).toEqual([1, 2, 3]);
@@ -158,7 +161,7 @@ describe('TournamentEditorDialog — 新規作成', () => {
 
       await waitFor(() => expect(calls.some(c => c.url.includes('/import'))).toBe(true));
       // index が stage。未指定の準決勝は null (大会の設定に従う)
-      expect(sentDefinition().rules.stageMaps).toEqual([null, 'map-1']);
+      expect(sentDefinition().stage.map.bracketStages).toEqual([null, 'map-1']);
     });
 
     it('参加者を減らして回戦が減ったら、その回戦の指定は保存されない', async () => {
@@ -175,7 +178,7 @@ describe('TournamentEditorDialog — 新規作成', () => {
       fireEvent.click(screen.getByText('この内容で作成'));
 
       await waitFor(() => expect(calls.some(c => c.url.includes('/import'))).toBe(true));
-      expect(sentDefinition().rules.stageMaps).toEqual([null]);
+      expect(sentDefinition().stage.map.bracketStages).toEqual([null]);
     });
 
     it('リーグでは出さない (節ごとのマップは扱わない)', () => {
@@ -234,6 +237,97 @@ describe('TournamentEditorDialog — 新規作成', () => {
     });
   });
 
+  // プログラムのソースに書かれた名前 (CatalogEntry.declaredName) は、そのまま対戦画面の
+  // スコアバーに出る名前でもある。手入力の手間を省くため初期値として入れるが、
+  // 運営が付けた名前を勝手に書き換えてしまわないことのほうが大事。
+  describe('プログラム由来のプレイヤー名', () => {
+    /** 名前が空欄の行を作る (まとめて追加は名前必須なので個別追加を使う) */
+    async function renderWithEmptyRow() {
+      renderNew();
+      fireEvent.click(screen.getByText('+ 1人追加'));
+      // ライブラリの選択肢は非同期に届く。option が生えるまで待たないと change が無視される
+      await waitFor(() =>
+        expect(screen.getByLabelText('参加者1 のプログラム')).toHaveTextContent('舞鶴A v3'));
+    }
+
+    const nameInput = () => screen.getByLabelText('参加者1 の名前') as HTMLInputElement;
+    const pickProgram = (value: string) =>
+      fireEvent.change(screen.getByLabelText('参加者1 のプログラム'), { target: { value } });
+
+    it('空欄の行にプログラムを選ぶと、プログラムが名乗る名前が初期値として入る', async () => {
+      await renderWithEmptyRow();
+      pickProgram('lib:cat-1');
+      expect(nameInput().value).toBe('舞鶴A');
+    });
+
+    it('名前を書いていないプログラムなら空欄のまま', async () => {
+      await renderWithEmptyRow();
+      pickProgram('lib:cat-2');
+      expect(nameInput().value).toBe('');
+    });
+
+    it('内蔵CPU や未提出では初期値を入れない', async () => {
+      await renderWithEmptyRow();
+      pickProgram('cpu');
+      expect(nameInput().value).toBe('');
+    });
+
+    it('初期値はあとからユーザーが変更できる', async () => {
+      await renderWithEmptyRow();
+      pickProgram('lib:cat-1');
+      fireEvent.change(nameInput(), { target: { value: '舞鶴中学A' } });
+      expect(nameInput().value).toBe('舞鶴中学A');
+    });
+
+    it('手で入力した名前はプログラムを選んでも上書きされない', async () => {
+      await renderWithEmptyRow();
+      fireEvent.change(nameInput(), { target: { value: '舞鶴中学A' } });
+      pickProgram('lib:cat-1');
+      expect(nameInput().value).toBe('舞鶴中学A');
+    });
+
+    it('初期値のまま別のプログラムに替えると追従し、名前なしなら空欄へ戻る', async () => {
+      await renderWithEmptyRow();
+      pickProgram('lib:cat-1');
+      expect(nameInput().value).toBe('舞鶴A');
+      pickProgram('lib:cat-2');
+      expect(nameInput().value).toBe('');
+      pickProgram('lib:cat-1');
+      expect(nameInput().value).toBe('舞鶴A');
+    });
+
+    it('初期値を手で直したあとはプログラムを替えても保持される', async () => {
+      await renderWithEmptyRow();
+      pickProgram('lib:cat-1');
+      fireEvent.change(nameInput(), { target: { value: '舞鶴中学A' } });
+      pickProgram('lib:cat-2');
+      expect(nameInput().value).toBe('舞鶴中学A');
+    });
+
+    it('まとめて追加で名前を付けた行は上書きされない', async () => {
+      renderNew();
+      addParticipants(['舞鶴中学A', '舞鶴中学B']);
+      await waitFor(() =>
+        expect(screen.getByLabelText('参加者1 のプログラム')).toHaveTextContent('舞鶴A v3'));
+      pickProgram('lib:cat-1');
+      expect(nameInput().value).toBe('舞鶴中学A');
+    });
+
+    it('入った初期値はそのまま定義の参加者名として保存される', async () => {
+      renderNew();
+      fireEvent.change(screen.getByLabelText('大会名'), { target: { value: 'テスト杯' } });
+      fireEvent.click(screen.getByText('+ 1人追加'));
+      addParticipants(['舞鶴B']);
+      await waitFor(() =>
+        expect(screen.getByLabelText('参加者1 のプログラム')).toHaveTextContent('舞鶴A v3'));
+      pickProgram('lib:cat-1');
+      fireEvent.click(screen.getByText('この内容で作成'));
+
+      await waitFor(() => expect(calls.some(c => c.url.includes('/import'))).toBe(true));
+      expect(sentDefinition().participants.map(p => p.name)).toEqual(['舞鶴A', '舞鶴B']);
+    });
+  });
+
   it('リーグを選ぶと勝ち点と2回総当たりが編集でき、定義に入る', async () => {
     renderNew();
     fireEvent.change(screen.getByLabelText('大会名'), { target: { value: 'リーグ杯' } });
@@ -249,9 +343,10 @@ describe('TournamentEditorDialog — 新規作成', () => {
 
     await waitFor(() => expect(calls.some(c => c.url.includes('/import'))).toBe(true));
     const def = sentDefinition();
-    expect(def.format).toBe('league');
-    expect(def.rules.leaguePoints).toEqual({ win: 2, draw: 1, loss: 0 });
-    expect(def.rules.doubleRoundRobin).toBe(true);
+    expect(def.stage.format).toBe('league');
+    expect(leagueRulesOf(def.stage)).toEqual({
+      points: { win: 2, draw: 1, loss: 0 }, doubleRoundRobin: true,
+    });
   });
 
   it('予選リーグ + 決勝トーナメントを作れる', async () => {
@@ -267,9 +362,9 @@ describe('TournamentEditorDialog — 新規作成', () => {
     await waitFor(() => expect(calls.some(c => c.url.includes('/import'))).toBe(true));
 
     const def = sentDefinition();
-    expect(def.format).toBe('group-then-bracket');
-    expect(def.rules.groupCount).toBe(2);
-    expect(def.rules.advancePerGroup).toBe(2);
+    expect(def.stage).toMatchObject({
+      format: 'group-then-bracket', groupCount: 2, advancePerGroup: 2,
+    });
     // 選手番号順に蛇行 (A,B,B,A,A,B)
     expect(def.participants.map(p => p.group)).toEqual([0, 1, 1, 0, 0, 1]);
   });
@@ -318,7 +413,7 @@ describe('TournamentEditorDialog — 新規作成', () => {
     fireEvent.click(screen.getByText('この内容で作成'));
 
     await waitFor(() => expect(calls.some(c => c.url.includes('/import'))).toBe(true));
-    expect(sentDefinition().rules.mapCatalogId).toBe('map-1');
+    expect(sentDefinition().stage.map.catalogId).toBe('map-1');
   });
 });
 
@@ -391,12 +486,8 @@ describe('TournamentEditorDialog — 編集', () => {
     formatVersion: 1,
     id:     'cup-a',
     name:   '既存の杯',
-    format: 'single-elimination',
-    rules: {
-      doubleMode: true, mapCatalogId: null, stageMaps: [], thirdPlaceMatch: true,
-      leaguePoints: { win: 3, draw: 1, loss: 0 }, doubleRoundRobin: false, groupCount: 2, advancePerGroup: 2,
-      botProgram: null, botName: null, botStageMap: null, participantSide: 0,
-    },
+    match: { doubleMode: true },
+    stage: { ...stageRulesFor('single-elimination'), thirdPlaceMatch: true },
     participants: [
       { id: 'x1', name: '舞鶴A', seed: 2, program: { kind: 'builtin', builtin: 'cpu' } },
       { id: 'x2', name: '舞鶴B', seed: 1, program: { kind: 'file', file: 'programs/b.py' } },
@@ -493,7 +584,7 @@ describe('TournamentEditorDialog — 編集', () => {
 
     const rows = screen.getAllByTestId('participant-row');
     // seed 1,2,3 の順 = 舞鶴B, 舞鶴A, 舞鶴C
-    expect(rows.map(r => (within(r).getByPlaceholderText('チーム名') as HTMLInputElement).value))
+    expect(rows.map(r => (within(r).getByPlaceholderText('プレイヤー名') as HTMLInputElement).value))
       .toEqual(['舞鶴B', '舞鶴A', '舞鶴C']);
   });
 

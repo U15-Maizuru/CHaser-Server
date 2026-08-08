@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { stageRulesFor } from '../../test/tournamentFixture';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import type {
+  TournamentFormat,
   ResolvedParticipant, StandingRow, TournamentMatch, TournamentStatePayload,
 } from '@u15/ws-types';
 import { TournamentStandby } from './TournamentStandby';
@@ -43,18 +45,14 @@ function standing(participantId: string, rank: number): StandingRow {
 }
 
 function state(
-  format: TournamentStatePayload['format'],
+  format: TournamentFormat,
   matches: TournamentMatch[],
   standings: StandingRow[] | null = null,
 ): TournamentStatePayload {
   return {
-    tournamentId: 'cup', name: 'テスト杯', format,
-    rules: {
-      doubleMode: false, mapCatalogId: null, stageMaps: [],
-      thirdPlaceMatch: false, leaguePoints: { win: 3, draw: 1, loss: 0 },
-      doubleRoundRobin: false, groupCount: 2, advancePerGroup: 2,
-      botProgram: null, botName: null, botStageMap: null, participantSide: 0,
-    },
+    tournamentId: 'cup', name: 'テスト杯',
+    match: { doubleMode: false },
+    stage: stageRulesFor(format),
     participants, matches, standings, groups: null, qualifiers: null, qualifierCandidates: null, stageMaps: [], stageLabels: [],
     qualifiersConfirmed: false,
     displayView: 'auto', autoPlay: { enabled: false, loop: false, stoppedReason: null },

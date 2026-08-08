@@ -4,7 +4,7 @@ import { buildLeague } from './league.js';
 
 function people(n: number): ParticipantDef[] {
   return Array.from({ length: n }, (_, i) => ({
-    id: `p${i + 1}`, name: `チーム${i + 1}`, seed: i + 1, program: null,
+    id: `p${i + 1}`, name: `プレイヤー${i + 1}`, seed: i + 1, program: null,
   }));
 }
 

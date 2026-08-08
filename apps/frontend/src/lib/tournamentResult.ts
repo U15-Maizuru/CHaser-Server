@@ -75,7 +75,7 @@ export function winnerNameOf(state: TournamentStatePayload, m: TournamentMatch):
  * リーグ       … 順位表の上位3位。同着は連名で、飛んだ順位 (1位同着なら2位) は出さない
  */
 export function podiumOf(state: TournamentStatePayload): PodiumRow[] {
-  return state.format === 'league' ? leaguePodium(state) : eliminationPodium(state);
+  return state.stage.format === 'league' ? leaguePodium(state) : eliminationPodium(state);
 }
 
 function eliminationPodium(state: TournamentStatePayload): PodiumRow[] {
