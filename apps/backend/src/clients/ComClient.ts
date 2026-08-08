@@ -10,13 +10,17 @@ const DIRS = [
 ] as const;
 
 export class ComClient extends BaseClient {
+  /** 管理画面での表示。SlotManager も接続前の表示に使うので、値はここが出どころ */
+  static readonly DISPLAY_NAME = 'CPU';
+  static readonly DISPLAY_IP   = 'ローカル';
+
   private readonly team: Team;
 
   constructor(slot: 0 | 1) {
     super();
     this.team = slot === 0 ? Team.COOL : Team.HOT;
-    this.name = 'CPU';
-    this.ip = 'ローカル';
+    this.name = ComClient.DISPLAY_NAME;
+    this.ip   = ComClient.DISPLAY_IP;
   }
 
   startup(): void {

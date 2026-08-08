@@ -1,10 +1,10 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useRef } from 'react';
 import type {
   GameStateSnapshot,
   RoundResult,
   ServerStatusPayload,
 } from '@u15/ws-types';
-import { computeSetResult, idxForSide, ITEM_POINT, roundPointsFor, roundWonBy, Winner } from '@u15/ws-types';
+import { computeSetResult, idxForSide, ITEM_POINT, roundPointsFor, Winner } from '@u15/ws-types';
 import {
   BG_CARD,
   COOL_COLOR, COOL_DARK, COOL_PALE,
@@ -17,114 +17,11 @@ import {
   FONT_UI, FONT_NUM,
   teamGradient,
 } from '../ui';
-import { clampNum } from '../lib/num';
+import { buildDim, TEAM_BOX_PAD_H, type PanelDim } from '../lib/panelDim';
+import { computeRoundRow, type RoundRowData } from '../lib/roundRow';
+import { useFitCorrection } from '../hooks/useFitCorrection';
 
 
-// 各試合のポイント明細 (カード幅・文字サイズ・余白) を、盤面の実描画サイズに連動した
-// スケール (MainWindow から渡される幅) に応じて最大化するための寸法。
-interface PanelDim {
-  cardW: number;
-  teamBoxGap: number; teamBoxPadB: number;
-  headerPadV: number; headerPadH: number; headerGap: number; headerMarginB: number;
-  labelFont: number;
-  badgeFont: number; badgePadV: number; badgePadH: number;
-  rowGap: number;
-  ledgerLabelFont: number; ledgerValueFont: number;
-  subLabelFont: number; subValueFont: number;
-  dividerMargin: number;
-  totalPadV: number; totalPadH: number;
-  totalHeaderFont: number; totalHeaderMarginB: number; totalHeaderPadT: number;
-  winsFont: number; winsPadV: number;
-  // 1ゲーム制の合計ポイント: パネル唯一の主役なので、他の数値より広いレンジで大きくする
-  soloTotalLabelFont: number; soloTotalValueFont: number;
-}
-
-// 文字送りの見積り (em)。correction の二分探索は高さ (scrollHeight) しか見ないため、
-// 横方向は「この幅なら何 px まで1行に収まるか」をここから逆算して上限にする。
-//
-// 明細行はラベルと値が同じ行を左右に分け合うため、両方の幅を同時に満たす必要がある。
-/** 明細行の最長ラベル「アイテム」= 全角4文字 + letterSpacing ≒ 4.3em */
-const LEDGER_LABEL_EM = 4.3;
-/** 明細行の値は FONT_NUM (等幅 = 0.6em/文字)。符号付き4桁「+9999pt」= 7文字 ≒ 4.2em + 余裕 */
-const LEDGER_VALUE_EM = 4.4;
-/** ラベル/値のフォントサイズ比。値の下限を割り込むときだけ MIN まで落として値を優先する */
-const LEDGER_LABEL_RATIO     = 0.8;
-const LEDGER_LABEL_RATIO_MIN = 0.65;
-/** これを下回るなら、ラベルを縮めてでも値のフォントを確保する */
-const LEDGER_VALUE_MIN = 12;
-// 総合欄のラベル「合計ポイント」= 全角6文字 + letterSpacing ≒ 6.4em
-const LABEL_EM = 6.4;
-// 1ゲーム制の合計ポイントは符号なし「9999pt」= 6文字 ≒ 3.6em、フォント差の余裕を見て 3.7em
-const POINTS_EM = 3.7;
-// 勝敗表示「1勝0敗1分」= 漢字3 + 数字3 ≒ 4.7em + 余裕
-const WINS_EM = 5.0;
-// s.teamBox の左右パディング (明細行の使える幅を求めるのに使う)
-const TEAM_BOX_PAD_H = 8;
-
-// width: パネルに割り当てられた実際の幅 (px)。150 は基準幅で、これを 1.0 とした相対スケールを
-// 内部要素のフォント/余白計算に使う。correction: 実測した内容の高さがカードの実高さに収まらない
-// 場合に PlayerSidePanel 側で計算する縮小補正 (1 = 補正なし)。幅だけを基準に文字サイズを決めると
-// 横長で縦が狭いウィンドウのときにカードの高さに収まらないため、実際に DOM を測定して補正する
-// (「このくらいの高さになるはず」という事前見積りは実際の余白・行間の誤差で簡単にズレるため、
-// 見積りではなく実測ベースにしている)。
-function buildDim(width: number, correction: number): PanelDim {
-  const scale = (width / 150) * correction;
-
-  // 横方向の余白は先に確定させ、文字が使える実幅を出す
-  const rowGap    = clampNum(6 * scale, 4, 24);
-  const totalPadH = clampNum(8 * scale, 6, 30);
-
-  // 1ゲーム制の合計ポイント欄 (totalSection の内側いっぱいを1要素が使う)
-  const totalInnerW = Math.max(20, width - totalPadH * 2);
-  // 明細行の実幅。teamBox 側と totalSection 側で左右余白が違うため、狭いほうに合わせて
-  // 1種類のフォントサイズを両方で使う
-  const rowsInnerW  = Math.max(20, Math.min(width - TEAM_BOX_PAD_H * 2, totalInnerW));
-  const avail       = Math.max(16, rowsInnerW - rowGap);
-
-  // 値のフォントは幅から逆算する。下限 (LEDGER_VALUE_MIN) を割り込む幅では、ラベル側の
-  // 比率を落として値の可読性を優先する (数字が読めないパネルは意味がないため)。
-  const valueCap = clampNum(16 * scale, 11, 46);
-  let labelRatio = LEDGER_LABEL_RATIO;
-  let ledgerValueFont = Math.min(valueCap, avail / (labelRatio * LEDGER_LABEL_EM + LEDGER_VALUE_EM));
-  if (ledgerValueFont < LEDGER_VALUE_MIN) {
-    labelRatio = LEDGER_LABEL_RATIO_MIN;
-    ledgerValueFont = Math.min(valueCap, avail / (labelRatio * LEDGER_LABEL_EM + LEDGER_VALUE_EM));
-  }
-  const ledgerLabelFont = ledgerValueFont * labelRatio;
-
-  return {
-    cardW: width,
-    teamBoxGap: clampNum(6 * scale, 4, 26),
-    teamBoxPadB: clampNum(7 * scale, 5, 26),
-    headerPadV: clampNum(7 * scale, 5, 30),
-    headerPadH: clampNum(9 * scale, 7, 34),
-    headerGap: clampNum(5 * scale, 4, 20),
-    headerMarginB: clampNum(4 * scale, 3, 16),
-    labelFont: clampNum(14 * scale, 10, 45),
-    badgeFont: clampNum(9 * scale, 7, 26),
-    badgePadV: clampNum(3 * scale, 2, 11),
-    badgePadH: clampNum(7 * scale, 5, 26),
-    rowGap,
-    ledgerLabelFont,
-    ledgerValueFont,
-    // 小計は明細の合計なので一段大きく。ラベルが「小計」= 全角2文字と短いぶん幅は足りる
-    subLabelFont: ledgerLabelFont * 1.05,
-    subValueFont: ledgerValueFont * 1.15,
-    dividerMargin: clampNum(3 * scale, 2, 12),
-    totalPadV: clampNum(7 * scale, 5, 30),
-    totalPadH,
-    totalHeaderFont: clampNum(11 * scale, 8, 34),
-    totalHeaderMarginB: clampNum(5 * scale, 4, 22),
-    totalHeaderPadT: clampNum(4 * scale, 3, 18),
-    // 試合勝者を決める第1基準 (勝利数) はこの欄の主役
-    winsFont: Math.min(clampNum(22 * scale, 13, 64), totalInnerW / WINS_EM),
-    winsPadV: clampNum(4 * scale, 3, 18),
-    // 1ゲーム制は文字が大きいぶん横にあふれやすい。ラベルは1行に収まる上限、
-    // 値は4桁 (9999pt) が収まる上限で頭打ちにする
-    soloTotalLabelFont: Math.min(clampNum(13 * scale, 9, 44), totalInnerW / LABEL_EM),
-    soloTotalValueFont: Math.min(clampNum(30 * scale, 18, 140), totalInnerW / POINTS_EM),
-  };
-}
 
 interface Props {
   side:         0 | 1;
@@ -139,7 +36,6 @@ export function PlayerSidePanel({ side, snapshot, serverStatus, width, maxHeight
   const doubleMode   = serverStatus?.doubleMode   ?? false;
 
   const cardRef = useRef<HTMLDivElement>(null);
-  const [correction, setCorrection] = useState(1);
 
   // 探索の上限。2ゲーム制は行数が多いぶん先に高さが埋まるが、明細行は1行1項目で縦に詰まって
   // いるため、幅基準の等倍 (correction=1) では縦に余ることがある。1ゲーム制は行が「明細3行」と
@@ -147,46 +43,9 @@ export function PlayerSidePanel({ side, snapshot, serverStatus, width, maxHeight
   // clampNum の max と幅からの逆算で頭打ちになるため、上限を上げても青天井にはならない。
   const maxCorrection = doubleMode ? 1.6 : 2.2;
 
-  // 実際の内容の高さ (scrollHeight) を実測し、カードの実高さ (maxHeight) に収まる中で
-  // 最大のフォントサイズ (correction) を二分探索で求める。フォントサイズ→必要な高さの関係は
-  // buildDim 内の各プロパティごとの min/max クランプにより区間ごとに折れ線 (非線形) になって
-  // おり、単純な比例計算では最適値に収束しないため、関数の形に関係なく「収まる最大値」に
-  // 確実に収束する二分探索を用いる。
+  // 中身がカードの実高さに収まる最大の拡大率を実測で求める (詳細は useFitCorrection)
   const key = `${Math.round(width / 5)}|${Math.round(maxHeight / 5)}|${doubleMode}|${roundResults.length}`;
-  const keyRef = useRef(key);
-  const boundsRef = useRef({ lo: 0.35, hi: maxCorrection }); // lo: 収まることが確認済みの最大値 / hi: 収まらないことが確認済みの最小値
-
-  useLayoutEffect(() => {
-    const el = cardRef.current;
-    if (!el || maxHeight <= 0) return;
-
-    if (keyRef.current !== key) {
-      // 幅・高さ・内容の行数が変わったら探索範囲を最初からやり直す
-      keyRef.current = key;
-      boundsRef.current = { lo: 0.35, hi: maxCorrection };
-      if (correction !== 1) setCorrection(1);
-      return; // correction=1 での再描画を待ってから測定する
-    }
-
-    const fits = el.scrollHeight <= maxHeight + 1;
-    let { lo, hi } = boundsRef.current;
-    // 「ゲーム中は空欄・終了後は実値」のようにコンテンツの形が変わると、width/maxHeight/
-    // doubleMode/roundResults.length のどれも変化しないまま探索範囲が [lo,hi] に収束済み
-    // (lo===hi) の状態で実際の要否だけが反転することがある。この場合に再探索が走るよう、
-    // 収まらなかったときは lo を、収まったときは hi を、現在値から確実に離して区間を
-    // 強制的に開き直す。
-    if (fits) {
-      lo = correction;
-      if (hi <= lo) hi = maxCorrection;
-    } else {
-      hi = correction;
-      if (lo >= hi) lo = Math.max(0.35, hi - 0.1);
-    }
-    boundsRef.current = { lo, hi };
-
-    const next = hi - lo > 0.02 ? (lo + hi) / 2 : lo;
-    if (Math.abs(next - correction) > 0.004) setCorrection(next);
-  });
+  const correction = useFitCorrection(cardRef, { key, maxHeight, maxCorrection });
 
   const dim = buildDim(width, correction);
 
@@ -294,62 +153,6 @@ function SingleModeContent({ side, snapshot, roundResults, dim }: {
 
 // ── DoubleModeContent (2ゲーム制ON: ゲームごとに明細を分け、自分側だけの成績を出す) ──────
 
-type RoundRowStatus = 'finished' | 'live' | 'pending';
-type RoundOutcome   = 'WIN' | 'LOSE' | 'DRAW';
-
-function roundOutcome(rr: RoundResult, side: 0 | 1): RoundOutcome {
-  if (rr.winner === Winner.DRAW) return 'DRAW';
-  return roundWonBy(rr, side) ? 'WIN' : 'LOSE';
-}
-
-interface RoundRowData {
-  round:       0 | 1;
-  idx:         0 | 1;
-  label:       'COOL' | 'HOT';
-  status:      RoundRowStatus;
-  items:       number;
-  strikeBonus: number;
-  sweepBonus:  number;
-  outcome:     RoundOutcome | null;
-  /** アイテム + 一撃 + 総取り。2ゲーム分を足すと総合の合計ポイントになる */
-  subtotal:    number;
-}
-
-// 画面側 (side) ×ゲーム番号 (round) から、確定済み/進行中/未対戦のいずれかを判定してスコア行を組み立てる。
-// 第1ゲーム終了直後は phase='finished' のまま currentRound だけ 1 に進むため、対応する
-// roundResults が無い限りは (currentRound===round であっても) 進行中とはみなさない —
-// これにより第1ゲームの古いスナップショットを第2ゲームの行に誤表示することを防いでいる。
-function computeRoundRow(
-  side: 0 | 1,
-  round: 0 | 1,
-  roundResults: RoundResult[],
-  serverStatus: ServerStatusPayload | null,
-  snapshot: GameStateSnapshot | null,
-): RoundRowData {
-  const idx   = idxForSide(side, round);
-  const label = idx === 0 ? 'COOL' : 'HOT';
-  const rr    = roundResults.find(r => r.round === round);
-
-  if (rr) {
-    const items       = rr.scores[idx];
-    const strikeBonus = rr.strikeBonus[idx];
-    const sweepBonus  = rr.sweepBonus[idx];
-    return {
-      round, idx, label, status: 'finished',
-      items, strikeBonus, sweepBonus,
-      outcome: roundOutcome(rr, side),
-      subtotal: roundPointsFor(rr, side),
-    };
-  }
-
-  const isLive = serverStatus?.currentRound === round && serverStatus?.phase === 'playing';
-  if (isLive) {
-    const items = snapshot?.teamScore[idx] ?? 0;
-    return { round, idx, label, status: 'live', items, strikeBonus: 0, sweepBonus: 0, outcome: null, subtotal: items * ITEM_POINT };
-  }
-
-  return { round, idx, label, status: 'pending', items: 0, strikeBonus: 0, sweepBonus: 0, outcome: null, subtotal: 0 };
-}
 
 function DoubleModeContent({ side, snapshot, serverStatus, roundResults, dim }: {
   side: 0 | 1; snapshot: GameStateSnapshot | null;

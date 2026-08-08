@@ -11,6 +11,10 @@ const VALID_ROTES:   number[] = [Rote.UP, Rote.DOWN, Rote.RIGHT, Rote.LEFT];
  * 参照: U15-server-maizuru ManualClient.cpp
  */
 export class ManualClient extends BaseClient {
+  /** 管理画面での表示。SlotManager も接続前の表示に使うので、値はここが出どころ */
+  static readonly DISPLAY_NAME = '手動操作';
+  static readonly DISPLAY_IP   = 'ローカル';
+
   private readonly slot: 0 | 1;
   private readonly team: Team;
   private pendingMethod: ((m: Method) => void) | null = null;
@@ -19,8 +23,8 @@ export class ManualClient extends BaseClient {
     super();
     this.slot = slot;
     this.team = slot === 0 ? Team.COOL : Team.HOT;
-    this.name = '手動操作';
-    this.ip   = 'ローカル';
+    this.name = ManualClient.DISPLAY_NAME;
+    this.ip   = ManualClient.DISPLAY_IP;
   }
 
   get currentSlot(): 0 | 1 { return this.slot; }
