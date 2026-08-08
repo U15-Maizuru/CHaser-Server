@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { stageRulesFor } from '../../test/tournamentFixture';
+import { stageRulesFor } from '../../../test/tournamentFixture';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type {
   StageRules,
   GroupStanding, ResolvedParticipant, StandingRow, TournamentMatch, TournamentStatePayload,
 } from '@u15/ws-types';
 import { displayQualifyingPhase, QualifyingView, isQualifyingFinished, shouldShowFinale } from './QualifyingView';
-import { QualifierSection } from './QualifierSection';
+import { QualifierSection } from '../qualifier/QualifierSection';
 
 // 予選リーグ + 決勝トーナメントの見せ方。要点は2つ:
 //   ① リーグ表には**そのリーグの試合と参加者だけ**を渡すこと

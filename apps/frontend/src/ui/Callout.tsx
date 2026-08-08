@@ -17,10 +17,12 @@ const TONES: Record<CalloutTone, CSSProperties & { mark: string }> = {
  * 「読まないと操作を誤る」ことだけを載せる — 補足なら Hint を使う。
  */
 export function Callout({
-  tone = 'info', onDismiss, style, children,
+  tone = 'info', onDismiss, testId, style, children,
 }: {
   tone?: CalloutTone;
   onDismiss?: () => void;
+  /** テストから掴むための data-testid */
+  testId?: string;
   style?: CSSProperties;
   children: ReactNode;
 }) {
@@ -30,6 +32,7 @@ export function Callout({
       style={{ ...s.base, ...look, ...(onDismiss ? { cursor: 'pointer' } : null), ...style }}
       onClick={onDismiss}
       title={onDismiss ? 'クリックで閉じる' : undefined}
+      data-testid={testId}
     >
       {mark}{children}
     </div>

@@ -1,9 +1,9 @@
 import type { ResolvedParticipant, StandingRow, TournamentMatch } from '@u15/ws-types';
-import { FitArea } from '../FitArea';
+import { FitArea } from '../../FitArea';
 import {
   BG_CARD, BG_ROOT, BORDER_COLOR, COOL_PALE, FONT_NUM, FONT_UI, GOLD_BASE, GOLD_LIGHT,
   RADIUS_SM, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE, WIN_LIGHT,
-} from '../../ui';
+} from '../../../ui';
 
 // リーグの星取表 + 順位表。素の DOM (既存方針どおり CSS ファイルは作らない)。
 //

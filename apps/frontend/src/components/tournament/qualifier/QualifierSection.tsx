@@ -3,7 +3,7 @@ import { groupLabel, hasBotStage } from '@u15/ws-types';
 import {
   BG_CARD, BORDER_COLOR, FONT_UI, GOLD_BASE, RADIUS_SM,
   TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE,
-} from '../../ui';
+} from '../../../ui';
 
 // 決勝トーナメントの進出者。
 //

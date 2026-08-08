@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { stageRulesFor } from '../../test/tournamentFixture';
+import { stageRulesFor } from '../../../test/tournamentFixture';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type {
   StageRules,

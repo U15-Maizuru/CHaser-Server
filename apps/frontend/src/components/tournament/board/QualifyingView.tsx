@@ -1,14 +1,14 @@
 import { useMemo, useState } from 'react';
 import type { TournamentStatePayload } from '@u15/ws-types';
 import { advancePerGroupOf, hasBotStage, hasQualifying } from '@u15/ws-types';
-import { isTournamentComplete } from '../../lib/tournamentResult';
-import { FitArea } from '../FitArea';
+import { isTournamentComplete } from '../../../lib/tournamentResult';
+import { FitArea } from '../../FitArea';
 import { BotStageBoard } from './BotStageBoard';
 import { BracketView } from './BracketView';
 import { LeagueTable } from './LeagueTable';
 import {
   BORDER_COLOR, COOL_COLOR, FONT_UI, RADIUS_SM, TEXT_PRIMARY, TEXT_SECONDARY,
-} from '../../ui';
+} from '../../../ui';
 
 // 「予選 + 決勝トーナメント」の全体像。予選の表と決勝トーナメント表を切り替えて見せる。
 //

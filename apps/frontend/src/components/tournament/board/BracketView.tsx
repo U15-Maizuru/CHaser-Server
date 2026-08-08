@@ -1,9 +1,9 @@
 import { useMemo } from 'react';
 import type { ResolvedParticipant, TournamentFormat, TournamentMatch } from '@u15/ws-types';
-import { bracketLayout } from '../../lib/bracketLayout';
-import { FitArea } from '../FitArea';
+import { bracketLayout } from '../../../lib/bracketLayout';
+import { FitArea } from '../../FitArea';
 import { CARD_H, CARD_W, MatchCard } from './MatchCard';
-import { BORDER_COLOR, FONT_UI, TEXT_SECONDARY } from '../../ui';
+import { BORDER_COLOR, FONT_UI, TEXT_SECONDARY } from '../../../ui';
 
 // トーナメント表。接続線だけ SVG、カードは絶対配置の DOM というハイブリッド。
 // こうするとカードは通常の DOM のままなので、省略表示・ホバー・クリックがそのまま効き、

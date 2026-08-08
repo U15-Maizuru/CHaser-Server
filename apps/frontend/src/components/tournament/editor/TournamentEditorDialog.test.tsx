@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { leagueRulesOf } from '@u15/ws-types';
-import { stageRulesFor } from '../../test/tournamentFixture';
+import { stageRulesFor } from '../../../test/tournamentFixture';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { TournamentDefinition } from '@u15/ws-types';
 import { TournamentEditorDialog } from './TournamentEditorDialog';

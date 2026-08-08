@@ -1,10 +1,10 @@
 import type { StandingRow, TournamentMatch, TournamentStatePayload } from '@u15/ws-types';
 import { advancePerGroupOf } from '@u15/ws-types';
-import { FitArea } from '../FitArea';
+import { FitArea } from '../../FitArea';
 import {
   BG_CARD, BG_ROOT, BORDER_COLOR, COOL_PALE, FONT_NUM, FONT_UI, GOLD_BASE, GOLD_LIGHT,
   RADIUS_SM, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE, WIN_LIGHT,
-} from '../../ui';
+} from '../../../ui';
 
 // BOT対戦予選の進行画面。エントリーリスト (左) と 試合結果の順位リスト (右) の2枚。
 //

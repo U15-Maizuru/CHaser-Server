@@ -3,7 +3,7 @@ import type { MapCatalogEntry, ResolvedParticipant, TournamentMatch } from '@u15
 import {
   BG_CARD, BORDER_COLOR, COOL_COLOR, FONT_NUM, FONT_UI, GOLD_BASE, HOT_COLOR,
   RADIUS_MD, RADIUS_SM, SHADOW_MD, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE,
-} from '../../ui';
+} from '../../../ui';
 
 // 試合結果の確定ダイアログ。
 //

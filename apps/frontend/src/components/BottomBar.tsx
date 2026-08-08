@@ -14,8 +14,6 @@ interface Props {
   onOpenMapLibrary:     () => void;
   onOpenProgramLibrary: () => void;
   onOpenTournament:     () => void;
-  /** 専用ウィンドウを開く環境でも、その場で操作したいとき用 */
-  onOpenTournamentPanel: () => void;
   onOpenSettings:       () => void;
   /** 大会運営中はバッジを出す */
   tournamentName?:      string | null;
@@ -34,7 +32,7 @@ interface Props {
 export function BottomBar({
   isConnected, status,
   onStart, onNextRound, onRepeat, onReset,
-  onOpenMapLibrary, onOpenProgramLibrary, onOpenTournament, onOpenTournamentPanel,
+  onOpenMapLibrary, onOpenProgramLibrary, onOpenTournament,
   onOpenSettings, onToggleFullscreen, tournamentName,
 }: Props) {
   const allReady = status.clients.every(c => c.state === 'ready');
@@ -97,8 +95,7 @@ export function BottomBar({
       <div style={s.rightCluster}>
         <Button
           onClick={onOpenTournament}
-          onContextMenu={e => { e.preventDefault(); onOpenTournamentPanel(); }}
-          title={tournamentName ? `運営中: ${tournamentName}` : '大会を運営する (右クリックでこの画面に表示)'}
+          title={tournamentName ? `運営中: ${tournamentName}` : '大会運営ウィンドウを開く'}
         >
           大会運営...{tournamentName ? ' ●' : ''}
         </Button>

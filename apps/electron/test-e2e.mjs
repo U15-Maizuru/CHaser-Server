@@ -694,7 +694,7 @@ async function testFileDropZone(page) {
   await wait(600);
 
   const dialogText = await bodyText(page);
-  dialogText.includes('プログラムライブラリ管理')
+  dialogText.includes('プログラム管理')
     ? pass('プログラム管理ダイアログが開く')
     : fail('プログラム管理ダイアログが開く');
 
@@ -872,11 +872,18 @@ async function clickWhenReady(page, text, timeoutMs = 15000) {
  * 運営窓の「対戦中の試合」を準備済みにする。
  * 既に準備済み (armed) ならそのまま通す — 呼び出し側が arm 済みかを知らなくてよいようにする。
  */
+/** 運営パネルの「今やること」が示している状態 (arm / start / confirm / …) */
+async function nextActionKind(tw) {
+  return tw.evaluate(() =>
+    document.querySelector('[data-testid="next-action"]')?.dataset.action ?? 'NONE');
+}
+
 async function armNextMatch(tw, timeoutMs = 20000) {
   const end = Date.now() + timeoutMs;
   while (Date.now() < end) {
-    if ((await bodyText(tw)).includes('フッターの「ゲームスタート」')) return 'ARMED';
-    if (await clickText(tw, 'この試合を準備') === 'OK') {
+    const kind = await nextActionKind(tw);
+    if (kind === 'start') return 'ARMED';
+    if (kind === 'arm' && await clickText(tw, 'この試合を準備') === 'OK') {
       await wait(2500);
       continue; // 準備済みの表示に変わったかを次の周回で確かめる
     }
@@ -913,6 +920,22 @@ async function playAndConfirmMatch(page, tw, label) {
 
 const UI_CUP_ID  = 'e2e-ui-cup';
 const UI_CUP_DIR = path.join(PROJECT_ROOT, 'server/tournament', UI_CUP_ID);
+
+/**
+ * 運営パネルのタブを切り替える。
+ *
+ * 「今やること」は常に最上部にあるが、大会の一覧・進行・設定はタブの下にある。
+ * 大会を選ぶと自動で「進行」へ移るので、一覧の操作には明示的な切り替えが要る。
+ */
+async function openPanelTab(tw, label) {
+  return tw.evaluate(label => {
+    const tab = [...document.querySelectorAll('[role="tab"]')]
+      .find(b => b.textContent.trim() === label);
+    if (!tab) return 'NOT_FOUND';
+    tab.click();
+    return 'OK';
+  }, label);
+}
 
 /** 大会運営ウィンドウを開いて取得する (既に開いていれば focus されるだけ) */
 async function openTournamentWindow(app, page) {
@@ -1003,13 +1026,17 @@ async function testTournamentEditor(app, page) {
     : fail('作った大会で試合を準備できる');
   await ss(tw, 'tournament-editor-armed');
 
-  // 運営中は編集・削除ができないこと (誤操作の防止)
+  // 運営中は編集・削除ができないこと (誤操作の防止)。一覧は「大会」タブにある
+  await openPanelTab(tw, '大会');
+  await wait(400);
   const guarded = await tw.evaluate(() =>
     [...document.querySelectorAll('button')].filter(b => b.textContent === '編集')
       .every(b => b.disabled));
   guarded ? pass('運営中の大会は編集ボタンが無効になる')
           : fail('運営中の大会は編集ボタンが無効になる');
 
+  await openPanelTab(tw, '大会');
+  await wait(400);
   await clickWhenReady(tw, '運営を終了', 5000);
   await wait(1000);
   // ウィンドウを閉じてから片付ける。開いたままだと後続の節が
@@ -1100,7 +1127,7 @@ async function testTournament(app, page) {
       text:  document.body.innerText ?? '',
       paths: document.querySelectorAll('svg path').length,
     }));
-    armedView.text.includes('対戦開始をお待ちください') && armedView.text.includes('次の試合')
+    armedView.text.includes('対戦開始をお待ちください') && armedView.paths >= 2
       ? pass('「この試合を準備」で観戦画面が試合準備画面になる')
       : fail('「この試合を準備」で観戦画面が試合準備画面になる', armedView.text.slice(0, 160));
     armedView.paths >= 2
@@ -1174,6 +1201,8 @@ async function testTournament(app, page) {
     : fail('試合結果 CSV をエクスポートできる', JSON.stringify(exported));
 
   // 後始末: 運営を終了してから大会フォルダを消す
+  await openPanelTab(tw, '大会');
+  await wait(400);
   await clickWhenReady(tw, '運営を終了', 5000);
   await wait(800);
   await tw.close().catch(() => {});

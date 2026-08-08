@@ -1,13 +1,13 @@
 import type { TournamentStatePayload } from '@u15/ws-types';
 import { BracketView } from './BracketView';
 import { LeagueTable } from './LeagueTable';
-import { lastConfirmedMatch, medalOf, podiumOf } from '../../lib/tournamentResult';
+import { lastConfirmedMatch, medalOf, podiumOf } from '../../../lib/tournamentResult';
 import {
   BG_CARD, BG_ROOT, GOLD_BASE, GOLD_LIGHT,
   RADIUS_MD, SHADOW_MD, SHADOW_SM,
   TEXT_PRIMARY, TEXT_SECONDARY,
   FONT_UI,
-} from '../../ui';
+} from '../../../ui';
 
 // 大会の全試合が確定したあと、観戦用画面に出す表彰画面。
 //

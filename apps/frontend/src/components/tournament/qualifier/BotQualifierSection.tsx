@@ -3,7 +3,7 @@ import { advancePerGroupOf } from '@u15/ws-types';
 import {
   BG_CARD, BG_ROOT, BORDER_COLOR, FONT_NUM, FONT_UI, GOLD_BASE, HOT_COLOR, RADIUS_SM,
   TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE,
-} from '../../ui';
+} from '../../../ui';
 
 // BOT対戦予選の決勝進出者を決める「最終決定確認リスト」。
 //

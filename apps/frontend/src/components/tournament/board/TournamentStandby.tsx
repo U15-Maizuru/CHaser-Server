@@ -3,12 +3,12 @@ import { hasQualifying } from '@u15/ws-types';
 import { BracketView } from './BracketView';
 import { QualifyingView, qualifyingLabel, type QualifyingPhase } from './QualifyingView';
 import { LeagueTable } from './LeagueTable';
-import { lastConfirmedMatch, winnerNameOf } from '../../lib/tournamentResult';
+import { lastConfirmedMatch, winnerNameOf } from '../../../lib/tournamentResult';
 import {
   BG_ROOT, RADIUS_MD, SHADOW_SM,
   TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE, WIN_LIGHT, WIN_PALE,
   FONT_UI,
-} from '../../ui';
+} from '../../../ui';
 
 // 試合と試合の間の観戦用画面。トーナメント表 / リーグ表だけを画面いっぱいに見せる。
 //

@@ -10,12 +10,12 @@ import { MainWindow } from './MainWindow';
 import { FitArea } from './FitArea';
 import { MapThumbnail } from './MapThumbnail';
 import { sourceLabel } from './MapSourceSection';
-import { BracketView } from './tournament/BracketView';
-import { QualifyingView, displayQualifyingPhase } from './tournament/QualifyingView';
-import type { QualifyingPhase } from './tournament/QualifyingView';
-import { LeagueTable } from './tournament/LeagueTable';
-import { TournamentFinale } from './tournament/TournamentFinale';
-import { TournamentStandby } from './tournament/TournamentStandby';
+import { BracketView } from './tournament/board/BracketView';
+import { QualifyingView, displayQualifyingPhase } from './tournament/board/QualifyingView';
+import type { QualifyingPhase } from './tournament/board/QualifyingView';
+import { LeagueTable } from './tournament/board/LeagueTable';
+import { TournamentFinale } from './tournament/board/TournamentFinale';
+import { TournamentStandby } from './tournament/board/TournamentStandby';
 import { isTournamentComplete } from '../lib/tournamentResult';
 import { idxForSide } from '../lib/roundSide';
 import { roundPointsFor } from '../lib/setResult';
@@ -167,10 +167,6 @@ function SetupWaiting({ serverStatus, displayTitle, tournament, groupPhase, curr
   // 待機中のプレビューも反転させておかないと、開始した瞬間に向きが変わって見える。
   const flip = doubleMode && currentRound === 1;
 
-  const upcoming = tournament?.matches.find(m => m.id === tournament.armedMatchId) ?? null;
-  const nameOfParticipant = (id: string | null) =>
-    tournament?.participants.find(p => p.id === id)?.name ?? '—';
-
   // 対戦カードの並びと勝ち上がり表は、画面の残りを分け合って**どちらも**空きいっぱいに拡大する。
   // 片方を自然な大きさのまま置くと、第1ゲームの結果が出ている間だけ勝ち上がり表が潰れてしまう。
   const meeting = (
@@ -204,16 +200,6 @@ function SetupWaiting({ serverStatus, displayTitle, tournament, groupPhase, curr
           <TeamCard idx={rightIdx} name={clients[rightIdx].name || '---'} state={clients[rightIdx].state} />
         )}
       </div>
-
-      {/* {upcoming && (
-        <div style={sw.upcoming}>
-          <span style={sw.upcomingTag}>対戦試合</span>
-          <span style={sw.upcomingLabel}>{upcoming.label}</span>
-          <span style={sw.upcomingNames}>
-            {nameOfParticipant(upcoming.resolvedA)} vs {nameOfParticipant(upcoming.resolvedB)}
-          </span>
-        </div>
-      )} */}
     </div>
   );
 
@@ -335,19 +321,6 @@ const sw: Record<string, React.CSSProperties> = {
     fontSize: 28, fontWeight: 800, color: TEXT_MUTED,
     fontFamily: FONT_NUM, letterSpacing: '0.1em',
   },
-
-  // 「この試合を準備」で確定した、これから行う試合
-  upcoming: {
-    display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0,
-    background: GOLD_LIGHT, border: `2px solid ${GOLD_BASE}`,
-    borderRadius: 99, padding: '8px 22px',
-  },
-  upcomingTag: {
-    fontSize: 12, fontWeight: 800, letterSpacing: '0.1em',
-    color: '#fff', background: GOLD_BASE, borderRadius: 99, padding: '3px 12px',
-  },
-  upcomingLabel: { fontSize: 14, color: TEXT_SECONDARY },
-  upcomingNames: { fontSize: 22, fontWeight: 800, color: TEXT_PRIMARY },
 
   // 第1ゲームの結果 (2ゲーム制のインターミッション)。左右の並びは下のプレイヤーカードと揃える
   recap: {

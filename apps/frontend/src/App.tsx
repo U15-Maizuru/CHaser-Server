@@ -13,7 +13,6 @@ import { SettingDialog }   from './components/SettingDialog';
 import { MapEditorDialog } from './components/MapEditorDialog';
 import { MapLibraryDialog } from './components/MapLibraryDialog';
 import { ProgramLibraryDialog } from './components/ProgramLibraryDialog';
-import { TournamentPanel } from './components/tournament/TournamentPanel';
 import { TournamentMode }  from './components/tournament/TournamentMode';
 import { DisplayMode }     from './components/DisplayMode';
 import { ManualMode }      from './components/ManualMode';
@@ -67,7 +66,6 @@ function ControlApp({ roomId }: { roomId: string }) {
   const [showMapLibrary,     setShowMapLibrary]     = useState(false);
   const [showMapEditor,      setShowMapEditor]      = useState(false);
   const [showProgramLibrary, setShowProgramLibrary] = useState(false);
-  const [showTournament,     setShowTournament]     = useState(false);
   const [editorSeed,         setEditorSeed]         = useState<EditableMap | null>(null);
 
   // 今出ているマップ (観戦窓の待機画面と同じフックを使う)
@@ -146,6 +144,19 @@ function ControlApp({ roomId }: { roomId: string }) {
     if (isConnected && window.electronAPI) state.setPythonCommand(envConfig.pythonCommand);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [envConfig.pythonCommand, isConnected]);
+
+  // 大会運営の入口は ?mode=tournament の1つだけ。Electron は専用ウィンドウ、
+  // ブラウザは別タブで同じ画面を開く
+  const openTournamentWindow = () => {
+    if (window.electronAPI) {
+      void window.electronAPI.openTournamentWindow();
+      return;
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.set('room', roomId);
+    url.searchParams.set('mode', 'tournament');
+    window.open(url.toString(), `tournament-${roomId}`);
+  };
 
   const handleUploadMusic = async (file: File) => {
     const fd = new FormData();
@@ -252,21 +263,6 @@ function ControlApp({ roomId }: { roomId: string }) {
         />
       )}
 
-      {showTournament && (
-        <div style={tournamentOverlay}>
-          <div style={tournamentSheet} data-testid="tournament-sheet">
-            <TournamentPanel
-              state={state.tournamentState}
-              httpBase={HTTP_BASE}
-              commands={state.tournament}
-              lastError={state.lastError}
-              clearError={state.clearError}
-              onClose={() => setShowTournament(false)}
-            />
-          </div>
-        </div>
-      )}
-
       <div style={controlLayout}>
         <div style={controlContent}>
           {phase === 'setup' ? (
@@ -314,12 +310,7 @@ function ControlApp({ roomId }: { roomId: string }) {
           onReset={state.requestReset}
           onOpenMapLibrary={() => setShowMapLibrary(true)}
           onOpenProgramLibrary={() => setShowProgramLibrary(true)}
-          onOpenTournament={() => {
-            // Electron では運営席の専用ウィンドウを開く。ブラウザではダイアログで代用する
-            if (window.electronAPI) void window.electronAPI.openTournamentWindow();
-            else setShowTournament(true);
-          }}
-          onOpenTournamentPanel={() => setShowTournament(true)}
+          onOpenTournament={openTournamentWindow}
           tournamentName={state.tournamentState?.name ?? null}
           onOpenSettings={() => setShowSettings(true)}
           onToggleFullscreen={window.electronAPI
@@ -330,19 +321,6 @@ function ControlApp({ roomId }: { roomId: string }) {
     </>
   );
 }
-
-const tournamentOverlay: React.CSSProperties = {
-  position: 'fixed', inset: 0, background: 'rgba(30,24,48,0.45)',
-  display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 900, padding: 16,
-};
-
-const tournamentSheet: React.CSSProperties = {
-  background: '#faf7ff', borderRadius: 20, padding: 18,
-  // flex アイテムの自動最小サイズ (min-width:auto) が効くと中身の幅で押し広げられるため、
-  // minWidth:0 と boxSizing を明示してシート幅を確実に閉じ込める
-  width: 620, maxWidth: '100%', minWidth: 0, boxSizing: 'border-box',
-  maxHeight: '92vh', overflowY: 'auto',
-};
 
 const controlLayout: React.CSSProperties = {
   display: 'flex', flexDirection: 'column', height: '100vh',

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { TournamentCommands } from '../../hooks/useGameState';
+import type { TournamentCommands } from '../../../hooks/useGameState';
 import { TournamentPanel } from './TournamentPanel';
 
 // 運営パネルの「書き出し」— 大会データを .zip で持ち出す経路の検証。
