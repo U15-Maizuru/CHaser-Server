@@ -1,4 +1,4 @@
-import { sanitizeName } from './network/TcpClient.js';
+import { sanitizeName } from './playerName.js';
 
 /**
  * 対戦用プログラム (.py) のソースから、そのプログラムが名乗るプレイヤー名を推定する。

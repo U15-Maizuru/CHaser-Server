@@ -1,14 +1,14 @@
 import type { WebSocket } from 'ws';
 import type { RoomManager } from '../RoomManager.js';
 import type { ManualClient } from '../clients/ManualClient.js';
-import type { TournamentOrchestrator } from '../tournament/TournamentOrchestrator.js';
+import type { TournamentMessageDispatch } from './TournamentMessageDispatch.js';
 import type { FrontendMessage } from '@u15/ws-types';
 
 export interface GameMessageDispatchDeps {
   getRoomManualClients: (roomId: string) => Map<0 | 1, ManualClient> | undefined;
   sendError:            (ws: WebSocket, message: string) => void;
-  /** 大会運営 (未配線なら大会メッセージは無視される) */
-  tournament?:          TournamentOrchestrator;
+  /** 大会運営メッセージの転送先 */
+  tournament:           TournamentMessageDispatch;
 }
 
 /** ルーム内専用のゲームメッセージ (set_client / request_start / manual_action など) を処理する。 */
@@ -19,6 +19,9 @@ export class GameMessageDispatch {
     const room = this.rm.getRoom(roomId);
     if (!room) return;
     this.rm.touchRoom(roomId);
+
+    // 大会運営 (tournament_*) はここでは扱わない。ルームの存在確認だけ共通なので通してから渡す
+    if (this.deps.tournament.handle(ws, roomId, msg)) return;
 
     const manager = room.manager;
 
@@ -86,85 +89,6 @@ export class GameMessageDispatch {
         if (mc) mc.receiveAction(msg.payload.action, msg.payload.rote);
         break;
       }
-
-      // ── 大会運営 ──
-      // 操作は運営の意図どおりに通るか、理由付きで断られるかのどちらかであるべきなので、
-      // 他のゲームメッセージと違い失敗を握りつぶさず sendError で返す。
-      case 'tournament_bind':
-        this.tournament(ws, t => t.bind(roomId, msg.payload.tournamentId));
-        break;
-      case 'tournament_unbind':
-        this.tournament(ws, t => t.unbind(roomId));
-        break;
-      case 'tournament_arm_match':
-        this.tournamentAsync(ws, t => t.armMatch(roomId, msg.payload.matchId));
-        break;
-      case 'tournament_confirm_result':
-        this.tournament(ws, t =>
-          t.confirmResult(roomId, msg.payload.matchId, msg.payload.winnerSide, msg.payload.note));
-        break;
-      case 'tournament_discard_result':
-        this.tournament(ws, t =>
-          t.discardResult(roomId, msg.payload.matchId, msg.payload.rematchMapCatalogId));
-        break;
-      case 'tournament_reopen_match':
-        this.tournament(ws, t =>
-          t.reopenMatch(roomId, msg.payload.matchId, msg.payload.cascade ?? false));
-        break;
-      case 'tournament_set_walkover':
-        this.tournament(ws, t =>
-          t.setWalkover(roomId, msg.payload.matchId, msg.payload.winnerSide));
-        break;
-      case 'tournament_assign_program':
-        this.tournament(ws, t =>
-          t.assignProgram(roomId, msg.payload.participantId, msg.payload.catalogId));
-        break;
-      case 'tournament_set_stage_map':
-        this.tournament(ws, t =>
-          t.setStageMap(roomId, msg.payload.stage, msg.payload.mapCatalogId));
-        break;
-      case 'tournament_set_qualifier':
-        this.tournament(ws, t =>
-          t.setQualifier(
-            roomId, msg.payload.group, msg.payload.rank,
-            msg.payload.participantId, msg.payload.cascade ?? false,
-          ));
-        break;
-      case 'tournament_exclude_qualifier':
-        this.tournament(ws, t =>
-          t.setQualifierExclusion(
-            roomId, msg.payload.participantId, msg.payload.excluded,
-            msg.payload.cascade ?? false,
-          ));
-        break;
-      case 'tournament_confirm_qualifiers':
-        this.tournament(ws, t => t.confirmQualifiers(roomId, msg.payload.confirmed));
-        break;
-      case 'tournament_set_display_view':
-        this.tournament(ws, t => t.setDisplayView(roomId, msg.payload.view));
-        break;
-      case 'tournament_set_auto_play':
-        this.tournament(ws, t => t.setAutoPlay(roomId, msg.payload.enabled, msg.payload.loop));
-        break;
-      case 'tournament_rescan':
-        this.tournament(ws, t => t.rescan(roomId));
-        break;
     }
-  }
-
-  private tournament(ws: WebSocket, fn: (t: TournamentOrchestrator) => void): void {
-    const t = this.deps.tournament;
-    if (!t) return;
-    try {
-      fn(t);
-    } catch (e) {
-      this.deps.sendError(ws, (e as Error).message);
-    }
-  }
-
-  private tournamentAsync(ws: WebSocket, fn: (t: TournamentOrchestrator) => Promise<void>): void {
-    const t = this.deps.tournament;
-    if (!t) return;
-    fn(t).catch((e: Error) => this.deps.sendError(ws, e.message));
   }
 }

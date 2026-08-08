@@ -2,32 +2,29 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { CatalogEntry } from '@u15/ws-types';
+import { JsonIndexStore } from './catalog/JsonIndexStore.js';
 import { extractDeclaredName } from './programName.js';
 
 // 対戦用プログラムの永続保存先。room/slot に紐付かず、アプリ・システムの再起動を
 // またいで保持される (server/maps, server/music と同じ層のグローバルディレクトリ)。
-const CATALOG_DIR  = path.resolve('server/program-catalog');
-const INDEX_PATH   = path.join(CATALOG_DIR, 'index.json');
+const store = new JsonIndexStore<CatalogEntry>('server/program-catalog');
 
 export function ensureCatalogDir(): void {
-  fs.mkdirSync(CATALOG_DIR, { recursive: true });
-  if (!fs.existsSync(INDEX_PATH)) {
-    writeIndex([]);
-  }
+  store.ensureDir();
 }
 
 export function catalogDir(): string {
-  return CATALOG_DIR;
+  return store.dir;
 }
 
 export function listCatalogEntries(): CatalogEntry[] {
-  return readIndex()
+  return store.read()
     .filter(e => fs.existsSync(e.programPath))
     .map(withDeclaredName);
 }
 
 export function getCatalogEntry(id: string): CatalogEntry | undefined {
-  const entry = readIndex().find(e => e.id === id);
+  const entry = store.find(id);
   return entry && withDeclaredName(entry);
 }
 
@@ -37,7 +34,7 @@ export function getCatalogEntry(id: string): CatalogEntry | undefined {
  */
 export function addCatalogEntry(displayName: string, tempPath: string): CatalogEntry {
   const id        = randomUUID();
-  const finalPath = path.join(CATALOG_DIR, `${id}${path.extname(tempPath)}`);
+  const finalPath = path.join(store.dir, `${id}${path.extname(tempPath)}`);
   fs.renameSync(tempPath, finalPath);
 
   const entry: CatalogEntry = {
@@ -50,9 +47,7 @@ export function addCatalogEntry(displayName: string, tempPath: string): CatalogE
     demoEnabled:    true,
   };
 
-  const entries = readIndex();
-  entries.push(entry);
-  writeIndex(entries);
+  store.add(entry);
   return withDeclaredName(entry);
 }
 
@@ -75,19 +70,16 @@ function withDeclaredName(entry: CatalogEntry): CatalogEntry {
 }
 
 export function deleteCatalogEntry(id: string): void {
-  const entries = readIndex();
-  const entry   = entries.find(e => e.id === id);
-  if (!entry) return;
-  if (fs.existsSync(entry.programPath)) fs.unlinkSync(entry.programPath);
-  writeIndex(entries.filter(e => e.id !== id));
+  const entry = store.remove(id);
+  if (entry && fs.existsSync(entry.programPath)) fs.unlinkSync(entry.programPath);
 }
 
 export function setDemoEnabled(id: string, enabled: boolean): CatalogEntry | undefined {
-  const entries = readIndex();
+  const entries = store.read();
   const entry   = entries.find(e => e.id === id);
   if (!entry) return undefined;
   entry.demoEnabled = enabled;
-  writeIndex(entries);
+  store.write(entries);
   return entry;
 }
 
@@ -104,17 +96,4 @@ export function pickRandomPair(): [CatalogEntry, CatalogEntry] | null {
     b = candidates[Math.floor(Math.random() * candidates.length)]!;
   }
   return [a, b];
-}
-
-function readIndex(): CatalogEntry[] {
-  try {
-    return JSON.parse(fs.readFileSync(INDEX_PATH, 'utf-8')) as CatalogEntry[];
-  } catch {
-    return [];
-  }
-}
-
-function writeIndex(entries: CatalogEntry[]): void {
-  fs.mkdirSync(CATALOG_DIR, { recursive: true });
-  fs.writeFileSync(INDEX_PATH, JSON.stringify(entries, null, 2));
 }

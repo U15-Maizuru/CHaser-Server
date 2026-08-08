@@ -7,6 +7,7 @@ import type { ManualClient } from '../clients/ManualClient.js';
 import type { RoomManager } from '../RoomManager.js';
 import { LobbyRouter } from './LobbyRouter.js';
 import { GameMessageDispatch } from './GameMessageDispatch.js';
+import { TournamentMessageDispatch } from './TournamentMessageDispatch.js';
 import type { TournamentOrchestrator } from '../tournament/TournamentOrchestrator.js';
 import type {
   GameStateSnapshot,
@@ -50,7 +51,7 @@ export class WsServer {
     this.httpServer.listen(port);
   }
 
-  /** 大会運営を配線する (setRoomManager より前に呼ぶこと) */
+  /** 大会運営を配線する (setRoomManager との順序は問わない) */
   setTournament(t: TournamentOrchestrator): void {
     this.tournament = t;
     this.getExtraJoinMessages = (roomId) => t.joinMessagesFor(roomId);
@@ -70,7 +71,12 @@ export class WsServer {
     this.gameDispatch = new GameMessageDispatch(rm, {
       getRoomManualClients: (roomId) => this.roomManualClients.get(roomId),
       sendError:            (ws, message) => this.sendError(ws, message),
-      ...(this.tournament ? { tournament: this.tournament } : {}),
+      // 大会運営は遅延して引く。ここでスナップショットすると setTournament を
+      // あとから呼んだ場合に大会メッセージが無言で無視される
+      tournament: new TournamentMessageDispatch({
+        sendError:     (ws, message) => this.sendError(ws, message),
+        getTournament: () => this.tournament,
+      }),
     });
 
     rm.onRoomStatus = (roomId, payload) => {
