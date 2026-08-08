@@ -4,6 +4,7 @@ import { useMatchConfig }    from './hooks/useMatchConfig';
 import { useMapGenParams, toMapParams } from './hooks/useMapGenParams';
 import { useCurrentMap } from './hooks/useCurrentMap';
 import { downloadMapFile, fetchCurrentMap, saveMapToLibrary, uploadMusic } from './lib/api';
+import { readAppLocation } from './lib/appMode';
 import { useEnvConfig }      from './hooks/useEnvConfig';
 import { useGamePhaseSound } from './hooks/useGamePhaseSound';
 import { useStartCountdown } from './hooks/useStartCountdown';
@@ -29,24 +30,22 @@ const WS_URL    = (import.meta as { env?: { VITE_WS_URL?: string } }).env?.VITE_
   ?? `ws://${window.location.hostname || 'localhost'}:8765`;
 const HTTP_BASE = WS_URL.replace(/^ws/, 'http');
 
-const params  = new URLSearchParams(window.location.search);
-const ROOM_ID = params.get('room');
-const MODE    = params.get('mode') ?? 'display';
-const SLOT    = params.get('slot') === '1' ? 1 : 0;
-
 export default function App() {
+  const { roomId, mode, slot } = readAppLocation(window.location.search);
+
   // room パラメータなし → ロビー (Web サービスモード)
-  if (!ROOM_ID) return <Lobby wsUrl={WS_URL} />;
-  if (MODE === 'display') {
-    return <ErrorBoundary><DisplayMode wsUrl={WS_URL} roomId={ROOM_ID} httpBase={HTTP_BASE} /></ErrorBoundary>;
+  if (!roomId) return <Lobby wsUrl={WS_URL} />;
+
+  switch (mode) {
+    case 'display':
+      return <ErrorBoundary><DisplayMode wsUrl={WS_URL} roomId={roomId} httpBase={HTTP_BASE} /></ErrorBoundary>;
+    case 'manual':
+      return <ErrorBoundary><ManualMode wsUrl={WS_URL} roomId={roomId} slot={slot} /></ErrorBoundary>;
+    case 'tournament':
+      return <ErrorBoundary><TournamentMode wsUrl={WS_URL} roomId={roomId} httpBase={HTTP_BASE} /></ErrorBoundary>;
+    case 'control':
+      return <ErrorBoundary><ControlApp roomId={roomId} /></ErrorBoundary>;
   }
-  if (MODE === 'manual') {
-    return <ErrorBoundary><ManualMode wsUrl={WS_URL} roomId={ROOM_ID} slot={SLOT} /></ErrorBoundary>;
-  }
-  if (MODE === 'tournament') {
-    return <ErrorBoundary><TournamentMode wsUrl={WS_URL} roomId={ROOM_ID} httpBase={HTTP_BASE} /></ErrorBoundary>;
-  }
-  return <ErrorBoundary><ControlApp roomId={ROOM_ID} /></ErrorBoundary>;
 }
 
 function ControlApp({ roomId }: { roomId: string }) {
