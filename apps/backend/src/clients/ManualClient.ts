@@ -14,7 +14,6 @@ export class ManualClient extends BaseClient {
   private readonly slot: 0 | 1;
   private readonly team: Team;
   private pendingMethod: ((m: Method) => void) | null = null;
-  private pendingAroundData: number[] | null = null;
 
   constructor(slot: 0 | 1) {
     super();
@@ -25,7 +24,6 @@ export class ManualClient extends BaseClient {
   }
 
   get currentSlot(): 0 | 1 { return this.slot; }
-  get currentAroundData(): number[] | null { return this.pendingAroundData; }
 
   /**
    * WsServer から呼ばれる: フロントからのアクションを注入。
@@ -39,8 +37,7 @@ export class ManualClient extends BaseClient {
         action: VALID_ACTIONS.includes(action) ? (action as Action) : Action.UNKNOWN,
         rote:   VALID_ROTES.includes(rote)     ? (rote   as Rote)   : Rote.UNKNOWN,
       });
-      this.pendingMethod    = null;
-      this.pendingAroundData = null;
+      this.pendingMethod = null;
     }
   }
 
@@ -50,8 +47,7 @@ export class ManualClient extends BaseClient {
 
   async waitReturnMethod(around: AroundData): Promise<Method> {
     // フロントエンドにアラウンドデータを送信して入力を待つ
-    this.pendingAroundData = around.data.map(v => v as number);
-    this.emit('need_input', this.slot, this.pendingAroundData);
+    this.emit('need_input', this.slot, around.data.map(v => v as number));
 
     return new Promise<Method>(resolve => {
       this.pendingMethod = resolve;

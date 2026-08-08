@@ -1,0 +1,13 @@
+{
+  // 全ワークスペース共通のコンパイラ設定。各パッケージの tsconfig.json はこれを extends する。
+  //
+  // ここに置けるのは「パスを含まない設定」だけ。TypeScript は extends 元の設定ファイルに
+  // 書かれた相対パスを *そのファイルの位置* を基準に解決するため、outDir / rootDir / include を
+  // ここへ移すとリポジトリ直下を指してしまう。それらは各パッケージ側に残すこと。
+  "compilerOptions": {
+    "target": "ES2022",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  }
+}

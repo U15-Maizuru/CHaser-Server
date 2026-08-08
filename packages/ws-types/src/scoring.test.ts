@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import type { RoundResult } from '@u15/ws-types';
-import { Reason, Winner } from '@u15/ws-types';
-import { computeSetResult, roundPointsFor, roundWonBy } from './setResult';
+import type { RoundResult } from './protocol.js';
+import { Reason, Winner } from './protocol.js';
+import { computeSetResult, idxForSide, roundPointsFor, roundWonBy } from './scoring.js';
 
 function makeRound(round: 0 | 1, over: Partial<RoundResult> = {}): RoundResult {
   return {
@@ -16,6 +16,18 @@ function makeRound(round: 0 | 1, over: Partial<RoundResult> = {}): RoundResult {
     ...over,
   };
 }
+
+describe('idxForSide', () => {
+  it('第1ゲーム (round=0) は side どおりの team-index を返す', () => {
+    expect(idxForSide(0, 0)).toBe(0); // 左=COOL(先攻)
+    expect(idxForSide(1, 0)).toBe(1); // 右=HOT(後攻)
+  });
+
+  it('第2ゲーム (round=1) は先攻/後攻が入れ替わるため team-index も反転する', () => {
+    expect(idxForSide(0, 1)).toBe(1); // 左=HOT(後攻)
+    expect(idxForSide(1, 1)).toBe(0); // 右=COOL(先攻)
+  });
+});
 
 describe('roundPointsFor', () => {
   it('第1ゲームは side がそのまま team-index になる', () => {

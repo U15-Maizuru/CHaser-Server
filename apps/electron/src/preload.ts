@@ -3,8 +3,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  platform: process.platform,
-
   openMapFile: (): Promise<string | null> =>
     ipcRenderer.invoke('dialog:openFile'),
 
