@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MapObject } from '@u15/ws-types';
 import type { Point } from '@u15/ws-types';
-import { useTextures, type TextureKey } from '../hooks/useTextures';
+import { useTextures } from '../hooks/useTextures';
 import { MAP_SIZES, useMapGenParams } from '../hooks/useMapGenParams';
 import {
   BG_ROOT, BG_CARD, BORDER_COLOR, COOL_COLOR, COOL_PALE,

@@ -4,6 +4,7 @@ import {
   BG_CARD, BORDER_COLOR, TEXT_SECONDARY, TEXT_MUTED, TEXT_PRIMARY,
   COOL_COLOR, WIN_BASE, WIN_PALE,
   RADIUS_SM, FONT_NUM,
+  ERROR_COLOR,
 } from '../ui';
 
 interface Props {
@@ -75,7 +76,7 @@ export function FileDropZone({ endpoint, accept, label, onUploaded }: Props) {
   }
 
   return (
-    <div style={{ ...s.zone, borderColor: dragging ? COOL_COLOR : (error ? '#c43a3a' : BORDER_COLOR) }}
+    <div style={{ ...s.zone, borderColor: dragging ? COOL_COLOR : (error ? ERROR_COLOR : BORDER_COLOR) }}
       onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
@@ -128,7 +129,7 @@ const s: Record<string, React.CSSProperties> = {
   icon:     { fontSize: 22 },
   mainText: { fontSize: 12, color: TEXT_SECONDARY },
   hint:     { fontSize: 10, color: TEXT_MUTED },
-  errorText:{ fontSize: 11, color: '#c43a3a', marginTop: 4 },
+  errorText:{ fontSize: 11, color: ERROR_COLOR, marginTop: 4 },
   progressBar: {
     width: '100%',
     height: 4,

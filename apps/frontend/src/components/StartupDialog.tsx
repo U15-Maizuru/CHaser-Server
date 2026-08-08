@@ -8,12 +8,13 @@ import { MapSourceSection, sourceLabel } from './MapSourceSection';
 import { useTextures } from '../hooks/useTextures';
 import {
   BG_ROOT, BG_HEADER, BG_CARD,
-  BORDER_COLOR, COOL_COLOR, COOL_PALE, COOL_DARK, HOT_COLOR, HOT_PALE, HOT_DARK,
+  BORDER_COLOR,      
   TURN_BASE, TURN_LIGHT, TURN_PALE,
   TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
   RADIUS_MD, RADIUS_SM,
   SHADOW_SM,
   FONT_UI, FONT_NUM,
+  TEAM_PALETTE,
 } from '../ui';
 
 interface Props {
@@ -36,10 +37,7 @@ interface Props {
   onOpenMapLibrary:     () => void;
 }
 
-const TEAM_LABEL  = ['COOL', 'HOT']        as const;
-const TEAM_COLOR  = [COOL_COLOR, HOT_COLOR] as const;
-const TEAM_BGCOL  = [COOL_PALE, HOT_PALE]   as const;
-const TEAM_DARK   = [COOL_DARK, HOT_DARK]   as const;
+
 
 export function StartupDialog({
   status, httpBase, roomId, displayTitle, theme, currentMap, canEditMap,
@@ -99,10 +97,10 @@ export function StartupDialog({
       <div ref={columnsRef} style={s.columns}>
         <TeamSetupPanel
           slot={0}
-          label={TEAM_LABEL[0]}
-          color={TEAM_COLOR[0]}
-          bgColor={TEAM_BGCOL[0]}
-          darkColor={TEAM_DARK[0]}
+          label={TEAM_PALETTE[0].label}
+          color={TEAM_PALETTE[0].color}
+          bgColor={TEAM_PALETTE[0].pale}
+          darkColor={TEAM_PALETTE[0].dark}
           info={status.clients[0]}
           httpBase={httpBase}
           roomId={roomId}
@@ -128,10 +126,10 @@ export function StartupDialog({
 
         <TeamSetupPanel
           slot={1}
-          label={TEAM_LABEL[1]}
-          color={TEAM_COLOR[1]}
-          bgColor={TEAM_BGCOL[1]}
-          darkColor={TEAM_DARK[1]}
+          label={TEAM_PALETTE[1].label}
+          color={TEAM_PALETTE[1].color}
+          bgColor={TEAM_PALETTE[1].pale}
+          darkColor={TEAM_PALETTE[1].dark}
           info={status.clients[1]}
           httpBase={httpBase}
           roomId={roomId}

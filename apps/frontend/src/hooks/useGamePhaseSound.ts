@@ -1,11 +1,8 @@
 import { useEffect, useRef } from 'react';
 import type { GameEndPayload, GameStateSnapshot, ServerStatusPayload, TurnStartPayload } from '@u15/ws-types';
-import { Reason } from '@u15/ws-types';
+import { isBlunder, Reason } from '@u15/ws-types';
 import { useSound, useScoreSound } from './useSound';
 
-function isBlunder(reason: Reason): boolean {
-  return reason === Reason.CONFINED || reason === Reason.COLLISION || reason === Reason.FOULED;
-}
 
 /**
  * フェーズ遷移 (go/finish/win/lose) とスコア変化 (get_C/get_H) の SE 再生。

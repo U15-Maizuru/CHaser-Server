@@ -8,6 +8,7 @@ import {
   TEXT_SECONDARY, TEXT_MUTED, BORDER_COLOR,
   SHADOW_MD, RADIUS_SM, RADIUS_MD,
   FONT_UI,
+  teamGradient,
 } from '../ui';
 
 interface Props {
@@ -54,7 +55,7 @@ export function ManualControls({ slot, manualRequest, onAction }: Props) {
 
       <div style={{ ...s.card, borderColor: light }}>
         {/* ヘッダー */}
-        <div style={{ ...s.header, background: `linear-gradient(135deg, ${base}, ${dark})` }}>
+        <div style={{ ...s.header, background: teamGradient(base, dark) }}>
           <span style={s.icon}>🕹</span>
           <span style={s.headerText}>手動操作 — {label}</span>
           {isWaiting

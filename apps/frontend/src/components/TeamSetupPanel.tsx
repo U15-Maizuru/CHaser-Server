@@ -7,6 +7,7 @@ import {
   STATE_READY, STATE_CONNECTED, STATE_WAITING,
   SHADOW_SM, RADIUS_MD,
   FONT_UI, FONT_NUM,
+  ERROR_COLOR, teamGradient,
 } from '../ui';
 
 interface Props {
@@ -72,7 +73,7 @@ export function TeamSetupPanel({ slot, label, color, bgColor, darkColor, info, h
 
   return (
     <div style={s.panel}>
-      <div style={{ ...s.header, background: `linear-gradient(135deg, ${color}, ${darkColor})` }}>
+      <div style={{ ...s.header, background: teamGradient(color, darkColor) }}>
         {label}
       </div>
       <div style={{ ...s.body, background: bgColor }}>
@@ -211,10 +212,10 @@ const s: Record<string, React.CSSProperties> = {
   playerName: { fontSize: 13, fontWeight: 700, fontFamily: FONT_NUM, color: TEXT_PRIMARY },
   errorBtn: {
     padding: '2px 8px',
-    border: '1px solid #c43a3a',
+    border: `1px solid ${ERROR_COLOR}`,
     borderRadius: 99,
     background: 'none',
-    color: '#c43a3a',
+    color: ERROR_COLOR,
     fontSize: 11,
     fontWeight: 600,
     cursor: 'pointer',
@@ -229,7 +230,7 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: 10,
     lineHeight: 1.5,
     fontFamily: FONT_NUM,
-    color: '#c43a3a',
+    color: ERROR_COLOR,
     background: 'rgba(196, 58, 58, 0.08)',
     border: '1px solid rgba(196, 58, 58, 0.3)',
     borderRadius: 6,

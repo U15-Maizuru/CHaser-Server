@@ -18,6 +18,12 @@ export enum MapObject {
   ITEM    = 3,
 }
 
+/** アラウンドデータの1桁目。ゲームを続けるか終わるかをクライアントへ伝えるワイヤ値 */
+export enum ConnectingStatus {
+  FINISHED = 0,
+  CONTINUE = 1,
+}
+
 export enum Winner {
   COOL     = 0,
   HOT      = 1,
@@ -111,11 +117,12 @@ export interface RoundResult {
   scores:         [number, number];
   remainingTurns: number;
   /**
-   * 「一撃」— アタック/閉じ込めで勝った側に +50、自滅(自縛/衝突/通信エラー)で負けた側に
-   * -3×自スコアの罰点。決着理由は排他なので、1ゲームでどちらか一方だけが入る
+   * 「一撃」— アタック/閉じ込めで勝った側への加点、自滅(自縛/衝突/通信エラー)で
+   * 負けた側への罰点。決着理由は排他なので、1ゲームでどちらか一方だけが入る。
+   * 係数と計算は scoring.ts の calculateBonusBreakdown にある
    */
   strikeBonus:    [number, number];
-  /** 「総取り」— 勝者に、決着時点の残アイテム数×6 のボーナス */
+  /** 「総取り」— 勝者に、決着時点の残アイテム数に応じたボーナス (scoring.ts 参照) */
   sweepBonus:     [number, number];
   /** ゲーム開始時のプレイヤー名 */
   playerNames:    [string, string];

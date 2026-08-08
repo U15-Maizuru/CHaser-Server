@@ -4,13 +4,13 @@ import path from 'node:path';
 import { GameSession } from './Game.js';
 import { getLocalIP } from '../network/localIp.js';
 import { StableLog } from '../log/StableLog.js';
-import { calculateBonusBreakdown } from './GameLogic.js';
+
 import type { GameStatus } from './types.js';
 import { SlotManager } from './SlotManager.js';
 import { MapManager } from './MapManager.js';
 import { RoundController } from './RoundController.js';
 import { buildProcessConfig } from './processConfig.js';
-import { START_COUNTDOWN_SECONDS, Winner } from '@u15/ws-types';
+import { calculateBonusBreakdown, START_COUNTDOWN_SECONDS, Winner } from '@u15/ws-types';
 import type { ManualClient } from '../clients/ManualClient.js';
 import { pickRandomPair } from '../programCatalog.js';
 import { getMapCatalogEntry } from '../mapCatalog.js';
@@ -339,7 +339,7 @@ function buildRoundResult(
   leaveItems:     number,
   playerNames:    [string, string],
 ): RoundResult {
-  const { strikeBonus, sweepBonus } = calculateBonusBreakdown(status, scores, leaveItems);
+  const { strikeBonus, sweepBonus } = calculateBonusBreakdown(status.winner, status.reason, scores, leaveItems);
   return {
     round,
     winner: status.winner,

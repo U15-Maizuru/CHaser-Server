@@ -1,5 +1,5 @@
 import type { GameEndPayload } from '@u15/ws-types';
-import { Reason, Winner } from '@u15/ws-types';
+import { loserIdxOf, Reason, Winner } from '@u15/ws-types';
 
 // 決着の瞬間に盤面上へ出す演出のパラメータ。
 //
@@ -65,9 +65,7 @@ const LOSER_BY_REASON: Partial<Record<Reason, { kind: DecisiveKind } & LoserShap
 /**
  * game_end から盤面演出のパラメータを求める。演出の対象外なら null。
  *
- * 敗者は winner から一意に決まる: バックエンドの judgeGame は敗者 p に対して
- * `winner = (p === 0 ? HOT : COOL)` を返すため、その逆写像を取ればよい
- * (バックエンドの calculateBonusBreakdown と同じ導出)。
+ * 敗者は winner から一意に決まる (ws-types の loserIdxOf が judgeGame の逆写像)。
  */
 export function decisiveEffectFrom(gameEnd: GameEndPayload | null): DecisiveEffect | null {
   if (!gameEnd) return null;
@@ -85,7 +83,7 @@ export function decisiveEffectFrom(gameEnd: GameEndPayload | null): DecisiveEffe
   // 未決着 (CONTINUE) 等では勝者・敗者が定まらないので演出しない
   if (gameEnd.winner !== Winner.COOL && gameEnd.winner !== Winner.HOT) return null;
 
-  const loser:  0 | 1 = gameEnd.winner === Winner.COOL ? 1 : 0;
+  const loser:  0 | 1 = loserIdxOf(gameEnd.winner);
   const winner: 0 | 1 = loser === 0 ? 1 : 0;
 
   return {

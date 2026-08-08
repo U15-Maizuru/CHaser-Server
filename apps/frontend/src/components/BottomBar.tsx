@@ -2,6 +2,7 @@ import type { ServerStatusPayload } from '@u15/ws-types';
 import {
   BG_CARD, BORDER_COLOR, RADIUS_PILL, TEXT_MUTED,
   Button, BUTTON_BAR_HEIGHT,
+  WIN_BASE, DISCONNECTED_COLOR,
 } from '../ui';
 
 interface Props {
@@ -108,7 +109,7 @@ export function BottomBar({
             {phase === 'playing' ? '中断' : 'リセット'}
           </Button>
         )}
-        <span style={{ ...s.badge, background: isConnected ? '#33aa77' : '#cc4455' }}>
+        <span style={{ ...s.badge, background: isConnected ? WIN_BASE : DISCONNECTED_COLOR }}>
           {isConnected ? '● CONNECTED' : '○ DISCONNECTED'}
         </span>
       </div>

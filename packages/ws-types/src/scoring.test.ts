@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { RoundResult } from './protocol.js';
 import { Reason, Winner } from './protocol.js';
-import { computeSetResult, idxForSide, roundPointsFor, roundWonBy } from './scoring.js';
+import { calculateBonusBreakdown, computeSetResult, idxForSide, roundPointsFor, roundWonBy } from './scoring.js';
 
 function makeRound(round: 0 | 1, over: Partial<RoundResult> = {}): RoundResult {
   return {
@@ -124,5 +124,62 @@ describe('computeSetResult', () => {
     expect(draws).toBe(1);
     expect(winnerSide).toBe(1);
     expect(decidedBy).toBe('wins');
+  });
+});
+
+describe('calculateBonusBreakdown', () => {
+  it('reason=SCORE (ターン切れ) のときは両者とも一撃・総取りともに0', () => {
+    const { strikeBonus, sweepBonus } = calculateBonusBreakdown(Winner.COOL, Reason.SCORE, [5, 3], 10);
+    expect(strikeBonus).toEqual([0, 0]);
+    expect(sweepBonus).toEqual([0, 0]);
+  });
+
+  it('勝者が定まらない (DRAW) 決着では加点対象が無いので両者0', () => {
+    const { strikeBonus, sweepBonus } = calculateBonusBreakdown(Winner.DRAW, Reason.TRAPPED, [5, 3], 10);
+    expect(strikeBonus).toEqual([0, 0]);
+    expect(sweepBonus).toEqual([0, 0]);
+  });
+
+  it('ATTACK (アタック) では勝者に一撃 +50、総取りは+6×残アイテム', () => {
+    const { strikeBonus, sweepBonus } = calculateBonusBreakdown(Winner.COOL, Reason.ATTACK, [5, 3], 10);
+    expect(strikeBonus).toEqual([50, 0]);
+    expect(sweepBonus).toEqual([60, 0]);
+  });
+
+  it('TRAPPED (閉じ込め) でも勝者に一撃 +50、総取りは+6×残アイテム', () => {
+    const { strikeBonus, sweepBonus } = calculateBonusBreakdown(Winner.COOL, Reason.TRAPPED, [5, 3], 10);
+    expect(strikeBonus).toEqual([50, 0]);
+    expect(sweepBonus).toEqual([60, 0]);
+  });
+
+  it('CONFINED (自縛) では敗者に一撃 -3×自スコアの罰点、勝者に +50 は付かない', () => {
+    const { strikeBonus, sweepBonus } = calculateBonusBreakdown(Winner.COOL, Reason.CONFINED, [5, 3], 10);
+    expect(strikeBonus).toEqual([0, -9]);
+    expect(sweepBonus).toEqual([60, 0]);
+  });
+
+  it('COLLISION (衝突) では敗者に一撃 -3×自スコアの罰点、総取りは勝者に+6×残アイテム', () => {
+    // HOT が衝突負けして COOL が勝利 → 敗者(HOT, スコア3)に -3*3 = -9
+    const { strikeBonus, sweepBonus } = calculateBonusBreakdown(Winner.COOL, Reason.COLLISION, [5, 3], 10);
+    expect(strikeBonus).toEqual([0, -9]);
+    expect(sweepBonus).toEqual([60, 0]);
+  });
+
+  it('FOULED (通信エラー) でも COLLISION と同様に敗者へ罰点', () => {
+    const { strikeBonus, sweepBonus } = calculateBonusBreakdown(Winner.COOL, Reason.FOULED, [5, 3], 10);
+    expect(strikeBonus).toEqual([0, -9]);
+    expect(sweepBonus).toEqual([60, 0]);
+  });
+
+  it('HOT が勝者の場合はインデックスが反転する', () => {
+    const { strikeBonus, sweepBonus } = calculateBonusBreakdown(Winner.HOT, Reason.COLLISION, [5, 3], 2);
+    expect(strikeBonus).toEqual([-15, 0]); // COOL (スコア5) の反則負け → -3*5
+    expect(sweepBonus).toEqual([0, 12]);   // HOT の総取り → 6*2
+  });
+
+  it('HOT がアタックで勝った場合は HOT 側に +50 が入る', () => {
+    const { strikeBonus, sweepBonus } = calculateBonusBreakdown(Winner.HOT, Reason.ATTACK, [5, 3], 2);
+    expect(strikeBonus).toEqual([0, 50]);
+    expect(sweepBonus).toEqual([0, 12]);
   });
 });
