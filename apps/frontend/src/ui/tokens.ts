@@ -37,6 +37,11 @@ export const GOLD_LIGHT = '#fff3cc';
 export const PENALTY_COLOR = '#ff7a1a';
 export const PENALTY_PALE  = '#fff3ea';
 
+/** エラー表示 (アップロード失敗・プログラム起動失敗) */
+export const ERROR_COLOR = '#c43a3a';
+/** バックエンドとの接続が切れていることを示すバッジ */
+export const DISCONNECTED_COLOR = '#cc4455';
+
 // テキスト
 export const TEXT_PRIMARY   = '#1e1830';
 export const TEXT_SECONDARY = '#6e5e88';
@@ -60,3 +65,17 @@ export const RADIUS_PILL  = 999;
 // フォント
 export const FONT_UI  = '-apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif';
 export const FONT_NUM = '"SF Mono", Menlo, "Courier New", monospace';
+
+/**
+ * team-index (0=COOL / 1=HOT) ごとの配色一式。
+ * 「0 なら COOL の色、1 なら HOT の色」という対応を画面ごとに書き起こさないための表。
+ */
+export const TEAM_PALETTE = [
+  { label: 'COOL', color: COOL_COLOR, light: COOL_LIGHT, pale: COOL_PALE, dark: COOL_DARK },
+  { label: 'HOT',  color: HOT_COLOR,  light: HOT_LIGHT,  pale: HOT_PALE,  dark: HOT_DARK  },
+] as const;
+
+/** プレイヤーパネルのヘッダに使う斜めグラデーション */
+export function teamGradient(color: string, dark: string): string {
+  return `linear-gradient(135deg, ${color}, ${dark})`;
+}

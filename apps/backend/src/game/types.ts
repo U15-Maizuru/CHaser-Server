@@ -1,6 +1,6 @@
-import { MapObject, Winner, Reason, Action, Rote } from '@u15/ws-types';
+import { ConnectingStatus, MapObject, Winner, Reason, Action, Rote } from '@u15/ws-types';
 import type { Point } from '@u15/ws-types';
-export { MapObject, Winner, Reason, Action, Rote } from '@u15/ws-types';
+export { ConnectingStatus, MapObject, Winner, Reason, Action, Rote } from '@u15/ws-types';
 export type { Point, ScanInfo } from '@u15/ws-types';
 
 export const TEAM_COUNT = 2;
@@ -14,11 +14,6 @@ export enum Team {
 export interface GameStatus {
   winner: Winner;
   reason: Reason;
-}
-
-export enum ConnectingStatus {
-  FINISHED = 0,
-  CONTINUE = 1,
 }
 
 // Action / Rote は @u15/ws-types が単一情報源 (フロントの手動操作 UI と共有するため)。

@@ -19,8 +19,6 @@ import { TournamentStandby } from './tournament/board/TournamentStandby';
 import { isTournamentComplete } from '../lib/tournamentResult';
 import {
   BG_ROOT, BG_CARD,
-  COOL_COLOR, COOL_DARK, COOL_PALE,
-  HOT_COLOR,  HOT_DARK,  HOT_PALE,
   TURN_BASE, TURN_LIGHT,
   WIN_BASE, WIN_LIGHT,
   GOLD_BASE, GOLD_LIGHT,
@@ -28,6 +26,7 @@ import {
   SHADOW_MD, SHADOW_SM,
   RADIUS_MD,
   FONT_UI, FONT_NUM,
+  TEAM_PALETTE, teamGradient,
 } from '../ui';
 
 export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId: string; httpBase: string }) {
@@ -129,11 +128,6 @@ function stateBadgeStyle(state: string): React.CSSProperties {
   }
 }
 
-// team-index (0=COOL / 1=HOT) ごとの配色一式
-const TEAM_COLORS = [
-  { label: 'COOL', color: COOL_COLOR, dark: COOL_DARK, pale: COOL_PALE },
-  { label: 'HOT',  color: HOT_COLOR,  dark: HOT_DARK,  pale: HOT_PALE  },
-] as const;
 
 function SetupWaiting({ serverStatus, displayTitle, tournament, groupPhase, currentMap, theme }: {
   serverStatus: ServerStatusPayload | null;
@@ -268,11 +262,11 @@ function MapPreview({ map, theme, flip, label }: {
 }
 
 function TeamCard({ idx, name, state }: { idx: 0 | 1; name: string; state: string }) {
-  const { label, color, dark, pale } = TEAM_COLORS[idx];
+  const { label, color, dark, pale } = TEAM_PALETTE[idx];
   const badge = stateBadgeStyle(state);
   return (
     <div style={{ ...tc.card, background: pale }}>
-      <div style={{ ...tc.header, background: `linear-gradient(135deg, ${color}, ${dark})` }}>
+      <div style={{ ...tc.header, background: teamGradient(color, dark) }}>
         {label}
       </div>
       <div style={{ ...tc.name, color: dark }}>{name}</div>

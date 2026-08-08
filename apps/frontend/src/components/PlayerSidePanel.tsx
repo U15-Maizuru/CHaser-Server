@@ -4,7 +4,7 @@ import type {
   RoundResult,
   ServerStatusPayload,
 } from '@u15/ws-types';
-import { computeSetResult, idxForSide, roundPointsFor, Winner } from '@u15/ws-types';
+import { computeSetResult, idxForSide, ITEM_POINT, roundPointsFor, roundWonBy, Winner } from '@u15/ws-types';
 import {
   BG_CARD,
   COOL_COLOR, COOL_DARK, COOL_PALE,
@@ -15,11 +15,10 @@ import {
   SHADOW_SM, BORDER_COLOR,
   RADIUS_SM, RADIUS_MD,
   FONT_UI, FONT_NUM,
+  teamGradient,
 } from '../ui';
+import { clampNum } from '../lib/num';
 
-function clampNum(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(value, max));
-}
 
 // 各試合のポイント明細 (カード幅・文字サイズ・余白) を、盤面の実描画サイズに連動した
 // スケール (MainWindow から渡される幅) に応じて最大化するための寸法。
@@ -239,7 +238,7 @@ function SingleModeContent({ side, snapshot, roundResults, dim }: {
   const items = rr ? rr.scores[side] : (snapshot?.teamScore[side] ?? 0);
   // ゲーム中は確定していない一撃/総取りを除いた アイテム×10 をライブ表示し、
   // 決着後にボーナス込みの確定値へ切り替える
-  const totalPoints = rr ? roundPointsFor(rr, side) : items * 10;
+  const totalPoints = rr ? roundPointsFor(rr, side) : items * ITEM_POINT;
 
   const base  = side === 0 ? COOL_COLOR : HOT_COLOR;
   const dark  = side === 0 ? COOL_DARK  : HOT_DARK;
@@ -253,7 +252,7 @@ function SingleModeContent({ side, snapshot, roundResults, dim }: {
           ...s.teamHeader,
           gap: dim.headerGap,
           padding: `${dim.headerPadV}px ${dim.headerPadH}px`, marginBottom: dim.headerMarginB,
-          background: `linear-gradient(135deg, ${base}, ${dark})`,
+          background: teamGradient(base, dark),
         }}>
           <span style={{ ...s.teamLabel, fontSize: dim.labelFont }}>{label}</span>
         </div>
@@ -263,7 +262,7 @@ function SingleModeContent({ side, snapshot, roundResults, dim }: {
             (2ゲーム制の RoundLedger と同じ方針)。未確定は「—」で示す。 */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: dim.rowGap }}>
           <LedgerRow
-            label="アイテム" value={`${items * 10}pt`} color={base}
+            label="アイテム" value={`${items * ITEM_POINT}pt`} color={base}
             labelFont={dim.ledgerLabelFont} valueFont={dim.ledgerValueFont} gap={dim.rowGap}
           />
           <LedgerRow
@@ -298,9 +297,9 @@ function SingleModeContent({ side, snapshot, roundResults, dim }: {
 type RoundRowStatus = 'finished' | 'live' | 'pending';
 type RoundOutcome   = 'WIN' | 'LOSE' | 'DRAW';
 
-function roundOutcome(winner: Winner, team: 0 | 1): RoundOutcome {
-  if (winner === Winner.DRAW) return 'DRAW';
-  return winner === (team === 0 ? Winner.COOL : Winner.HOT) ? 'WIN' : 'LOSE';
+function roundOutcome(rr: RoundResult, side: 0 | 1): RoundOutcome {
+  if (rr.winner === Winner.DRAW) return 'DRAW';
+  return roundWonBy(rr, side) ? 'WIN' : 'LOSE';
 }
 
 interface RoundRowData {
@@ -338,15 +337,15 @@ function computeRoundRow(
     return {
       round, idx, label, status: 'finished',
       items, strikeBonus, sweepBonus,
-      outcome: roundOutcome(rr.winner, idx),
-      subtotal: items * 10 + strikeBonus + sweepBonus,
+      outcome: roundOutcome(rr, side),
+      subtotal: roundPointsFor(rr, side),
     };
   }
 
   const isLive = serverStatus?.currentRound === round && serverStatus?.phase === 'playing';
   if (isLive) {
     const items = snapshot?.teamScore[idx] ?? 0;
-    return { round, idx, label, status: 'live', items, strikeBonus: 0, sweepBonus: 0, outcome: null, subtotal: items * 10 };
+    return { round, idx, label, status: 'live', items, strikeBonus: 0, sweepBonus: 0, outcome: null, subtotal: items * ITEM_POINT };
   }
 
   return { round, idx, label, status: 'pending', items: 0, strikeBonus: 0, sweepBonus: 0, outcome: null, subtotal: 0 };
@@ -438,7 +437,7 @@ function RoundLedger({ row, dim }: { row: RoundRowData; dim: PanelDim }) {
         ...s.teamHeader,
         gap: dim.headerGap,
         padding: `${dim.headerPadV}px ${dim.headerPadH}px`, marginBottom: dim.headerMarginB,
-        background: `linear-gradient(135deg, ${base}, ${dark})`,
+        background: teamGradient(base, dark),
       }}>
         <span style={{ ...s.roundNum, fontSize: dim.badgeFont }}>第{row.round + 1}ゲーム</span>
         <span style={{ ...s.teamLabel, fontSize: dim.labelFont }}>{row.label}</span>
@@ -463,7 +462,7 @@ function RoundLedger({ row, dim }: { row: RoundRowData; dim: PanelDim }) {
               アイテム + 一撃 + 総取り = 小計 と足し算で読める。獲得数そのものは上部スコアバーが
               大きく表示している。 */}
           <LedgerRow
-            label={blank ? '' : 'アイテム'} value={blank ? '' : `${row.items * 10}pt`} color={base}
+            label={blank ? '' : 'アイテム'} value={blank ? '' : `${row.items * ITEM_POINT}pt`} color={base}
             labelFont={dim.ledgerLabelFont} valueFont={dim.ledgerValueFont} gap={dim.rowGap}
           />
           <LedgerRow

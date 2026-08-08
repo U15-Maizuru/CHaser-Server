@@ -3,7 +3,7 @@ import type {
   GameEndPayload, GameStateSnapshot, TurnStartPayload,
   ServerPhase, ServerStatusPayload,
 } from '@u15/ws-types';
-import { idxForSide, Reason, Winner } from '@u15/ws-types';
+import { idxForSide, isBlunder, Reason, Winner } from '@u15/ws-types';
 import { GameBoardCanvas } from './GameBoardCanvas';
 import { PlayerSidePanel } from './PlayerSidePanel';
 import { decisiveEffectFrom } from '../lib/decisiveEffect';
@@ -18,6 +18,7 @@ import {
   RADIUS_SM, RADIUS_LG,
   FONT_UI, FONT_NUM,
 } from '../ui';
+import { clampNum } from '../lib/num';
 
 interface Props {
   snapshot:        GameStateSnapshot   | null;
@@ -49,14 +50,7 @@ function reasonLabel(reason: Reason): string {
   }
 }
 
-// 反則 (自縛/衝突/通信エラー) による決着かどうか — 原本の isBlunder() と同じ定義
-function isBlunder(reason: Reason): boolean {
-  return reason === Reason.CONFINED || reason === Reason.COLLISION || reason === Reason.FOULED;
-}
 
-function clampNum(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(value, max));
-}
 
 // 勝者側にのみ表示する「勝ち」テキスト。反則決着 (自縛/衝突/通信エラー) でも敗者視点の
 // LOSE 表記にはせず、常に勝者視点の文言 (相手の反則で勝った、という言い回し) にする。

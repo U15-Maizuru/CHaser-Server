@@ -7,8 +7,81 @@
 // 依存は ./protocol.js のみ。index.ts (このファイルを re-export する側) から import すると
 // 循環参照になり、Winner のような実行時 enum の初期化順が壊れるので絶対にしないこと。
 
-import { Winner } from './protocol.js';
+import { Reason, Winner } from './protocol.js';
 import type { RoundResult } from './protocol.js';
+
+// ── 競技ルールの係数 ───────────────────────────────────────────────────────
+// 値の実体と説明は必ずここに置く。以前は実体がバックエンドの GameLogic.ts にあり、
+// 説明だけが protocol.ts の RoundResult のコメントに数字ごと書かれていた。
+
+/** アイテム1個あたりのポイント */
+export const ITEM_POINT = 10;
+/** アタック・閉じ込めで勝った側への「一撃」加点 */
+export const STRIKE_WIN_BONUS = 50;
+/** 衝突・自縛・通信エラーで負けた側への「一撃」減点 (×自分の獲得アイテム数) */
+export const BLUNDER_PENALTY_PER_ITEM = 3;
+/** 「総取り」ボーナス (×決着時点の残アイテム数) */
+export const SWEEP_POINT_PER_ITEM = 6;
+
+// ── 勝者・敗者の対応 ───────────────────────────────────────────────────────
+
+/** team-index (0=COOL/1=HOT) が負けたときの勝者 */
+export function winnerAgainst(teamIdx: 0 | 1): Winner {
+  return teamIdx === 0 ? Winner.HOT : Winner.COOL;
+}
+
+/** 勝者が COOL/HOT のとき、敗者の team-index */
+export function loserIdxOf(winner: Winner.COOL | Winner.HOT): 0 | 1 {
+  return winner === Winner.COOL ? 1 : 0;
+}
+
+/** 反則負けの減点対象 (自縛・衝突・通信エラー。相手を追い詰めた側 (TRAPPED/ATTACK) は対象外) */
+export function isBlunder(reason: Reason): boolean {
+  return reason === Reason.CONFINED
+      || reason === Reason.COLLISION
+      || reason === Reason.FOULED;
+}
+
+/**
+ * ゲーム別のボーナス内訳。競技ルールの「ポイント」より:
+ *
+ *   一撃ボーナス (ペナルティ)
+ *     アタック・閉じ込め【勝】: STRIKE_WIN_BONUS を加点
+ *     衝突・自縛【敗】       : 獲得したアイテム数 × BLUNDER_PENALTY_PER_ITEM を減点
+ *                              (通信エラーも同扱い)
+ *   総取り【勝】             : 残りのアイテム数 × SWEEP_POINT_PER_ITEM を加点
+ *
+ * reason===SCORE (ターン切れによるアイテム数判定) の場合はどちらも 0。
+ * 勝者が定まらない決着 (引き分け等) でも 0。
+ */
+export function calculateBonusBreakdown(
+  winner:     Winner,
+  reason:     Reason,
+  scores:     [number, number], // [cool, hot]
+  leaveItems: number,
+): { strikeBonus: [number, number]; sweepBonus: [number, number] } {
+  const strikeBonus: [number, number] = [0, 0];
+  const sweepBonus:  [number, number] = [0, 0];
+
+  if (reason === Reason.SCORE) return { strikeBonus, sweepBonus };
+  // 勝者が COOL/HOT に定まらない場合 (DRAW/CONTINUE/NONE) は加点対象が無い。
+  // 勝者側への加点 (一撃・総取り) が入るため、ここで明示的に弾く
+  if (winner !== Winner.COOL && winner !== Winner.HOT) return { strikeBonus, sweepBonus };
+
+  const loserIdx  = loserIdxOf(winner);
+  const winnerIdx = loserIdx === 0 ? 1 : 0;
+
+  if (isBlunder(reason)) {
+    // 自滅による決着: 敗者に減点。勝者は「一撃」の加点対象ではない
+    strikeBonus[loserIdx] = -BLUNDER_PENALTY_PER_ITEM * scores[loserIdx];
+  } else {
+    // 相手を仕留めた決着 (アタック / 閉じ込め): 勝者に定額加点
+    strikeBonus[winnerIdx] = STRIKE_WIN_BONUS;
+  }
+  sweepBonus[winnerIdx] = SWEEP_POINT_PER_ITEM * leaveItems;
+
+  return { strikeBonus, sweepBonus };
+}
 
 // 2ゲーム制: 画面の物理的な左右 (side) とゲーム番号 (round) から、その画面側に表示すべき
 // プレイヤー番号 (team-index, 0=COOL/1=HOT) を求める。第2ゲームは先攻/後攻が入れ替わるため、
@@ -24,18 +97,18 @@ export function idxForSide(side: 0 | 1, round: 0 | 1): 0 | 1 {
 // 1ゲームごとに先攻/後攻が入れ替わるため、同じプログラムを追いかけるには round ごとに
 // idxForSide で team-index を引き直す必要がある。
 
-/** 1ゲーム分の合計ポイント: 獲得アイテム数×10 + 一撃ボーナス + 総取りボーナス */
+/** 1ゲーム分の合計ポイント: アイテムポイント + 一撃ボーナス + 総取りボーナス */
 export function roundPointsFor(rr: RoundResult, side: 0 | 1): number {
   const idx = idxForSide(side, rr.round);
-  return rr.scores[idx] * 10 + rr.strikeBonus[idx] + rr.sweepBonus[idx];
+  return rr.scores[idx] * ITEM_POINT + rr.strikeBonus[idx] + rr.sweepBonus[idx];
 }
 
 // 合計ポイントの3成分。同点の順位を内訳で割る必要がある場面 (BOT対戦予選の
 // 「合計 → 一撃 → アイテム」) のために、side → team-index の引き直しを再実装せずに済ませる。
 
-/** 1ゲーム分のアイテムポイント (獲得アイテム数×10) */
+/** 1ゲーム分のアイテムポイント (獲得アイテム数 × ITEM_POINT) */
 export function roundItemPointsFor(rr: RoundResult, side: 0 | 1): number {
-  return rr.scores[idxForSide(side, rr.round)] * 10;
+  return rr.scores[idxForSide(side, rr.round)] * ITEM_POINT;
 }
 
 /** 1ゲーム分の一撃ボーナス (アタック/閉じ込めの +50、自滅の罰点) */
