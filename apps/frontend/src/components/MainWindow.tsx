@@ -3,10 +3,9 @@ import type {
   GameEndPayload, GameStateSnapshot, TurnStartPayload,
   ServerPhase, ServerStatusPayload,
 } from '@u15/ws-types';
-import { Reason, Winner } from '@u15/ws-types';
+import { idxForSide, Reason, Winner } from '@u15/ws-types';
 import { GameBoardCanvas } from './GameBoardCanvas';
 import { PlayerSidePanel } from './PlayerSidePanel';
-import { idxForSide } from '../lib/roundSide';
 import { decisiveEffectFrom } from '../lib/decisiveEffect';
 import {
   BG_ROOT, BG_CARD, BG_HEADER,

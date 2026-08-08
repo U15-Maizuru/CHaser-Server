@@ -3,8 +3,7 @@ import type { Point } from '@u15/ws-types';
 export { MapObject, Winner, Reason, Action, Rote } from '@u15/ws-types';
 export type { Point, ScanInfo } from '@u15/ws-types';
 
-export const TEAM_COUNT  = 2;
-export const ROUND_COUNT = 2;
+export const TEAM_COUNT = 2;
 
 export enum Team {
   COOL    = 0,
@@ -20,15 +19,6 @@ export interface GameStatus {
 export enum ConnectingStatus {
   FINISHED = 0,
   CONTINUE = 1,
-}
-
-export enum MapOverlay {
-  NOTHING,
-  LOOK,
-  SEARCH,
-  GETREADY,
-  BLIND,
-  ERASE,
 }
 
 // Action / Rote は @u15/ws-types が単一情報源 (フロントの手動操作 UI と共有するため)。

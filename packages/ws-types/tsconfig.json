@@ -1,13 +1,14 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "declaration": true,
     "declarationMap": true,
     "outDir": "dist",
-    "rootDir": "src",
-    "strict": true
+    "rootDir": "src"
   },
-  "include": ["src"]
+  "include": ["src"],
+  // テストは vitest がソースを直接読むため、dist へ出力しない
+  "exclude": ["src/**/*.test.ts"]
 }

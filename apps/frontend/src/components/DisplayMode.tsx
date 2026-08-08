@@ -1,5 +1,5 @@
 import type { InlineMapData, ServerStatusPayload, TournamentStatePayload } from '@u15/ws-types';
-import { DEFAULT_DISPLAY_PREFS, hasQualifying, MapObject } from '@u15/ws-types';
+import { DEFAULT_DISPLAY_PREFS, hasQualifying, idxForSide, MapObject, roundPointsFor } from '@u15/ws-types';
 import { useGameState } from '../hooks/useGameState';
 import { useGamePhaseSound } from '../hooks/useGamePhaseSound';
 import { useStartCountdown } from '../hooks/useStartCountdown';
@@ -17,8 +17,6 @@ import { LeagueTable } from './tournament/board/LeagueTable';
 import { TournamentFinale } from './tournament/board/TournamentFinale';
 import { TournamentStandby } from './tournament/board/TournamentStandby';
 import { isTournamentComplete } from '../lib/tournamentResult';
-import { idxForSide } from '../lib/roundSide';
-import { roundPointsFor } from '../lib/setResult';
 import {
   BG_ROOT, BG_CARD,
   COOL_COLOR, COOL_DARK, COOL_PALE,
@@ -335,7 +333,6 @@ const sw: Record<string, React.CSSProperties> = {
   recapName:  { fontSize: 18, fontWeight: 700, color: TEXT_PRIMARY, minWidth: 120, textAlign: 'center' },
   recapScore: { fontSize: 34, fontWeight: 800, color: TEXT_PRIMARY, fontFamily: FONT_NUM },
   recapDash:  { fontSize: 22, color: TEXT_MUTED },
-  recapNote:  { fontSize: 13, color: TEXT_SECONDARY },
 };
 
 // これから戦うマップ (待機画面の中央)
@@ -345,7 +342,6 @@ const mp: Record<string, React.CSSProperties> = {
     padding: '14px 18px', background: BG_CARD,
     borderRadius: RADIUS_MD, boxShadow: SHADOW_SM,
   },
-  head: { fontSize: 11, color: TEXT_MUTED, letterSpacing: '0.1em', alignSelf: 'flex-start' },
   name: {
     fontSize: 14, fontWeight: 700, color: TEXT_PRIMARY,
     maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',

@@ -4,9 +4,7 @@ import type {
   RoundResult,
   ServerStatusPayload,
 } from '@u15/ws-types';
-import { Winner } from '@u15/ws-types';
-import { idxForSide } from '../lib/roundSide';
-import { computeSetResult, roundPointsFor } from '../lib/setResult';
+import { computeSetResult, idxForSide, roundPointsFor, Winner } from '@u15/ws-types';
 import {
   BG_CARD,
   COOL_COLOR, COOL_DARK, COOL_PALE,

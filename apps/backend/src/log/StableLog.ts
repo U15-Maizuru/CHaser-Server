@@ -14,10 +14,4 @@ export class StableLog {
     if (!this.filename) return;
     fs.appendFileSync(this.filename, str, { encoding: 'utf8' });
   }
-
-  // C++ の << 演算子に対応するチェーン可能な append
-  append(str: string): this {
-    this.write(str);
-    return this;
-  }
 }

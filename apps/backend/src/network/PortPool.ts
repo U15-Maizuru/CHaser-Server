@@ -16,8 +16,4 @@ export class PortPool {
   release(port: number): void {
     this.available.add(port);
   }
-
-  get size(): number {
-    return this.available.size;
-  }
 }

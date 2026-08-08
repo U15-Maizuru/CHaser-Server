@@ -3,7 +3,8 @@
   "private": true,
   "scripts": {
     "build":    "pnpm -r build",
+    "dev":      "pnpm --filter @u15/electron dev",
     "test":     "pnpm -r test",
-    "test:e2e": "node apps/electron/test-e2e.mjs"
+    "test:e2e": "pnpm build && node apps/electron/test-e2e.mjs"
   }
 }
