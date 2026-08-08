@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type { InlineMapData, MapCatalogEntry } from '@u15/ws-types';
 import { MapObject } from '@u15/ws-types';
 import { exportMap, importMap } from './game/GameSystem.js';
-import type { GameMap } from './game/types.js';
+import { toGameMap } from './game/inlineMap.js';
 
 // マップの永続保存先。room/slot に紐付かず、アプリ・システムの再起動をまたいで
 // 保持される (server/program-catalog, server/music と同じ層のグローバルディレクトリ)。
@@ -68,14 +68,7 @@ export function addMapCatalogEntryFromInline(displayName: string, data: InlineMa
   const id        = randomUUID();
   const finalPath = path.join(CATALOG_DIR, `${id}.map`);
 
-  const gameMap: GameMap = {
-    field:          data.field as MapObject[][],
-    turn:           data.turn,
-    name:           displayName,
-    size:           data.size,
-    teamFirstPoint: data.teamFirstPoint,
-    textureDirPath: 'Jewel',
-  };
+  const gameMap = toGameMap(data, displayName);
   exportMap(gameMap, finalPath);
   // exportMap は "N:" 行をファイル名 (id ベース) から生成するため、表示名で上書きする。
   // (exportMap 自体が既定の utf-8 で書き込むため、読み戻しも utf-8 で揃える)

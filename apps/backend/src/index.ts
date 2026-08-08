@@ -1,6 +1,6 @@
-import os from 'node:os';
 import { RoomManager } from './RoomManager.js';
 import { WsServer }    from './network/WsServer.js';
+import { getLocalIP }  from './network/localIp.js';
 import { handleHttpRequest, ensureDirectories } from './network/HttpServer.js';
 import { TournamentOrchestrator } from './tournament/TournamentOrchestrator.js';
 
@@ -8,15 +8,6 @@ const PORT       = Number(process.env['PORT'] ?? 8765);
 const U15_MODE   = process.env['U15_MODE'] ?? 'local';   // 'local' | 'web'
 const LOCAL_PORTS: [number, number] = [2009, 2010];
 const WEB_PORTS:  [number, number]  = [13000, 14999];    // 1000ポート = 500並列ルーム
-
-function getLocalIP(): string {
-  for (const iface of Object.values(os.networkInterfaces())) {
-    for (const addr of iface ?? []) {
-      if (addr.family === 'IPv4' && !addr.internal) return addr.address;
-    }
-  }
-  return 'localhost';
-}
 
 async function main() {
   ensureDirectories();

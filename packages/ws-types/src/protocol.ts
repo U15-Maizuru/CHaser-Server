@@ -229,6 +229,20 @@ export interface MapParams {
   size?:    Point;
 }
 
+/**
+ * ランダムマップ生成の既定パラメータ。
+ *
+ * バックエンドの生成関数 (GameSystem.createRandomMap)、ルームの初期マップ (MapManager)、
+ * ステートレス生成の HTTP ルート、フロントエンドの入力欄の初期値がそれぞれ同じ数字を
+ * 持っていて、片方だけ変えると「設定を送る前と後で盤面が違う」形で食い違う。
+ */
+export const DEFAULT_MAP_PARAMS: Readonly<Omit<MapParams, 'size'>> = {
+  itemNum:  51,
+  blockNum: 20,
+  turnNum:  100,
+  mirror:   true,
+};
+
 export interface InlineMapData {
   field:          number[][];
   size:           Point;
