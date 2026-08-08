@@ -34,6 +34,8 @@
 | **ゲーム** | 1回の対戦 (盤面用意 → 決着 / ターン切れ) | `round` — `currentRound` / `roundResults` / `RoundResult` / `RoundController` / `idxForSide(side, round)` / `roundPointsFor` |
 | **試合** | 同じマップで先後を入れ替えた2ゲームのまとまり | `set` — `computeSetResult` / `SetResult` / `setResult.ts`、および `doubleMode` (= 2ゲーム制)<br>大会運営では `match` — `TournamentMatch` / `matchId` / `MatchStatus` (粒度は `set` と同じ) |
 | **回戦 / 節** | トーナメントの1回戦・準決勝、リーグの第N節 | `stage` — `TournamentMatch.stage`。`round` は「ゲーム」に使っているので流用しない |
+| **予選グループ** | 予選リーグの Aリーグ / Bリーグ。BOT対戦予選では1つだけ | `group` — `TournamentMatch.group`。**これを持つ試合が「予選」**で、持たない試合が決勝トーナメント |
+| **運営BOT** | BOT対戦予選で全参加者の対戦相手になるプログラム | `BOT_PARTICIPANT_ID` (`'__bot__'`) — `participants` には入れず、配信ペイロードにだけ合成する |
 
 識別子をリネームすると `ServerStatusPayload` などのプロトコル型まで波及するため、**識別子は
 据え置き、日本語表記だけを公式用語に合わせる**方針を採っている。新しいコードを書くときも
@@ -1084,7 +1086,7 @@ const WEB_PORTS: [number, number] = [13000, 14999]; // デフォルト: 最大50
 
 ---
 
-## 13. 大会運営 (トーナメント / リーグ / 予選リーグ)
+## 13. 大会運営 (トーナメント / リーグ / 予選リーグ / BOT対戦予選)
 
 大会当日の進行 (組み合わせの読み込み → 対戦カードの割り当て → 結果の反映 → 勝ち上がり) を
 サポートする。**トーナメントの1カード = 公式ルールの「試合」= 2ゲーム制の1セット**なので、
@@ -1102,8 +1104,9 @@ const WEB_PORTS: [number, number] = [13000, 14999]; // デフォルト: 最大50
 | `bracket.ts` | 【純関数】参加者 → トーナメントの試合グラフ (標準シード順 / bye / 3位決定戦) |
 | `league.ts` | 【純関数】参加者 → リーグの試合グラフ (円卓法で節に分割) |
 | `groupStage.ts` | 【純関数】参加者 → 予選リーグ N 本 + 決勝トーナメントの試合グラフ |
-| `qualifiers.ts` | 【純関数】予選の順位表 → 決勝トーナメントの枠 (同点の印つき) |
-| `standings.ts` | 【純関数】順位表 (勝ち点 → 合計ポイント → 直接対決) |
+| `botStage.ts` | 【純関数】参加者 → BOT対戦予選 (1グループ) + 決勝トーナメントの試合グラフ |
+| `qualifiers.ts` | 【純関数】予選の順位表 → 決勝トーナメントの枠・最終決定確認リスト (同点の印つき) |
+| `standings.ts` | 【純関数】順位表。`rankBy` で 勝ち点系 / ポイント系 を切り替える |
 | `progress.ts` | 【純関数】slot の解決・bye の自動確定・確定の取り消し・次に実施する試合 |
 | `autoPlay.ts` | 【純関数】自動進行の「次の一手」と、その前に置く待機時間 |
 | `TournamentStore.ts` | 永続化・フォルダ検出・プログラムライブラリへの取り込み |
@@ -1286,8 +1289,10 @@ ZIP を書く実装 (`zip.writeZip`) は元々テスト用ヘルパー (`test/bu
 | `components/FitArea.tsx` | 中身を親の空きいっぱいまで拡大・縮小して中央に置く入れ物 (`useFitScale`) |
 | `components/tournament/BracketView.tsx` | トーナメント表。接続線は SVG、カードは絶対配置の DOM |
 | `components/tournament/LeagueTable.tsx` | リーグの星取表 + 順位表 (素の DOM)。予選では**そのリーグの試合・参加者だけ**を渡す |
-| `components/tournament/GroupStageView.tsx` | 予選リーグ表 N 枚 ⇄ 決勝トーナメント表の切り替え。観戦画面の出し分け (`displayGroupPhase`) もここ |
-| `components/tournament/QualifierSection.tsx` | 決勝進出者の一覧と差し替え (`QualifierPicker` は表のカードからも使う) |
+| `components/tournament/QualifyingView.tsx` | 予選の表 ⇄ 決勝トーナメント表の切り替え。観戦画面の出し分け (`displayQualifyingPhase`) もここ。**位相の判断は予選リーグ / BOT対戦予選で共通** |
+| `components/tournament/BotStageBoard.tsx` | BOT対戦予選の表。エントリーリスト + 順位リスト (終わった人だけ載る) |
+| `components/tournament/QualifierSection.tsx` | 決勝進出者の一覧と差し替え (予選リーグ。`QualifierPicker` は表のカードからも使う) |
+| `components/tournament/BotQualifierSection.tsx` | 決勝進出者の最終決定確認リスト (BOT対戦予選。多めに出して削る) |
 | `components/tournament/MatchCard.tsx` | 1試合のカード。3画面で共用 (`interactive` で操作の有無を切替) |
 | `components/tournament/TournamentPanel.tsx` | 運営パネル (大会の選択・取り込み・回戦ごとのマップ・オートプレイ・次の一手) |
 | `components/tournament/ResultConfirmDialog.tsx` | 結果確定。同点時の3択を出す |
@@ -1378,6 +1383,20 @@ ZIP を書く実装 (`zip.writeZip`) は元々テスト用ヘルパー (`test/bu
 勝ち上がる形式。**予選をやらない大会もあるので、既存2形式はそのまま残してある** —
 これは3つ目の選択肢を足しただけで、`single-elimination` / `league` の挙動は変わっていない。
 
+#### 形式の判定は述語を通す (最重要)
+
+`format` の比較を直に書くと、あとから足した形式が黙って別の枝へ落ちて事故になる。
+`@u15/ws-types` の述語を必ず通すこと。**特に `hasQualifying` と `hasGroupStage` の
+取り違えが危ない** — 前者で書くべき所を後者で書くと、BOT対戦予選が決勝進出者の
+確定ゲートを素通りして決勝が始まってしまう。
+
+| 述語 | true になる形式 | 「何が言いたいか」 |
+|---|---|---|
+| `hasQualifying` | `group-then-bracket` / `bot-then-bracket` | **予選がある** = 決勝進出者の確定を挟む。「予選」の意味で書く判定はすべてこれ |
+| `hasGroupStage` | `group-then-bracket` | 予選が**リーグ**である。星取表・リーグ数・所属リーグの分岐だけ |
+| `hasBotStage` | `bot-then-bracket` | 予選が**BOT対戦**である。順位の付け方・予選マップ・表の分岐だけ |
+| `hasBracket` | `single-elimination` / 予選のある2形式 | 勝ち上がりの表を持つ |
+
 #### 試合グラフは1本にまとめる
 
 ```
@@ -1445,10 +1464,10 @@ id は予選が `G1-D1M1` (Gリーグ番号-D節-M試合)、決勝が従来ど�
 
 **運営席 (`?mode=tournament`) のタブとは連動させない。** 観客には予選表を出したまま、
 手元で決勝の組み合わせを確認したい場面があるため、運営席のタブはローカル state のまま、
-観戦画面はサーバー配信の `displayView` だけを見る。`GroupStageView` は `phase` を
+観戦画面はサーバー配信の `displayView` だけを見る。`QualifyingView` は `phase` を
 渡されたらそれに従い、渡されなければ自前のタブと自動追従で動く。
 
-`'auto'` の解決は `displayGroupPhase` (純関数。配信された state だけで決まるので、
+`'auto'` の解決は `displayQualifyingPhase` (純関数。配信された state だけで決まるので、
 どの窓で開いても・いつ開いても同じ画面になる):
 
 - 予選が終わっていない → 予選表
@@ -1506,7 +1525,7 @@ id は予選が `G1-D1M1` (Gリーグ番号-D節-M試合)、決勝が従来ど�
 
 塗る対象は既定では**順位表の位置**。予選の途中は枠 (`qualifiers`) がまだ埋まっていない
 (`pending`) ので、枠を見て塗ると通過圏が消えてしまう。運営が枠を手で差し替えたリーグだけ
-`GroupStageView` が `qualifiedIds` に実際に上がる人を渡し、色をその人へ移す。
+`QualifyingView` が `qualifiedIds` に実際に上がる人を渡し、色をその人へ移す。
 **通過ラインの位置 (線) は差し替えがあっても動かさない** — 線は順位の境目であって、
 誰が上がったかとは別の情報だから。
 
@@ -1585,3 +1604,128 @@ id は予選が `G1-D1M1` (Gリーグ番号-D節-M試合)、決勝が従来ど�
 テストからは `OrchestratorDeps.autoPlayDelaysMs` で縮められる。**`arm` だけは
 ある程度残すこと** — 0 にすると、確定や決勝進出者の確定を見届ける前に
 次の対戦が始まってしまい、アサーションが競走する。
+
+---
+
+### 13-10. BOT対戦予選 + 決勝トーナメント (`bot-then-bracket`)
+
+運営が用意した1つの BOT を基準器として、全参加者が**同一 BOT・同一マップ**と1試合ずつ戦い、
+獲得ポイントで順位を付ける形式。予選の試合数が参加者数と等しくなる (総当たりは nC2 で爆発する)。
+
+#### 予選を「1グループの予選」として組む
+
+これが設計の要。BOT対戦予選の全試合を `group: 0` / `stage: 0` に置くと、
+予選リーグのために作った機構がまるごと再利用できる:
+
+```
+stage 0     予選 (参加者ごとに BOT と1試合。group は常に 0)
+stage 1..   決勝トーナメントの各回戦 (group は undefined)
+```
+
+| 再利用できるもの | 変更 |
+|---|---|
+| `MatchSlotRef` の `group-rank` による1回戦の参照 | なし |
+| `progress.resolveMatches` / `downstreamOf` / `isKnockoutMatch` | なし |
+| `groupStage.groupStageCountOf` / `isGroupStageDone` | なし (`group` の有無で数えているため) |
+| `qualifiers.computeQualifiers` / `TournamentStore.resolveStageMaps` | 引数を足しただけ |
+| `buildBracket(..., { firstRoundRefs, stageOffset })` | なし |
+
+試合 id は `B-M1` … `B-Mn`。`buildBotStage` (`botStage.ts`) が予選と決勝を1本にして返す。
+
+`rules.groupCount` は使わない (常に1グループ)。**`rules.advancePerGroup` を
+「決勝トーナメント進出人数」として流用している** — 予選が1グループなので
+「各グループから上がる人数」＝「全体から上がる人数」で意味が一致する。
+
+#### BOT は予約 id を持つ合成参加者
+
+`TournamentDefinition.participants` には**入れない**。エントリー数・順位表・決勝トーナメントから
+自動的に外すためで、代わりに `resolveParticipants` が配信ペイロードの `participants` にだけ
+`BOT_PARTICIPANT_ID` (`'__bot__'`) を末尾に合成する。
+
+```
+rules.botProgram → syncPrograms → state.programs['__bot__'] → resolveParticipants
+                                                                   ↓
+                        試合の slot は普通の { kind: 'participant' } でこの id を指す
+```
+
+おかげで `armMatch` / `MatchCard` / `BracketView` / `exporter` は**BOT を知らないまま動く**
+(どれも `participants` から id 引きしているだけ)。`ResolvedParticipant.isBot` は表示の印
+(🤖) と、順位表から外す判定にだけ使う。
+
+BOT のプログラムは参加者と同じ二層構造 — 同梱ファイル (`program.file`) は `tournament.json`、
+ライブラリ割り当ては `state.programs` (`/api/tournament/:id/assign` に `__bot__` を渡す)。
+
+#### 順位は 合計ポイント → 一撃 → アイテム
+
+`computeStandings` の第4引数 `rankBy` で切り替える。
+
+| `rankBy` | 使う形式 | 並べ方 |
+|---|---|---|
+| `'league-points'` (既定) | `league` / `group-then-bracket` | 勝ち点 → 合計ポイント → 直接対決 (公式ルール) |
+| `'total-points'` | `bot-then-bracket` | 合計ポイント → 一撃ボーナス → アイテムポイント |
+
+**`'league-points'` は1ビットも変えていない。** 公式ルールがタイブレークの連鎖を定めているので、
+`'total-points'` はその外側に足した別系統。全員が BOT としか戦わない以上「直接対決」は
+成立しないため、代わりに合計ポイントの内訳で割る。
+
+内訳 (`StandingRow.itemPoints` / `strikePoints` / `sweepPoints`) は `m.result.roundResults` から
+積む。`set` は不戦勝で `null` になるが `roundResults` は必ずあるため。side → team-index の
+引き直しは `scoring.ts` の `roundItemPointsFor` / `roundStrikeBonusFor` / `roundSweepBonusFor`
+に閉じてある (再実装しないこと)。
+
+`totalPoints` の算出元は `set.totals` のまま — 既存の順位計算を動かさないため。
+
+#### 決勝進出者は「多めに出して削る」
+
+予選リーグの枠ごとの差し替え (`qualifierOverrides`) とは別に、**除外リスト**
+(`TournamentState.qualifierExclusions`) を持つ。
+
+```
+computeQualifierCandidates → 上位 advancePerGroup 人 + その最下位と同順位の人 全員
+                                    ↓ 運営が ✕ を押す
+tournament_exclude_qualifier { participantId, excluded, cascade? }
+                                    ↓
+qualifiers.autoPick が「除外を除いた並びの rank 番目」を返す
+   → computeQualifiers と progress.resolveGroupRank の両方に一度で効く
+```
+
+`autoPick` 1箇所に閉じているので、除外の反映漏れが構造的に起きない。
+
+**`confirmQualifiers` は同点が残っていても通す。** 自動判定は必ず決定的に枠を埋めるので
+決勝は始められるし、ここで弾くとオートプレイ (順位表の並び順で自動確定する仕様) が止まる。
+「人数を合わせてから押す」の誘導は `BotQualifierSection` (フロント) の役目。
+
+除外で顔ぶれが変わる決勝トーナメントの試合は、`setQualifier` と同じく `cascade` 確認を
+挟んで巻き戻す (`TournamentOrchestrator.setQualifierExclusion`)。
+
+#### 予選のマップ
+
+`rules.botStageMap`。`resolveStageMaps` は予選 stage (`stage < offset`) で従来 `null` を
+返していたが、BOT対戦予選だけここを返す。解決順は
+
+```
+運営中の差し替え (stageMapOverrides) → rules.botStageMap → rules.mapCatalogId → ランダム生成
+```
+
+**`definition.ts` は `botStageMap` と `mapCatalogId` の両方が未指定なら弾く** —
+参加者ごとに違う盤面になると、ポイントで順位を付ける前提が崩れるため。
+マップ ID の存在チェックはしない (他の PC で書かれた `tournament.json` を読めなくしない)。
+
+`setStageMap` は BOT対戦予選の stage 0 を許すが、**予選の試合が1つでも確定済みなら拒否する**。
+
+#### フロントエンド
+
+| ファイル | 役割 |
+|---|---|
+| `QualifyingView.tsx` | 予選 + 決勝の全体像。**位相の判断 (`autoQualifyingPhase` / `displayQualifyingPhase` / `shouldShowFinale`) は両形式で完全に共通**で、差し替わるのは予選ボードだけ。分けると片方だけ確定待ちを実装し忘れる |
+| `BotStageBoard.tsx` | 予選の表。エントリーリスト (左) + 順位リスト (右)。**順位リストには終わった人だけを載せる** — 予選が進むにつれ伸びるのがこの画面の要点で、未実施を0ポイントで並べると通過ラインが動かなくなる |
+| `BotQualifierSection.tsx` | 最終決定確認リスト。定員を超えている間は確定ボタンを無効化する |
+
+`GroupStageView.tsx` は `QualifyingView.tsx` へ改名した (中身が予選リーグ専用ではなくなったため)。
+`GroupStagePhase` → `QualifyingPhase`、`displayGroupPhase` → `displayQualifyingPhase` なども同様。
+
+#### オートプレイ
+
+`nextAutoPlayAction` の ③ を `hasQualifying` に広げただけで、**挙動は変えていない** —
+ボーダーが同点でも順位表の並び順で自動確定して完走する。無人展示で止まらないことを優先した
+判断で、同点を人が決めたい本番では予選が終わったところで自動進行を切る運用にする。

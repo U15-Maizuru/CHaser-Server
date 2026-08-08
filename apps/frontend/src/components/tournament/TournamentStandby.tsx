@@ -1,7 +1,7 @@
 import type { TournamentStatePayload } from '@u15/ws-types';
-import { hasGroupStage } from '@u15/ws-types';
+import { hasQualifying } from '@u15/ws-types';
 import { BracketView } from './BracketView';
-import { GroupStageView, type GroupStagePhase } from './GroupStageView';
+import { QualifyingView, qualifyingLabel, type QualifyingPhase } from './QualifyingView';
 import { LeagueTable } from './LeagueTable';
 import { lastConfirmedMatch, winnerNameOf } from '../../lib/tournamentResult';
 import {
@@ -20,7 +20,7 @@ export interface TournamentStandbyProps {
   state:        TournamentStatePayload;
   displayTitle: string;
   /** 予選ありのとき、いま出すもの (運営パネルの指定 + 自動追従の結果) */
-  groupPhase?:  GroupStagePhase;
+  groupPhase?:  QualifyingPhase;
   /** 予選が終わった直後の据え置き中。見出しを「予選リーグ 最終結果」に差し替える */
   holdingGroupResult?: boolean;
 }
@@ -38,7 +38,7 @@ export function TournamentStandby({
         <div style={s.title}>{state.name}</div>
         {holdingGroupResult ? (
           <div style={s.result}>
-            <span style={s.resultLabel}>予選リーグ</span>
+            <span style={s.resultLabel}>{qualifyingLabel(state)}</span>
             <span style={s.resultName}>最終結果</span>
           </div>
         ) : finished ? (
@@ -53,8 +53,8 @@ export function TournamentStandby({
       </div>
 
       <div style={s.figure}>
-        {hasGroupStage(state.format) ? (
-          <GroupStageView state={state} finishedMatchId={finished?.id ?? null} phase={groupPhase} />
+        {hasQualifying(state.format) ? (
+          <QualifyingView state={state} finishedMatchId={finished?.id ?? null} phase={groupPhase} />
         ) : state.format === 'league' ? (
           <LeagueTable
             matches={state.matches}

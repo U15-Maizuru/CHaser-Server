@@ -15,22 +15,50 @@ import type { SetResult } from './scoring.js';
 
 // --- 大会の定義 (tournament.json) ---
 
-export type TournamentFormat = 'single-elimination' | 'league' | 'group-then-bracket';
+export type TournamentFormat =
+  | 'single-elimination'
+  | 'league'
+  | 'group-then-bracket'
+  | 'bot-then-bracket';
 
 /**
- * 予選リーグ (グループ) を持つ形式か。
+ * 予選 (リーグ / BOT対戦) を持ち、決勝進出者の確定を挟む形式か。
  *
  * `format === 'league'` の三項演算子で分岐している箇所を素直に広げると、新しい形式が
- * 黙ってトーナメント側に落ちて事故になる。判定は必ずこの述語を通すこと。
+ * 黙ってトーナメント側に落ちて事故になる。判定は必ず述語を通すこと。
+ *
+ * **「予選がある」を意味する判定はすべてこれ。** `hasGroupStage` は予選リーグ固有の
+ * もの (星取表・リーグ数・所属リーグ) だけに使う — 両者を取り違えると、BOT対戦予選が
+ * 決勝進出者の確定を飛ばして始まってしまう。
  */
+export function hasQualifying(format: TournamentFormat): boolean {
+  return format === 'group-then-bracket' || format === 'bot-then-bracket';
+}
+
+/** 予選「リーグ」(グループ) を持つ形式か。星取表・リーグ数・所属リーグはこちらだけ */
 export function hasGroupStage(format: TournamentFormat): boolean {
   return format === 'group-then-bracket';
 }
 
+/** BOT対戦予選 (全員が同じ運営BOT・同じマップと戦う) を持つ形式か */
+export function hasBotStage(format: TournamentFormat): boolean {
+  return format === 'bot-then-bracket';
+}
+
 /** 勝ち上がりのトーナメント表を持つ形式か */
 export function hasBracket(format: TournamentFormat): boolean {
-  return format === 'single-elimination' || format === 'group-then-bracket';
+  return format === 'single-elimination' || hasQualifying(format);
 }
+
+/**
+ * BOT対戦予選の運営BOT に割り当てた予約 participantId。
+ *
+ * **`TournamentDefinition.participants` には含めない。** エントリー数・順位表・決勝
+ * トーナメントから自動的に外すためで、代わりに `resolveParticipants` が配信ペイロードの
+ * `participants` にだけ合成して足す。試合の slot はこの id を普通の participant として
+ * 指すので、arm・表示・CSV 書き出しは BOT を意識せずに動く。
+ */
+export const BOT_PARTICIPANT_ID = '__bot__';
 
 export interface LeaguePoints {
   win:  number;
@@ -44,20 +72,50 @@ export interface TournamentRules {
   /** 大会全体で固定マップを使う場合のマップライブラリ ID */
   mapCatalogId:     string | null;
   /**
-   * single-elimination のみ: 回戦 (stage) ごとのマップ。index が stage、null は
+   * 勝ち上がりの回戦 (stage) ごとのマップ。index が stage、null は
    * 「大会の設定 (mapCatalogId) に従う」。3位決定戦は決勝と同じ stage なので決勝と同じマップになる。
+   *
+   * **予選を持つ形式では index は決勝トーナメント相対。** 予選の節にゲタを当てるのは
+   * TournamentStore.resolveStageMaps の仕事で、作成 UI は決勝T の回戦しか出さない。
    */
   stageMaps:        (string | null)[];
-  /** single-elimination のみ: 3位決定戦を行うか */
+  /** league 以外: 3位決定戦を行うか */
   thirdPlaceMatch:  boolean;
   /** league / group-then-bracket: 勝ち点 (公式ルールは 勝利3 / 引き分け1 / 敗北0) */
   leaguePoints:     LeaguePoints;
   /** league / group-then-bracket: 2回総当たりにするか */
   doubleRoundRobin: boolean;
-  /** group-then-bracket のみ: 予選リーグの数 */
+  /** group-then-bracket のみ: 予選リーグの数 (bot-then-bracket では常に1リーグ扱いで未使用) */
   groupCount:       number;
-  /** group-then-bracket のみ: 各リーグから決勝トーナメントへ上がる人数 */
+  /**
+   * 決勝トーナメントへ上がる人数。
+   *
+   * group-then-bracket … 各リーグから上がる人数 (合計 groupCount × これ)
+   * bot-then-bracket   … 予選が1グループなので、これがそのまま決勝T の出場人数
+   */
   advancePerGroup:  number;
+
+  // --- bot-then-bracket のみ ---
+
+  /**
+   * 運営が用意する BOT のプログラム。全参加者がこれと1試合ずつ戦う。
+   * null は「未提出」で、当日 BOT_PARTICIPANT_ID へ紐付ける。
+   */
+  botProgram:       ParticipantProgram;
+  /** BOT の表示名。省略時は「運営BOT」 */
+  botName:          string | null;
+  /**
+   * BOT対戦予選で使うマップ。**全参加者が同じ条件で測られる形式の根拠**なので、
+   * これか mapCatalogId のどちらかは必ず指定されている必要がある (definition.ts が検証する)。
+   */
+  botStageMap:      string | null;
+  /**
+   * 参加者が第1ゲームでどちら側に座るか (0 = 先攻 / 1 = 後攻)。
+   *
+   * 参加者ごとではなく**大会全体で1つ** — 全員が同一条件で戦うのがこの形式の要点なので、
+   * 個別に選ばせる余地はない。2ゲーム制では先後が入れ替わるため意味を持たない。
+   */
+  participantSide:  0 | 1;
 }
 
 /** 参加プログラムの指定方法。null は「未提出」(当日 tournament_assign_program で紐付ける) */
@@ -199,11 +257,15 @@ export type MatchSlotRef =
 /**
  * まだ相手が決まっていない枠の表示名 (「Aリーグ 1位」)。
  * 決まりようのある枠 (participant / winner-of など) は null を返す。
+ *
+ * BOT対戦予選は1グループしかないので「Aリーグ」と名乗る意味が無い。format を渡せば
+ * 「予選 1位」になる (渡さなければ従来どおりリーグ名を付ける)。
  */
-export function slotPlaceholder(ref: MatchSlotRef): string | null {
-  return ref.kind === 'group-rank'
-    ? `${groupLabel(ref.group)}リーグ ${ref.rank}位`
-    : null;
+export function slotPlaceholder(ref: MatchSlotRef, format?: TournamentFormat): string | null {
+  if (ref.kind !== 'group-rank') return null;
+  return format !== undefined && hasBotStage(format)
+    ? `予選 ${ref.rank}位`
+    : `${groupLabel(ref.group)}リーグ ${ref.rank}位`;
 }
 
 export type MatchStatus =
@@ -239,11 +301,14 @@ export interface TournamentMatch {
   label:     string;   // '1回戦 第1試合' / '準決勝' / '3位決定戦' / '第2節 第1試合'
   order:     number;   // 同一 stage 内の表示順
   /**
-   * group-then-bracket の予選リーグの試合だけが持つリーグ番号 (0始まり)。
+   * 予選の試合だけが持つ予選グループ番号 (0始まり)。
    * 決勝トーナメントの試合と、予選を持たない形式の試合は undefined。
    *
    * 「その試合がどの順位表に効くか」「group-rank 参照がどの試合に依存するか」
    * 「同点を引き分けのまま確定してよいか」の3つがこの1つで決まる。
+   *
+   * **bot-then-bracket も group を持つ (常に 0)。** BOT対戦予選を「1グループの予選」として
+   * 既存の予選機構 (group-rank / stage のゲタ / 巻き戻しの依存追跡) にそのまま乗せるため。
    */
   group?:    number;
   slotA:     MatchSlotRef;   // side 0 (第1ゲームの COOL = 先攻)
@@ -298,6 +363,11 @@ export interface ResolvedParticipant {
   builtinCpu:        boolean;
   /** 表示用のプログラム名 */
   programName:       string | null;
+  /**
+   * 運営BOT (bot-then-bracket)。エントリーではないので、順位表・エントリー一覧からは外すこと。
+   * 配信ペイロードの participants にだけ現れる。
+   */
+  isBot?:            boolean;
 }
 
 export interface StandingRow {
@@ -310,13 +380,19 @@ export interface StandingRow {
   points:        number;
   /** 全試合の合計ポイント (競技ルールの「ポイント」) */
   totalPoints:   number;
+  /** totalPoints の内訳: アイテムポイント (獲得アイテム数×10) */
+  itemPoints:    number;
+  /** totalPoints の内訳: 一撃ボーナス */
+  strikePoints:  number;
+  /** totalPoints の内訳: 総取りボーナス */
+  sweepPoints:   number;
   rank:          number;
-  /** 直接対決でも並び、同順位になった */
+  /** タイブレークを尽くしても並び、同順位になった */
   tied:          boolean;
 }
 
 /**
- * 観戦画面に何を出すか (group-then-bracket のみ)。
+ * 観戦画面に何を出すか (予選のある形式のみ)。
  *
  * `'auto'` は進行に追従する。運営が明示的に選んだときだけ固定され、
  * **運営席の画面 (?mode=tournament) の表示とは連動しない** —
@@ -345,7 +421,7 @@ export interface TournamentAutoPlay {
   stoppedReason: string | null;
 }
 
-/** 予選リーグ1つぶんの順位表 (group-then-bracket) */
+/** 予選グループ1つぶんの順位表。bot-then-bracket では全参加者が入った1つだけ */
 export interface GroupStanding {
   group:          number;
   /** 'A' / 'B' … */
@@ -385,6 +461,27 @@ export interface QualifierSlot {
   bye:       boolean;
 }
 
+/**
+ * 決勝進出者の最終決定確認リストの1行 (予選のある形式)。
+ *
+ * 順位表の上位 `advancePerGroup` 人に、**その最下位と同順位で並んだ人を全員足した**もの。
+ * 運営はここから `excluded` を立てて人数を合わせる — 「自動判定を差し替える」(QualifierSlot)
+ * より、「多めに出して削る」方が同点の処理として直感的なので、BOT対戦予選ではこちらを使う。
+ */
+export interface QualifierCandidate {
+  participantId: string;
+  /** 順位表の順位 (同着で飛ぶ) */
+  rank:         number;
+  totalPoints:  number;
+  /** 同点がどこで割れた/割れなかったのかを運営がその場で読めるよう内訳も配る */
+  strikePoints: number;
+  itemPoints:   number;
+  /** 運営が確認リストから削除した。取り消せるよう、行自体はリストに残る */
+  excluded:     boolean;
+  /** 通過ラインと並び、タイブレークでも決着しなかった = 運営が決めるべき */
+  onBorder:     boolean;
+}
+
 export interface TournamentSummary {
   id:           string;
   name:         string;
@@ -405,12 +502,20 @@ export interface TournamentStatePayload {
   matches:      TournamentMatch[];
   /** league のときのみ。予選リーグの順位は groups[].standings 側に入る */
   standings:    StandingRow[] | null;
-  /** group-then-bracket のときのみ: 予選リーグごとの順位表 */
+  /**
+   * 予選のある形式のときのみ: 予選グループごとの順位表。
+   * bot-then-bracket では要素1つ (全参加者が入った単一グループ)。
+   */
   groups:       GroupStanding[] | null;
-  /** group-then-bracket のときのみ: 決勝トーナメントの枠と、そこに入る人 */
+  /** 予選のある形式のときのみ: 決勝トーナメントの枠と、そこに入る人 */
   qualifiers:   QualifierSlot[] | null;
   /**
-   * 決勝進出者を運営が確定したか (group-then-bracket のみ)。
+   * 予選のある形式のときのみ: 決勝進出者の最終決定確認リスト。
+   * 予選が終わるまでは空配列 (順位が決まらないので候補を出しようがない)。
+   */
+  qualifierCandidates: QualifierCandidate[] | null;
+  /**
+   * 決勝進出者を運営が確定したか (予選のある形式のみ)。
    *
    * 予選が終わっても自動では決勝へ進まず、ここが true になるまで観戦画面は
    * 予選の最終結果を出し続ける。**予選が終わっていない間は必ず false** なので、
@@ -457,6 +562,12 @@ export interface TournamentState {
    * tournament.json ではなくこちら側に持つ。
    */
   qualifierOverrides?: Record<string, string | null>;
+  /**
+   * 運営が最終決定確認リストから削除した参加者。順位表からこの人たちを除いた並びで
+   * 決勝進出者を決める。qualifierOverrides と同じく、配布物である tournament.json では
+   * なくこちら側に持つ (進行に紐づく運営の判断だから)。
+   */
+  qualifierExclusions?: string[];
   /**
    * 運営が「この顔ぶれで決勝を始める」と確定したか。
    *

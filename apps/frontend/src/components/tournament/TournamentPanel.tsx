@@ -3,10 +3,11 @@ import type {
   CatalogEntry, MapCatalogEntry, TournamentDisplayView,
   TournamentStatePayload, TournamentSummary,
 } from '@u15/ws-types';
-import { compareByPlayOrder, hasBracket, hasGroupStage } from '@u15/ws-types';
+import { compareByPlayOrder, hasBotStage, hasBracket, hasQualifying } from '@u15/ws-types';
 import type { TournamentCommands } from '../../hooks/useGameState';
 import { MatchCard } from './MatchCard';
 import { ResultConfirmDialog } from './ResultConfirmDialog';
+import { BotQualifierSection } from './BotQualifierSection';
 import { QualifierSection } from './QualifierSection';
 import { TournamentEditorDialog } from './TournamentEditorDialog';
 import {
@@ -16,9 +17,9 @@ import {
 
 // 運営操作パネル。コントロール画面のダイアログとしても、専用ウィンドウの一部としても使う。
 
-const DISPLAY_VIEWS: [TournamentDisplayView, string][] = [
+const DISPLAY_VIEWS = (botStage: boolean): [TournamentDisplayView, string][] => [
   ['auto',    '進行に合わせる'],
-  ['groups',  '予選リーグ表'],
+  ['groups',  botStage ? 'BOT対戦予選の表' : '予選リーグ表'],
   ['bracket', '決勝トーナメント表'],
 ];
 
@@ -26,6 +27,7 @@ const FORMAT_LABEL: Record<TournamentStatePayload['format'], string> = {
   'single-elimination': 'トーナメント',
   'league':             'リーグ',
   'group-then-bracket': '予選リーグ + 決勝トーナメント',
+  'bot-then-bracket':   'BOT対戦予選 + 決勝トーナメント',
 };
 
 /**
@@ -37,7 +39,7 @@ const FORMAT_LABEL: Record<TournamentStatePayload['format'], string> = {
 function blockedByQualifiers(
   state: TournamentStatePayload, match: TournamentStatePayload['matches'][number],
 ): boolean {
-  return hasGroupStage(state.format) && match.group === undefined && !state.qualifiersConfirmed;
+  return hasQualifying(state.format) && match.group === undefined && !state.qualifiersConfirmed;
 }
 
 export interface TournamentPanelProps {
@@ -255,7 +257,7 @@ export function TournamentPanel({
               {unassigned.map(p => (
                 <div key={p.id} style={assignRow}>
                   <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {p.name}
+                    {p.isBot ? `🤖 ${p.name}（運営BOT）` : p.name}
                   </span>
                   <select
                     style={select}
@@ -272,8 +274,8 @@ export function TournamentPanel({
             </section>
           )}
 
-          {/* ── 観戦画面の表示 (予選リーグがあるときだけ) ── */}
-          {hasGroupStage(state.format) && (
+          {/* ── 観戦画面の表示 (予選があるときだけ) ── */}
+          {hasQualifying(state.format) && (
             <section style={card}>
               <div style={sectionTitle}>閲覧画面の表示</div>
               <p style={hint}>
@@ -283,7 +285,7 @@ export function TournamentPanel({
                 対戦中は盤面が優先されます。
               </p>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {DISPLAY_VIEWS.map(([view, label]) => (
+                {DISPLAY_VIEWS(hasBotStage(state.format)).map(([view, label]) => (
                   <button
                     key={view}
                     style={{ ...btnChoice, ...(state.displayView === view ? btnChoiceOn : null) }}
@@ -302,8 +304,16 @@ export function TournamentPanel({
             </section>
           )}
 
-          {/* ── 決勝進出者 (予選リーグがあるときだけ) ── */}
-          {hasGroupStage(state.format) && (
+          {/* ── 決勝進出者 (予選があるときだけ) ──
+              予選リーグは枠ごとの差し替え、BOT対戦予選は確認リストからの削除。
+              同点の決め方が違うので UI ごと分ける (詳しくは各コンポーネントの冒頭) */}
+          {hasBotStage(state.format) ? (
+            <BotQualifierSection
+              state={state}
+              onExclude={commands.excludeQualifier}
+              onConfirm={commands.confirmQualifiers}
+            />
+          ) : hasQualifying(state.format) && (
             <QualifierSection
               state={state}
               onChange={commands.setQualifier}
@@ -319,14 +329,21 @@ export function TournamentPanel({
                 ここでの変更はこの大会の進行状態に保存され、次に「この試合を準備」したときから使われます。
                 準備済みの試合が同じ回戦なら、その場で読み直します。
               </p>
-              {/* 予選の節は「大会の設定」に従うだけなので出さない。回戦名はバックエンドが
+              {hasBotStage(state.format) && (
+                <p style={hint}>
+                  BOT対戦予選は<strong>全参加者が同じマップ</strong>で戦うのが前提です。
+                  1試合でも実施したあとは変更できません。
+                </p>
+              )}
+              {/* 予選リーグの節は「大会の設定」に従うだけなので出さない。BOT対戦予選だけは
+                  予選のマップそのものが競技条件なので出す。回戦名はバックエンドが
                   組み立てた stageLabels を使う (UI 側で節数を数え直さない) */}
               {state.stageMaps.map((mapId, stage) => {
-                if (stage < groupStageCount) return null;
+                if (stage < groupStageCount && !hasBotStage(state.format)) return null;
                 const label = state.stageLabels[stage] ?? `第${stage + 1}回戦`;
                 return (
                   <div key={stage} style={assignRow}>
-                    <span style={{ width: 68, flexShrink: 0 }}>{label}</span>
+                    <span style={{ width: 88, flexShrink: 0 }}>{label}</span>
                     <select
                       style={{ ...select, flex: 1, minWidth: 0 }}
                       aria-label={`${label} のマップ`}
@@ -389,14 +406,14 @@ export function TournamentPanel({
             {awaiting ? (
               <>
                 <p style={hint}>対戦が終わりました。結果を確認して確定してください。</p>
-                <MatchCard match={awaiting} participants={state.participants} style={{ width: '100%' }} />
+                <MatchCard match={awaiting} participants={state.participants} format={state.format} style={{ width: '100%' }} />
               </>
             ) : armed ? (
               <>
                 <p style={hint}>
                   両者の割り当てが済みました。フッターの「ゲームスタート」で開始してください。
                 </p>
-                <MatchCard match={armed} participants={state.participants} style={{ width: '100%' }} />
+                <MatchCard match={armed} participants={state.participants} format={state.format} style={{ width: '100%' }} />
               </>
             ) : nextReady ? (
               <>
@@ -408,7 +425,7 @@ export function TournamentPanel({
                 ) : (
                   <p style={hint}>次の試合です。「この試合を準備」でプログラムを自動割り当てします。</p>
                 )}
-                <MatchCard match={nextReady} participants={state.participants} style={{ width: '100%' }} />
+                <MatchCard match={nextReady} participants={state.participants} format={state.format} style={{ width: '100%' }} />
                 <button
                   style={{ ...btnPrimaryWide, ...(blockedByQualifiers(state, nextReady) ? btnMuted : null) }}
                   disabled={blockedByQualifiers(state, nextReady)}

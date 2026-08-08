@@ -30,6 +30,24 @@ export function roundPointsFor(rr: RoundResult, side: 0 | 1): number {
   return rr.scores[idx] * 10 + rr.strikeBonus[idx] + rr.sweepBonus[idx];
 }
 
+// 合計ポイントの3成分。同点の順位を内訳で割る必要がある場面 (BOT対戦予選の
+// 「合計 → 一撃 → アイテム」) のために、side → team-index の引き直しを再実装せずに済ませる。
+
+/** 1ゲーム分のアイテムポイント (獲得アイテム数×10) */
+export function roundItemPointsFor(rr: RoundResult, side: 0 | 1): number {
+  return rr.scores[idxForSide(side, rr.round)] * 10;
+}
+
+/** 1ゲーム分の一撃ボーナス (アタック/閉じ込めの +50、自滅の罰点) */
+export function roundStrikeBonusFor(rr: RoundResult, side: 0 | 1): number {
+  return rr.strikeBonus[idxForSide(side, rr.round)];
+}
+
+/** 1ゲーム分の総取りボーナス (残アイテム数×6) */
+export function roundSweepBonusFor(rr: RoundResult, side: 0 | 1): number {
+  return rr.sweepBonus[idxForSide(side, rr.round)];
+}
+
 /** そのゲームを画面側 (side) のプログラムが勝ったか */
 export function roundWonBy(rr: RoundResult, side: 0 | 1): boolean {
   const idx = idxForSide(side, rr.round);

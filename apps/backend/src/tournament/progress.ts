@@ -7,6 +7,7 @@ import type {
 } from '@u15/ws-types';
 import { compareByPlayOrder, hasBracket } from '@u15/ws-types';
 import { qualifierKey, resolveGroupRank } from './qualifiers.js';
+import type { StandingsRankBy } from './standings.js';
 
 // 試合グラフの進行 (slot の解決・bye の自動確定・確定の取り消し) を行う純関数。
 // 入力の配列は破壊せず、常に新しい配列を返す。
@@ -25,6 +26,10 @@ export interface ResolveContext {
   leaguePoints?:       LeaguePoints;
   /** 運営が差し替えた決勝進出者 (キーは `"<group>:<rank>"`) */
   qualifierOverrides?: Record<string, string | null>;
+  /** 順位の付け方。予選リーグは勝ち点制、BOT対戦予選はポイント制 */
+  rankBy?:             StandingsRankBy;
+  /** 運営が最終決定確認リストから削除した参加者。順位表から除いて繰り上げる */
+  qualifierExclusions?: readonly string[];
 }
 
 const DEFAULT_LEAGUE_POINTS: LeaguePoints = { win: 3, draw: 1, loss: 0 };
@@ -68,6 +73,8 @@ function resolveSlot(
       return resolveGroupRank(
         groupIds, groupMatches, ctx.leaguePoints ?? DEFAULT_LEAGUE_POINTS, ref.rank,
         ctx.qualifierOverrides?.[qualifierKey(ref.group, ref.rank)],
+        ctx.rankBy ?? 'league-points',
+        ctx.qualifierExclusions ?? [],
       );
     }
     case 'winner-of': {
@@ -292,7 +299,7 @@ export function nextReadyMatch(matches: TournamentMatch[]): TournamentMatch | nu
  * 形式**と**試合の両方を見る:
  *   league             … 勝ち上がりが無いので常に false (引き分けはそのまま確定できる)
  *   single-elimination … 常に true
- *   group-then-bracket … 1つの大会に予選と決勝が同居するので、group の有無で分ける
+ *   予選のある形式      … 1つの大会に予選と決勝が同居するので、group の有無で分ける
  */
 export function isKnockoutMatch(format: TournamentFormat, m: TournamentMatch): boolean {
   return hasBracket(format) && m.group === undefined;

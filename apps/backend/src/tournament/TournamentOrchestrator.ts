@@ -11,7 +11,7 @@ import type {
   TournamentStatePayload,
   WsMessage,
 } from '@u15/ws-types';
-import { computeSetResult, groupLabel, hasBracket, hasGroupStage } from '@u15/ws-types';
+import { computeSetResult, groupLabel, hasBotStage, hasBracket, hasQualifying } from '@u15/ws-types';
 import type { RoomManager } from '../RoomManager.js';
 import { buildProcessConfig } from '../game/processConfig.js';
 import { getCatalogEntry } from '../programCatalog.js';
@@ -213,7 +213,7 @@ export class TournamentOrchestrator {
     // 予選ありの大会では、決勝進出者を運営が確定するまで決勝トーナメントを始めない。
     // 自動判定は必ず枠を埋めるので、確認を挟まないと同点の枠を誰も見ないまま
     // 決勝が始まってしまう
-    if (isKnockoutMatch(b.loaded.def.format, match) && hasGroupStage(b.loaded.def.format)
+    if (isKnockoutMatch(b.loaded.def.format, match) && hasQualifying(b.loaded.def.format)
       && !qualifiersConfirmedOf(b.loaded)) {
       throw new TournamentError('先に決勝進出者を確定してください');
     }
@@ -348,7 +348,17 @@ export class TournamentOrchestrator {
       throw new TournamentError('回戦ごとのマップはトーナメント (勝ち上がり) でのみ設定できます');
     }
     if (stage < groupStageCountOf(b.loaded.state.matches)) {
-      throw new TournamentError('予選リーグの節にはマップを個別指定できません (大会の設定が使われます)');
+      // BOT対戦予選は「全参加者が同じマップ」が形式の根拠なので、予選のマップも差し替えられる。
+      // ただし1試合でも終わっていたら、そこから先だけ別マップになって条件が崩れる
+      if (!hasBotStage(b.loaded.def.format)) {
+        throw new TournamentError('予選リーグの節にはマップを個別指定できません (大会の設定が使われます)');
+      }
+      if (b.loaded.state.matches.some(m => m.group !== undefined && m.status === 'done')) {
+        throw new TournamentError(
+          'BOT対戦予選は全参加者が同じマップで戦う必要があります。'
+          + '実施済みの試合があるのでマップは変更できません (変えるなら予選をやり直してください)',
+        );
+      }
     }
 
     const overrides = { ...(b.loaded.state.stageMapOverrides ?? {}), [String(stage)]: mapCatalogId };
@@ -384,8 +394,8 @@ export class TournamentOrchestrator {
     participantId: string | null, cascade = false,
   ): void {
     const b = this.require(roomId);
-    if (b.loaded.def.format !== 'group-then-bracket') {
-      throw new TournamentError('この大会には予選リーグがありません');
+    if (!hasQualifying(b.loaded.def.format)) {
+      throw new TournamentError('この大会には予選がありません');
     }
 
     const slots = qualifiersOf(b.loaded) ?? [];
@@ -395,7 +405,9 @@ export class TournamentOrchestrator {
     if (participantId !== null) {
       const groupIds = groupsOf(b.loaded.def)[group] ?? [];
       if (!groupIds.includes(participantId)) {
-        throw new TournamentError(`${this.nameOf(b, participantId)} は${groupLabel(group)}リーグの参加者ではありません`);
+        throw new TournamentError(hasBotStage(b.loaded.def.format)
+          ? `${this.nameOf(b, participantId)} は予選の参加者ではありません`
+          : `${this.nameOf(b, participantId)} は${groupLabel(group)}リーグの参加者ではありません`);
       }
       // 差し替えた「あと」の顔ぶれで重複を見る。自動判定は順位表の位置で埋まるので、
       // 手動で1人繰り上げると別の枠の自動値と衝突することがある
@@ -445,6 +457,68 @@ export class TournamentOrchestrator {
     this.publish(roomId);
   }
 
+  /**
+   * 最終決定確認リストから参加者を削除する / 取り消す。
+   *
+   * 削除された人は順位表から居なかったものとして扱われ、下の順位が繰り上がる。
+   * 同ポイントでボーダーに並んだときに「多めに出して削る」ための操作で、枠ごとの
+   * 差し替え (setQualifier) と違い**誰がどの枠に入るかは指定しない** — 順位の並びに任せる。
+   */
+  setQualifierExclusion(
+    roomId: string, participantId: string, excluded: boolean, cascade = false,
+  ): void {
+    const b = this.require(roomId);
+    if (!hasQualifying(b.loaded.def.format)) {
+      throw new TournamentError('この大会には予選がありません');
+    }
+    if (!b.loaded.def.participants.some(p => p.id === participantId)) {
+      throw new TournamentError('参加者が見つかりません');
+    }
+
+    const before = b.loaded.state.qualifierExclusions ?? [];
+    const after  = excluded
+      ? (before.includes(participantId) ? before : [...before, participantId])
+      : before.filter(id => id !== participantId);
+    if (after.length === before.length && excluded === before.includes(participantId)) return;
+
+    // 削除で顔ぶれが変わりうる決勝トーナメントの試合。1つでも動いていたら先に巻き戻す必要がある
+    const affected = this.qualifierDependentMatches(b);
+    const running  = affected.find(m =>
+      m.status === 'armed' || m.status === 'in_progress' || m.status === 'awaiting_confirm');
+    if (running) {
+      throw new TournamentError(
+        `「${running.label}」が準備中・対戦中です。先にリセットしてから変更してください`,
+      );
+    }
+    const played = affected.find(m => m.status === 'done' && !(m.byeA || m.byeB));
+    if (played && !cascade) {
+      throw new TournamentError(
+        `「${played.label}」は実施済みです。この変更でその結果も取り消されます。確認のうえ実行してください`,
+      );
+    }
+
+    b.loaded = {
+      ...b.loaded,
+      state: { ...b.loaded.state, qualifierExclusions: after, updatedAt: Date.now() },
+    };
+
+    // 顔ぶれが変わる試合と、その下流の結果は捨てる。
+    // 残すと「戦っていない相手に勝った」という記録ができてしまう。
+    // **巻き戻してから commit し、そのあとで armed を落とす** — disarmIfCleared は
+    // b.loaded の下流を数えるので、順番を逆にすると巻き戻す前のグラフを見てしまう
+    let matches = b.loaded.state.matches;
+    for (const m of affected) matches = reopenInGraph(matches, m.id, this.ctx(b));
+    this.commit(b, matches);
+    for (const m of affected) this.disarmIfCleared(b, m.id);
+    this.publish(roomId);
+  }
+
+  /** 決勝進出者の並びが変われば顔ぶれが変わる試合 (= group-rank を参照する1回戦) */
+  private qualifierDependentMatches(b: Binding): TournamentMatch[] {
+    return b.loaded.state.matches.filter(m =>
+      [m.slotA, m.slotB].some(r => r.kind === 'group-rank'));
+  }
+
   /** その枠 (リーグ・順位) を参照している1回戦の試合 */
   private firstRoundMatchOf(
     b: Binding, group: number, rank: number,
@@ -467,12 +541,15 @@ export class TournamentOrchestrator {
    */
   confirmQualifiers(roomId: string, confirmed: boolean): void {
     const b = this.require(roomId);
-    if (!hasGroupStage(b.loaded.def.format)) {
-      throw new TournamentError('この大会には予選リーグがありません');
+    if (!hasQualifying(b.loaded.def.format)) {
+      throw new TournamentError('この大会には予選がありません');
     }
     if (confirmed && !isGroupStageDone(b.loaded.state.matches)) {
-      throw new TournamentError('予選リーグがまだ終わっていません');
+      throw new TournamentError('予選がまだ終わっていません');
     }
+    // **同点のボーダーが残っていても通す。** 自動判定は必ず決定的に枠を埋めるので決勝は
+    // 始められるし、ここで弾くとオートプレイ (順位表の並び順で自動確定する仕様) が止まる。
+    // 「人数を合わせてから押す」の誘導は運営パネル側の役目
 
     b.loaded = {
       ...b.loaded,
@@ -490,7 +567,7 @@ export class TournamentOrchestrator {
    */
   setDisplayView(roomId: string, view: TournamentDisplayView): void {
     const b = this.require(roomId);
-    if (!hasGroupStage(b.loaded.def.format)) {
+    if (!hasQualifying(b.loaded.def.format)) {
       throw new TournamentError('この大会には切り替える表がありません');
     }
     b.displayView = view;

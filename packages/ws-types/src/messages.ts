@@ -55,6 +55,11 @@ export type FrontendMessage =
   | { type: 'tournament_set_stage_map';   payload: { stage: number; mapCatalogId: string | null } }
   /** 決勝進出者の手動差し替え。participantId: null は「自動判定に戻す」 */
   | { type: 'tournament_set_qualifier';   payload: { group: number; rank: number; participantId: string | null; cascade?: boolean } }
+  /**
+   * 最終決定確認リストからの削除 / 取り消し。削除された人を除いた順位で決勝進出者が決まる。
+   * 同ポイントで並んだボーダーを運営が決めるための操作
+   */
+  | { type: 'tournament_exclude_qualifier'; payload: { participantId: string; excluded: boolean; cascade?: boolean } }
   /** 決勝進出者の確定。true になるまで観戦画面は予選の最終結果を出し続ける */
   | { type: 'tournament_confirm_qualifiers'; payload: { confirmed: boolean } }
   /** 観戦画面に出すものを切り替える (運営席の表示とは連動しない) */

@@ -32,6 +32,8 @@ export interface TournamentCommands {
   setQualifier: (
     group: number, rank: number, participantId: string | null, cascade?: boolean,
   ) => void;
+  /** 最終決定確認リストからの削除 / 取り消し。削除した人を除いた順位で進出者が決まる */
+  excludeQualifier: (participantId: string, excluded: boolean, cascade?: boolean) => void;
   /** 決勝進出者の確定 / 確定の取り消し。確定するまで観戦画面は予選の結果を出し続ける */
   confirmQualifiers: (confirmed: boolean) => void;
   /** 観戦画面に出すものの切り替え (運営席の表示とは連動しない) */
@@ -215,6 +217,8 @@ export function useGameState(wsUrl: string, roomId: string): GameStateHook {
         send({ type: 'tournament_set_stage_map', payload: { stage, mapCatalogId } }),
       setQualifier: (group, rank, participantId, cascade) =>
         send({ type: 'tournament_set_qualifier', payload: { group, rank, participantId, cascade } }),
+      excludeQualifier: (participantId, excluded, cascade) =>
+        send({ type: 'tournament_exclude_qualifier', payload: { participantId, excluded, cascade } }),
       confirmQualifiers: (confirmed) =>
         send({ type: 'tournament_confirm_qualifiers', payload: { confirmed } }),
       setDisplayView: (view) =>

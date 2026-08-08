@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type {
   GroupStanding, ResolvedParticipant, StandingRow, TournamentMatch, TournamentStatePayload,
 } from '@u15/ws-types';
-import { displayGroupPhase, GroupStageView, isGroupStageFinished, shouldShowFinale } from './GroupStageView';
+import { displayQualifyingPhase, QualifyingView, isQualifyingFinished, shouldShowFinale } from './QualifyingView';
 import { QualifierSection } from './QualifierSection';
 
 // 予選リーグ + 決勝トーナメントの見せ方。要点は2つ:
@@ -20,7 +20,7 @@ const participants: ResolvedParticipant[] = ['A', 'B', 'C', 'D', 'E'].map((name,
 function standing(participantId: string, rank: number, tied = false): StandingRow {
   return {
     participantId, played: 1, wins: 0, draws: 0, losses: 0,
-    points: 0, totalPoints: 0, rank, tied,
+    points: 0, totalPoints: 0, itemPoints: 0, strikePoints: 0, sweepPoints: 0, rank, tied,
   };
 }
 
@@ -70,12 +70,14 @@ function state(
       doubleMode: false, mapCatalogId: null, stageMaps: [], thirdPlaceMatch: false,
       leaguePoints: { win: 3, draw: 1, loss: 0 }, doubleRoundRobin: false,
       groupCount: 2, advancePerGroup: 2,
+      botProgram: null, botName: null, botStageMap: null, participantSide: 0,
     },
     participants,
     matches: [groupMatch(0, 'p1', 'p4', done), groupMatch(1, 'p2', 'p3', done), FINAL],
     standings: null,
     groups,
     qualifiers: [q(0, 1, 'p1'), q(0, 2, 'p4', true), q(1, 1, 'p2'), q(1, 2, 'p3')],
+    qualifierCandidates: [],
     qualifiersConfirmed: opts.confirmed ?? false,
     stageMaps: [null, null], stageLabels: ['予選 第1節', '決勝'],
     displayView: opts.displayView ?? 'auto',
@@ -84,40 +86,40 @@ function state(
   };
 }
 
-describe('isGroupStageFinished', () => {
+describe('isQualifyingFinished', () => {
   it('予選が全部確定して初めて true', () => {
-    expect(isGroupStageFinished(state(false))).toBe(false);
-    expect(isGroupStageFinished(state(true))).toBe(true);
+    expect(isQualifyingFinished(state(false))).toBe(false);
+    expect(isQualifyingFinished(state(true))).toBe(true);
   });
 });
 
-describe('displayGroupPhase — 決勝進出者の確定を待つ', () => {
+describe('displayQualifyingPhase — 決勝進出者の確定を待つ', () => {
   it('予選中は予選表 (据え置きの見出しは出さない)', () => {
-    expect(displayGroupPhase(state(false))).toEqual({ phase: 'groups', holdingResult: false });
+    expect(displayQualifyingPhase(state(false))).toEqual({ phase: 'groups', holdingResult: false });
   });
 
   it('予選を持たない形式は常に決勝側 (でないと表彰画面が永久に出ない)', () => {
     for (const format of ['single-elimination', 'league'] as const) {
       const s = { ...state(true), format, matches: [{ ...FINAL, status: 'done' as const }] };
-      expect(displayGroupPhase(s)).toEqual({ phase: 'bracket', holdingResult: false });
-      expect(shouldShowFinale(s, displayGroupPhase(s).phase)).toBe(true);
+      expect(displayQualifyingPhase(s)).toEqual({ phase: 'bracket', holdingResult: false });
+      expect(shouldShowFinale(s, displayQualifyingPhase(s).phase)).toBe(true);
     }
   });
 
   it('予選が終わっても、確定するまでは予選の最終結果を出し続ける', () => {
     // ここが時間切れで勝手に切り替わると、運営が同点の枠を見直す前に決勝表になってしまう
-    expect(displayGroupPhase(state(true))).toEqual({ phase: 'groups', holdingResult: true });
+    expect(displayQualifyingPhase(state(true))).toEqual({ phase: 'groups', holdingResult: true });
   });
 
   it('確定すると決勝トーナメント表に移る', () => {
-    expect(displayGroupPhase(state(true, { confirmed: true })))
+    expect(displayQualifyingPhase(state(true, { confirmed: true })))
       .toEqual({ phase: 'bracket', holdingResult: false });
   });
 
   it('運営が明示的に選んでいればそちらが勝つ (据え置きの見出しも出さない)', () => {
-    expect(displayGroupPhase(state(true, { displayView: 'bracket' })))
+    expect(displayQualifyingPhase(state(true, { displayView: 'bracket' })))
       .toEqual({ phase: 'bracket', holdingResult: false });
-    expect(displayGroupPhase(state(true, { confirmed: true, displayView: 'groups' })))
+    expect(displayQualifyingPhase(state(true, { confirmed: true, displayView: 'groups' })))
       .toEqual({ phase: 'groups', holdingResult: false });
   });
 });
@@ -125,7 +127,7 @@ describe('displayGroupPhase — 決勝進出者の確定を待つ', () => {
 describe('表示の切り替え', () => {
   it('phase を渡すとその表を出し、タブは出さない', () => {
     // 観戦画面は運営パネルの指定に従う。運営席のタブ操作と混ざらないよう外から決める
-    render(<GroupStageView state={state(true)} phase="groups" showTabs />);
+    render(<QualifyingView state={state(true)} phase="groups" showTabs />);
     expect(screen.getByText('Aリーグ')).toBeTruthy();
     expect(screen.queryByRole('button', { name: '予選リーグ' })).toBeNull();
   });
@@ -149,15 +151,15 @@ describe('表示の切り替え', () => {
   });
 });
 
-describe('GroupStageView', () => {
+describe('QualifyingView', () => {
   it('予選中はリーグ表を人数ぶん並べる', () => {
-    render(<GroupStageView state={state(false)} />);
+    render(<QualifyingView state={state(false)} />);
     expect(screen.getByText('Aリーグ')).toBeTruthy();
     expect(screen.getByText('Bリーグ')).toBeTruthy();
   });
 
   it('リーグ表にはそのリーグの参加者しか出ない', () => {
-    render(<GroupStageView state={state(false)} />);
+    render(<QualifyingView state={state(false)} />);
     // 星取表 (各リーグ1つ目の table) は2人ぶんの行しか持たない
     const tables = screen.getAllByRole('table');
     const rows = tables[0]!.querySelectorAll('tbody tr');
@@ -165,7 +167,7 @@ describe('GroupStageView', () => {
   });
 
   it('凡例は星取表のすぐ下に出し、「未消化」は書かない', () => {
-    render(<GroupStageView state={state(false)} />);
+    render(<QualifyingView state={state(false)} />);
     const legends = screen.getAllByText(/○ 勝ち/);
     expect(legends).toHaveLength(2);            // リーグごとに1つ
     for (const el of legends) expect(el.textContent).not.toContain('未消化');
@@ -173,7 +175,7 @@ describe('GroupStageView', () => {
 
   it('チーム数が違っても順位表が同じグリッド行に載る (上端がそろう)', () => {
     // A=3人 / B=2人。素直に縦積みすると星取表の高さが違って順位表の位置がずれる
-    const { container } = render(<GroupStageView state={state(false)} />);
+    const { container } = render(<QualifyingView state={state(false)} />);
     const grid = container.querySelector('[style*="grid"]') as HTMLElement;
     expect(grid.style.gridTemplateRows).toBe('auto auto auto');
     // 列方向に流さないと、リーグの塊が横に並んで表が入り乱れる
@@ -183,7 +185,7 @@ describe('GroupStageView', () => {
   });
 
   it('順位表は決勝トーナメントへ上がる順位まで強調する (予選の途中でも)', () => {
-    render(<GroupStageView state={state(false)} />);
+    render(<QualifyingView state={state(false)} />);
     // リーグごとに「上位2名が進出」を出す
     expect(screen.getAllByText(/上位 2 名が決勝トーナメントへ進出/)).toHaveLength(2);
 
@@ -198,7 +200,7 @@ describe('GroupStageView', () => {
     // A リーグ2位の枠を、順位表3位の p5 に差し替えた
     s.qualifiers = (s.qualifiers ?? []).map(q => (q.group === 0 && q.rank === 2
       ? { ...q, manualParticipantId: 'p5', participantId: 'p5' } : q));
-    render(<GroupStageView state={s} />);
+    render(<QualifyingView state={s} />);
 
     const rows = [...screen.getAllByRole('table')[1]!.querySelectorAll('tbody tr')];
     expect(rows.map(r => (r as HTMLElement).style.background !== ''))
@@ -207,27 +209,100 @@ describe('GroupStageView', () => {
 
   it('決勝進出者を確定すると決勝トーナメント表に切り替わる', () => {
     // 確定前は予選表のまま (運営席のタブも進行に追従する)
-    render(<GroupStageView state={state(true)} />);
+    render(<QualifyingView state={state(true)} />);
     expect(screen.getByText('Aリーグ')).toBeTruthy();
     cleanup();
 
-    render(<GroupStageView state={state(true, { confirmed: true })} />);
+    render(<QualifyingView state={state(true, { confirmed: true })} />);
     expect(screen.getAllByText('決勝').length).toBeGreaterThan(0);
     expect(screen.queryByText('Aリーグ')).toBeNull();
   });
 
   it('タブで予選と決勝を行き来できる', () => {
     // 確定済み = 既定は決勝表。そこから予選表へ戻せること
-    render(<GroupStageView state={state(true, { confirmed: true })} showTabs />);
+    render(<QualifyingView state={state(true, { confirmed: true })} showTabs />);
     fireEvent.click(screen.getByText('予選リーグ'));
     expect(screen.getByText('Aリーグ')).toBeTruthy();
   });
 
   it('決まっていない枠は「Aリーグ 1位」と書く', () => {
-    render(<GroupStageView state={state(false)} showTabs />);
+    render(<QualifyingView state={state(false)} showTabs />);
     fireEvent.click(screen.getByText('決勝トーナメント'));
     expect(screen.getByText('Aリーグ 1位')).toBeTruthy();
     expect(screen.getByText('Bリーグ 1位')).toBeTruthy();
+  });
+});
+
+// ── BOT対戦予選 ──
+//
+// 位相の判断 (予選 / 決勝、確定待ちの据え置き) は予選リーグと完全に共通で、
+// 差し替わるのは予選側のボードだけ。ここではその分岐が効いていることを確かめる。
+
+describe('QualifyingView (BOT対戦予選)', () => {
+  /** 予選リーグ用の state を BOT対戦予選に読み替える (位相の判断は共通なので使い回せる) */
+  function botState(done: boolean, opts: { confirmed?: boolean } = {}): TournamentStatePayload {
+    const s = state(done, opts);
+    return {
+      ...s,
+      format: 'bot-then-bracket',
+      rules: { ...s.rules, groupCount: 1, advancePerGroup: 2, botStageMap: 'map-1' },
+      // 1グループに全員。試合は各自 BOT と1試合
+      groups: [{
+        group: 0, label: 'A', participantIds: ['p1', 'p2', 'p3'],
+        standings: [standing('p1', 1), standing('p2', 2), standing('p3', 3)],
+      }],
+      participants: [
+        ...participants,
+        {
+          id: '__bot__', name: '運営BOT', seed: 0,
+          programCatalogId: null, builtinCpu: true, programName: '内蔵CPU', isBot: true,
+        },
+      ],
+      matches: [
+        ...['p1', 'p2', 'p3'].map((pid, i) => ({
+          id: `B-M${i + 1}`, stage: 0, order: i, label: `BOT対戦予選 第${i + 1}試合`, group: 0,
+          slotA: { kind: 'participant' as const, participantId: pid },
+          slotB: { kind: 'participant' as const, participantId: '__bot__' },
+          resolvedA: pid, resolvedB: '__bot__', byeA: false, byeB: false,
+          status: (done ? 'done' : 'ready') as TournamentMatch['status'],
+          ...(done ? { result: {
+            roundResults: [], set: null, decidedBy: 'walkover' as const,
+            winnerSide: 0 as const, capturedAt: 1, confirmedAt: 1,
+          } } : {}),
+        })),
+        { ...FINAL, slotB: { kind: 'group-rank' as const, group: 0, rank: 2 } },
+      ],
+    };
+  }
+
+  it('予選側では星取表ではなくエントリー + 順位リストを出す', () => {
+    render(<QualifyingView state={botState(false)} />);
+    expect(screen.getByText(/^エントリー/)).toBeTruthy();
+    expect(screen.getByText(/^試合結果/)).toBeTruthy();
+    expect(screen.queryByText('Aリーグ')).toBeNull();
+  });
+
+  it('タブの呼び名が「BOT対戦予選」になる', () => {
+    render(<QualifyingView state={botState(true, { confirmed: true })} showTabs />);
+    fireEvent.click(screen.getByText('BOT対戦予選'));
+    expect(screen.getByText(/^エントリー/)).toBeTruthy();
+  });
+
+  it('確定するまでは予選のまま、確定すると決勝トーナメント表へ移る (予選リーグと同じ)', () => {
+    render(<QualifyingView state={botState(true)} />);
+    expect(screen.getByText(/^エントリー/)).toBeTruthy();
+    cleanup();
+
+    render(<QualifyingView state={botState(true, { confirmed: true })} />);
+    expect(screen.getAllByText('決勝').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/^エントリー/)).toBeNull();
+  });
+
+  it('決まっていない枠は「予選 1位」と書く (リーグ名を付けない)', () => {
+    render(<QualifyingView state={botState(false)} showTabs />);
+    fireEvent.click(screen.getByText('決勝トーナメント'));
+    expect(screen.getByText('予選 1位')).toBeTruthy();
+    expect(screen.getByText('予選 2位')).toBeTruthy();
   });
 });
 

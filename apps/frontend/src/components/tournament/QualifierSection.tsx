@@ -1,5 +1,5 @@
 import type { QualifierSlot, TournamentStatePayload } from '@u15/ws-types';
-import { groupLabel } from '@u15/ws-types';
+import { groupLabel, hasBotStage } from '@u15/ws-types';
 import {
   BG_CARD, BORDER_COLOR, FONT_UI, GOLD_BASE, RADIUS_SM,
   TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE,
@@ -12,6 +12,13 @@ import {
 // 決まらなかったときに、運営が最終的に決め直すため。あやしい枠には印を出す。
 
 export type SetQualifier = (participantId: string | null, cascade?: boolean) => void;
+
+/** 枠の呼び名。BOT対戦予選は1グループしか無いのでリーグ名を付けない */
+export function slotLabelOf(state: TournamentStatePayload, group: number, rank: number): string {
+  return hasBotStage(state.format)
+    ? `予選 ${rank}位`
+    : `${groupLabel(group)}リーグ ${rank}位`;
+}
 
 /** その枠に入れられる候補 (同じ予選リーグの参加者)。既に別の枠に入っている人は除く */
 function candidatesFor(
@@ -82,7 +89,7 @@ export function QualifierPicker({
   return (
     <select
       style={{ ...select, ...(compact ? selectCompact : null) }}
-      aria-label={`${groupLabel(group)}リーグ ${rank}位`}
+      aria-label={slotLabelOf(state, group, rank)}
       value={slot.manualParticipantId ?? ''}
       onChange={e => change(e.target.value)}
     >
@@ -131,7 +138,7 @@ export function QualifierSection({ state, onChange, onConfirm }: QualifierSectio
         const note = noteOf(s);
         return (
           <div key={`${s.group}:${s.rank}`} style={row}>
-            <span style={slotLabel}>{groupLabel(s.group)}リーグ {s.rank}位</span>
+            <span style={slotLabel}>{slotLabelOf(state, s.group, s.rank)}</span>
             {s.bye ? (
               <span style={{ ...noteText, color: TEXT_MUTED, flex: 1 }}>不戦 (人数不足)</span>
             ) : (

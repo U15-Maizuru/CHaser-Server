@@ -3,7 +3,9 @@ import type {
   CatalogEntry, MapCatalogEntry, ParticipantDef, TournamentDefinition,
   TournamentFormat, TournamentStatePayload, TournamentSummary,
 } from '@u15/ws-types';
-import { autoGroupAssign, bracketSizeFor, groupLabel, stageCountFor, stageLabel } from '@u15/ws-types';
+import {
+  autoGroupAssign, bracketSizeFor, BOT_PARTICIPANT_ID, groupLabel, stageCountFor, stageLabel,
+} from '@u15/ws-types';
 import { autoSlots, fitSlots, matchCountOf, slotPairs } from '../../lib/bracketSlots';
 import {
   BG_CARD, BG_ROOT, BORDER_COLOR, COOL_COLOR, FONT_UI, GOLD_BASE, HOT_COLOR,
@@ -63,10 +65,23 @@ function groupPreview(
   return league + bracket + (opts.thirdPlaceMatch && size >= 4 ? 1 : 0);
 }
 
+/**
+ * BOT対戦予選ありの試合数の見積り。
+ * 予選は参加者ごとに BOT との1試合、決勝は進出者ぶんの勝ち上がり。
+ */
+function botPreview(
+  count: number, advanceCount: number, opts: { thirdPlaceMatch: boolean },
+): number {
+  const size    = bracketSizeFor(Math.min(advanceCount, count));
+  const bracket = size < 2 ? 0 : size - 1;
+  return count + bracket + (opts.thirdPlaceMatch && size >= 4 ? 1 : 0);
+}
+
 const FORMAT_CHIP: Record<TournamentFormat, string> = {
   'single-elimination': 'トーナメント (勝ち上がり)',
   'league':             'リーグ (総当たり)',
   'group-then-bracket': '予選リーグ + 決勝トーナメント',
+  'bot-then-bracket':   'BOT対戦予選 + 決勝トーナメント',
 };
 
 /** 数値入力を範囲に収める (空欄・非数値は既定値へ) */
@@ -122,6 +137,13 @@ export function TournamentEditorDialog({
   const [leaguePoints, setLeaguePoints]         = useState({ win: 3, draw: 1, loss: 0 });
   const [groupCount, setGroupCount]             = useState(2);
   const [advancePerGroup, setAdvancePerGroup]   = useState(2);
+
+  // BOT対戦予選。program の書式は参加者と同じ ('' / 'cpu' / 'file' / 'lib:<catalogId>')
+  const [botProgram, setBotProgram]         = useState('');
+  const [botFile, setBotFile]               = useState<{ file: string; displayName?: string }>();
+  const [botName, setBotName]               = useState('');
+  const [botStageMap, setBotStageMap]       = useState('');
+  const [participantSide, setParticipantSide] = useState<0 | 1>(0);
 
   const [participants, setParticipants] = useState<DraftParticipant[]>([]);
   const [manualBracket, setManualBracket] = useState(false);
@@ -195,6 +217,23 @@ export function TournamentEditorDialog({
     setLeaguePoints(def.rules.leaguePoints);
     setGroupCount(def.rules.groupCount);
     setAdvancePerGroup(def.rules.advancePerGroup);
+    setBotName(def.rules.botName ?? '');
+    setBotStageMap(def.rules.botStageMap ?? '');
+    setParticipantSide(def.rules.participantSide);
+
+    // BOT のプログラム。参加者と同じく、ライブラリ割り当ては state 側から拾う
+    const botAssigned = state?.participants.find(p => p.isBot)?.programCatalogId ?? null;
+    if (def.rules.botProgram?.kind === 'builtin') {
+      setBotProgram('cpu');
+    } else if (def.rules.botProgram?.kind === 'file') {
+      const f = def.rules.botProgram;
+      setBotFile(f.displayName === undefined
+        ? { file: f.file }
+        : { file: f.file, displayName: f.displayName });
+      setBotProgram('file');
+    } else {
+      setBotProgram(botAssigned ? `lib:${botAssigned}` : '');
+    }
 
     // 表示順 = 選手番号順 (小さいほど第1ゲームで先攻)。seed 未指定は記載順で後ろへ
     const ordered = [...def.participants]
@@ -360,13 +399,30 @@ export function TournamentEditorDialog({
         return `${groupLabel(short)}リーグの人数 (${sizes[short]}人) が進出人数 ${advancePerGroup} に足りません`;
       }
     }
+
+    if (format === 'bot-then-bracket') {
+      // バックエンドの validateBotStage と同じ条件。保存してから弾かれるより
+      // ここで気づける方がよい
+      if (advancePerGroup < 2) {
+        return '決勝トーナメント進出人数は2以上にしてください';
+      }
+      if (participants.length < advancePerGroup) {
+        return `決勝トーナメント進出人数 ${advancePerGroup} に対して参加者が足りません`;
+      }
+      if (botStageMap === '' && mapCatalogId === '') {
+        return 'BOT対戦予選のマップを指定してください（全参加者が同じマップで戦う必要があります）';
+      }
+    }
     return null;
   }, [name, id, editId, creatingNew, existingIds, participants, format, manualBracket, slots,
-      groupCount, advancePerGroup]);
+      groupCount, advancePerGroup, botStageMap, mapCatalogId]);
 
-  const preview = format === 'group-then-bracket'
-    ? groupPreview(participants.length, groupCount, advancePerGroup,
-                   { thirdPlaceMatch, doubleRoundRobin })
+  const preview =
+      format === 'group-then-bracket'
+        ? groupPreview(participants.length, groupCount, advancePerGroup,
+                       { thirdPlaceMatch, doubleRoundRobin })
+    : format === 'bot-then-bracket'
+        ? botPreview(participants.length, advancePerGroup, { thirdPlaceMatch })
     : matchCountOf(format, participants.length, { thirdPlaceMatch, doubleRoundRobin });
 
   // 回戦の数は参加者数だけで決まる (bracketSizeFor の log2)。参加者を足し引きすると増減するので
@@ -376,6 +432,8 @@ export function TournamentEditorDialog({
   const stageCount =
       format === 'single-elimination' ? stageCountFor(participants.length)
     : format === 'group-then-bracket' ? stageCountFor(groupCount * advancePerGroup)
+    // BOT対戦予選は1グループなので、進出人数がそのまま決勝T の出場者数
+    : format === 'bot-then-bracket'   ? stageCountFor(advancePerGroup)
     : 0;
   const stageMapAt = (stage: number) => stageMaps[stage] ?? '';
   const setStageMapAt = (stage: number, value: string) => {
@@ -415,6 +473,16 @@ export function TournamentEditorDialog({
         doubleRoundRobin,
         groupCount,
         advancePerGroup,
+        // BOT のプログラムは参加者と同じ二層構造 — ライブラリ割り当て (lib:) は
+        // 配布物である tournament.json に書かず、/assign で state.json 側へ保存する
+        botProgram: botProgram === 'cpu'
+          ? { kind: 'builtin', builtin: 'cpu' }
+          : botProgram === 'file' && botFile
+            ? { kind: 'file', ...botFile }
+            : null,
+        botName:     botName.trim() === '' ? null : botName.trim(),
+        botStageMap: botStageMap === '' ? null : botStageMap,
+        participantSide,
       },
       participants: defs,
     };
@@ -455,6 +523,11 @@ export function TournamentEditorDialog({
       for (const p of participants) {
         if (p.program === 'cpu' || p.program === 'file') continue;
         assignments[p.id] = p.program.startsWith('lib:') ? p.program.slice(4) : null;
+      }
+      // 運営BOT も同じ経路。BOT は participants に居ないので id は予約値
+      if (format === 'bot-then-bracket' && botProgram !== 'cpu' && botProgram !== 'file') {
+        assignments[BOT_PARTICIPANT_ID] =
+          botProgram.startsWith('lib:') ? botProgram.slice(4) : null;
       }
       if (Object.keys(assignments).length > 0) {
         const ares = await fetch(`${httpBase}/api/tournament/${encodeURIComponent(body.id)}/assign`, {
@@ -524,7 +597,9 @@ export function TournamentEditorDialog({
               )}
 
               <div style={chips}>
-                {(['single-elimination', 'league', 'group-then-bracket'] as TournamentFormat[]).map(f => (
+                {([
+                  'single-elimination', 'league', 'group-then-bracket', 'bot-then-bracket',
+                ] as TournamentFormat[]).map(f => (
                   <button
                     key={f}
                     style={{ ...chip, ...(format === f ? chipOn : null) }}
@@ -546,6 +621,31 @@ export function TournamentEditorDialog({
                 <span>2ゲーム制（先攻・後攻を入れ替えて2ゲームで1試合）</span>
               </label>
               <p style={hint}>公式ルールの試合形式です。外すと1ゲームで決着します（練習用）。</p>
+
+              {/* 1ゲーム制のときだけ意味を持つ。2ゲーム制は先後が入れ替わるので選ぶ余地が無い */}
+              {format === 'bot-then-bracket' && !doubleMode && (
+                <>
+                  <div style={{ ...field, alignItems: 'center' }}>
+                    <span style={label}>参加者の手番</span>
+                    <div style={chips}>
+                      {([[0, '先攻'], [1, '後攻']] as [0 | 1, string][]).map(([side, text]) => (
+                        <button
+                          key={side}
+                          style={{ ...chip, ...(participantSide === side ? chipOn : null) }}
+                          onClick={() => setParticipantSide(side)}
+                        >
+                          {text}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <p style={hint}>
+                    BOT対戦予選を1ゲーム制で行うときの手番です。
+                    <strong>全参加者に同じ手番が当たります</strong> —
+                    参加者ごとに選べるものではなく、運営がどちらかに決めるものです。
+                  </p>
+                </>
+              )}
 
               {format !== 'league' && (
                 <label style={check}>
@@ -583,7 +683,75 @@ export function TournamentEditorDialog({
                 </>
               )}
 
-              {format !== 'single-elimination' && (
+              {format === 'bot-then-bracket' && (
+                <>
+                  <div style={{ ...sectionTitle, fontSize: 12, marginTop: 4 }}>BOT対戦予選</div>
+                  <p style={hint}>
+                    全参加者が<strong>同じ BOT・同じマップ</strong>と1試合ずつ戦い、
+                    獲得ポイントで順位を決めます（同点は 一撃ボーナス → アイテムポイント の順で比べ、
+                    それでも並んだら運営が決めます）。
+                  </p>
+
+                  <label style={field}>
+                    <span style={label}>BOTのプログラム</span>
+                    <select
+                      style={{ ...select, flex: 1, minWidth: 0 }} value={botProgram}
+                      aria-label="BOTのプログラム"
+                      onChange={e => setBotProgram(e.target.value)}
+                    >
+                      <option value="">未提出（当日割り当て）</option>
+                      <option value="cpu">内蔵CPU</option>
+                      {botFile && <option value="file">同梱: {botFile.file}</option>}
+                      {programs.map(pr => (
+                        <option key={pr.id} value={`lib:${pr.id}`}>{pr.displayName}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label style={field}>
+                    <span style={label}>BOTの表示名</span>
+                    <input
+                      style={{ ...input, flex: 1, minWidth: 0 }} value={botName}
+                      aria-label="BOTの表示名" placeholder="運営BOT"
+                      onChange={e => setBotName(e.target.value)}
+                    />
+                  </label>
+
+                  <label style={field}>
+                    <span style={label}>予選のマップ</span>
+                    <select
+                      style={{ ...select, flex: 1, minWidth: 0 }} value={botStageMap}
+                      aria-label="BOT対戦予選のマップ"
+                      onChange={e => setBotStageMap(e.target.value)}
+                    >
+                      <option value="">下の固定マップに従う</option>
+                      {maps.map(m => <option key={m.id} value={m.id}>{m.displayName}</option>)}
+                    </select>
+                  </label>
+                  <p style={hint}>
+                    予選は全員が同じマップで戦います。ここか下の「固定マップ」の
+                    <strong>どちらかは必ず指定してください</strong> —
+                    毎回ランダム生成では参加者ごとに条件が変わってしまいます。
+                  </p>
+
+                  <div style={{ ...field, alignItems: 'center' }}>
+                    <span style={label}>決勝トーナメント進出人数</span>
+                    <input
+                      type="number" min={2} max={16} style={{ ...input, width: 72 }}
+                      aria-label="決勝トーナメント進出人数"
+                      value={advancePerGroup}
+                      onChange={e => setAdvancePerGroup(clampInt(e.target.value, 2, 16, 4))}
+                    />
+                  </div>
+                  <p style={hint}>
+                    予選の上位 {advancePerGroup} 名が決勝トーナメントへ進みます。
+                  </p>
+                </>
+              )}
+
+              {/* 総当たりと勝ち点は「参加者どうしが戦うリーグ」のためのもの。
+                  BOT対戦予選は勝ち点で順位を付けないので出さない */}
+              {(format === 'league' || format === 'group-then-bracket') && (
                 <>
                   <label style={check}>
                     <input type="checkbox" checked={doubleRoundRobin}
@@ -784,7 +952,7 @@ export function TournamentEditorDialog({
             {/* ── 保存 ── */}
             <div style={footer}>
               <span style={previewText} data-testid="editor-preview">
-                {format === 'league' ? 'リーグ' : 'トーナメント'} ・ {participants.length}人 ・
+                {FORMAT_CHIP[format]} ・ {participants.length}人 ・
                 全 {preview} 試合{doubleMode ? '（各2ゲーム）' : ''}
               </span>
               <div style={{ display: 'flex', gap: 8 }}>

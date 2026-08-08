@@ -395,6 +395,7 @@ describe('TournamentEditorDialog — 編集', () => {
     rules: {
       doubleMode: true, mapCatalogId: null, stageMaps: [], thirdPlaceMatch: true,
       leaguePoints: { win: 3, draw: 1, loss: 0 }, doubleRoundRobin: false, groupCount: 2, advancePerGroup: 2,
+      botProgram: null, botName: null, botStageMap: null, participantSide: 0,
     },
     participants: [
       { id: 'x1', name: '舞鶴A', seed: 2, program: { kind: 'builtin', builtin: 'cpu' } },

@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { hasGroupStage } from '@u15/ws-types';
+import { hasBotStage, hasQualifying } from '@u15/ws-types';
 import { useGameState } from '../../hooks/useGameState';
 import { BracketView } from './BracketView';
-import { GroupStageView } from './GroupStageView';
+import { QualifyingView } from './QualifyingView';
 import { LeagueTable } from './LeagueTable';
 import { QualifierPicker } from './QualifierSection';
 import { TournamentPanel } from './TournamentPanel';
@@ -47,7 +47,7 @@ export function TournamentMode({ wsUrl, roomId, httpBase }: TournamentModeProps)
             <div style={{ display: 'flex', gap: 6 }}>
               <button style={btn} onClick={() => download('json')}>JSON</button>
               <button style={btn} onClick={() => download('matches.csv')}>試合CSV</button>
-              {(t.format === 'league' || hasGroupStage(t.format)) && (
+              {(t.format === 'league' || hasQualifying(t.format)) && (
                 <button style={btn} onClick={() => download('standings.csv')}>順位CSV</button>
               )}
             </div>
@@ -59,8 +59,8 @@ export function TournamentMode({ wsUrl, roomId, httpBase }: TournamentModeProps)
             <div style={empty}>
               右のパネルで大会を選ぶと、ここにトーナメント表が表示されます。
             </div>
-          ) : hasGroupStage(t.format) ? (
-            <GroupStageView
+          ) : hasQualifying(t.format) ? (
+            <QualifyingView
               state={t} interactive selectedId={selected} onSelect={setSelected}
               showTabs maxScale={1.6}
             />
@@ -79,6 +79,7 @@ export function TournamentMode({ wsUrl, roomId, httpBase }: TournamentModeProps)
             <BracketView
               matches={t.matches}
               participants={t.participants}
+              format={t.format}
               upcomingId={t.armedMatchId}
               interactive
               selectedId={selected}

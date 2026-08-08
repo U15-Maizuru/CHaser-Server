@@ -130,6 +130,13 @@ export class GameMessageDispatch {
             msg.payload.participantId, msg.payload.cascade ?? false,
           ));
         break;
+      case 'tournament_exclude_qualifier':
+        this.tournament(ws, t =>
+          t.setQualifierExclusion(
+            roomId, msg.payload.participantId, msg.payload.excluded,
+            msg.payload.cascade ?? false,
+          ));
+        break;
       case 'tournament_confirm_qualifiers':
         this.tournament(ws, t => t.confirmQualifiers(roomId, msg.payload.confirmed));
         break;

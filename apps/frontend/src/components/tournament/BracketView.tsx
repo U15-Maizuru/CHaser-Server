@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { ResolvedParticipant, TournamentMatch } from '@u15/ws-types';
+import type { ResolvedParticipant, TournamentFormat, TournamentMatch } from '@u15/ws-types';
 import { bracketLayout } from '../../lib/bracketLayout';
 import { FitArea } from '../FitArea';
 import { CARD_H, CARD_W, MatchCard } from './MatchCard';
@@ -12,6 +12,8 @@ import { BORDER_COLOR, FONT_UI, TEXT_SECONDARY } from '../../styles/tokens';
 export interface BracketViewProps {
   matches:      TournamentMatch[];
   participants: ResolvedParticipant[];
+  /** 未確定の枠の呼び名を形式に合わせるため (MatchCard へそのまま渡す) */
+  format?:      TournamentFormat;
   interactive?: boolean;
   selectedId?:  string | null;
   onSelect?:    (matchId: string) => void;
@@ -28,7 +30,7 @@ export interface BracketViewProps {
 }
 
 export function BracketView({
-  matches, participants, interactive = false, selectedId = null, onSelect,
+  matches, participants, format, interactive = false, selectedId = null, onSelect,
   upcomingId = null, finishedId = null, scale = 1, fit = false, maxScale = 3,
 }: BracketViewProps) {
   const layout = useMemo(
@@ -70,6 +72,7 @@ export function BracketView({
             key={n.matchId}
             match={m}
             participants={participants}
+            {...(format ? { format } : {})}
             interactive={interactive}
             selected={selectedId === n.matchId}
             upcoming={upcomingId === n.matchId}

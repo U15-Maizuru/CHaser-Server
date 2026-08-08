@@ -4,6 +4,8 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import type {
   GroupStanding,
+  ParticipantProgram,
+  QualifierCandidate,
   QualifierSlot,
   ResolvedParticipant,
   TournamentAutoPlay,
@@ -14,15 +16,18 @@ import type {
   TournamentStatePayload,
   TournamentSummary,
 } from '@u15/ws-types';
-import { hasGroupStage, stageLabel } from '@u15/ws-types';
+import { BOT_PARTICIPANT_ID, hasBotStage, hasQualifying, stageLabel } from '@u15/ws-types';
 import { addCatalogEntry, getCatalogEntry, setDemoEnabled } from '../programCatalog.js';
 import { buildBracket } from './bracket.js';
 import { buildLeague } from './league.js';
 import { orderBySeed } from './bracket.js';
+import { buildBotStage } from './botStage.js';
 import { assignGroups, buildGroupStage, groupStageCountOf, isGroupStageDone } from './groupStage.js';
 import { resolveMatches, type ResolveContext } from './progress.js';
-import { computeGroupStandings, computeQualifiers, qualifierKey } from './qualifiers.js';
-import { computeStandings } from './standings.js';
+import {
+  computeGroupStandings, computeQualifierCandidates, computeQualifiers, qualifierKey,
+} from './qualifiers.js';
+import { computeStandings, type StandingsRankBy } from './standings.js';
 import { DefinitionError, parseTournamentDefinition } from './definition.js';
 import { extractZip } from './zip.js';
 
@@ -82,6 +87,14 @@ export function buildMatches(def: TournamentDefinition): TournamentMatch[] {
     });
     return resolveMatches(built, Date.now(), contextOf(def, {}));
   }
+  if (def.format === 'bot-then-bracket') {
+    const built = buildBotStage(def.participants, {
+      advanceCount:    def.rules.advancePerGroup,
+      participantSide: def.rules.participantSide,
+      thirdPlaceMatch: def.rules.thirdPlaceMatch,
+    });
+    return resolveMatches(built, Date.now(), contextOf(def, {}));
+  }
   const opts: Parameters<typeof buildBracket>[1] = { thirdPlaceMatch: def.rules.thirdPlaceMatch };
   if (def.bracket?.slots) opts.slots = def.bracket.slots;
   return resolveMatches(buildBracket(def.participants, opts));
@@ -93,25 +106,44 @@ export function buildMatches(def: TournamentDefinition): TournamentMatch[] {
 // 組み立てをここ1箇所に閉じて、呼ぶ側が文脈を作り分けないようにする
 // (作り分けると、片方の経路だけ手動指定が効かないといった事故になる)。
 
-/** そのリーグに属する参加者 id (エントリー順)。予選を持たない形式では空 */
+/**
+ * その予選グループに属する参加者 id (エントリー順)。予選を持たない形式では空。
+ *
+ * BOT対戦予選は1グループなので「全参加者が入った配列1つ」を返す。BOT 自身は
+ * エントリーではないので入れない — 入れると順位表に BOT の行が立ってしまう。
+ */
 export function groupsOf(def: TournamentDefinition): string[][] {
+  if (hasBotStage(def.format)) return [orderBySeed(def.participants).map(p => p.id)];
   if (def.format !== 'group-then-bracket') return [];
   return assignGroups(def.participants, def.rules.groupCount).map(g => g.map(p => p.id));
 }
 
+/** 順位の付け方。予選リーグは公式ルールの勝ち点制、BOT対戦予選はポイント制 */
+export function rankByOf(def: TournamentDefinition): StandingsRankBy {
+  return hasBotStage(def.format) ? 'total-points' : 'league-points';
+}
+
 function contextOf(
-  def: TournamentDefinition, overrides: Record<string, string | null>,
+  def: TournamentDefinition,
+  overrides: Record<string, string | null>,
+  exclusions: readonly string[] = [],
 ): ResolveContext {
-  if (def.format !== 'group-then-bracket') return {};
+  if (!hasQualifying(def.format)) return {};
   return {
-    groups:             groupsOf(def),
-    leaguePoints:       def.rules.leaguePoints,
-    qualifierOverrides: overrides,
+    groups:              groupsOf(def),
+    leaguePoints:        def.rules.leaguePoints,
+    qualifierOverrides:  overrides,
+    rankBy:              rankByOf(def),
+    qualifierExclusions: exclusions,
   };
 }
 
 export function resolveContextOf(loaded: LoadedTournament): ResolveContext {
-  return contextOf(loaded.def, loaded.state.qualifierOverrides ?? {});
+  return contextOf(
+    loaded.def,
+    loaded.state.qualifierOverrides ?? {},
+    loaded.state.qualifierExclusions ?? [],
+  );
 }
 
 /**
@@ -124,7 +156,7 @@ export function resolveContextOf(loaded: LoadedTournament): ResolveContext {
 function sanitizeQualifierOverrides(
   def: TournamentDefinition, overrides: Record<string, string | null> | undefined,
 ): Record<string, string | null> | undefined {
-  if (!overrides || def.format !== 'group-then-bracket') return undefined;
+  if (!overrides || !hasQualifying(def.format)) return undefined;
 
   const groups = groupsOf(def);
   const out: Record<string, string | null> = {};
@@ -136,6 +168,16 @@ function sanitizeQualifierOverrides(
     }
   }
   return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** 同上。参加者から消えた人の削除指定は落とす */
+function sanitizeQualifierExclusions(
+  def: TournamentDefinition, exclusions: string[] | undefined,
+): string[] | undefined {
+  if (!exclusions || !hasQualifying(def.format)) return undefined;
+  const ids = new Set(def.participants.map(p => p.id));
+  const out = exclusions.filter(id => ids.has(id));
+  return out.length > 0 ? out : undefined;
 }
 
 // ── 回戦ごとのマップ ──────────────────────────────────────────────────────
@@ -168,7 +210,11 @@ export function resolveStageMaps(loaded: LoadedTournament): (string | null)[] {
     const o = overrides[String(stage)];
     if (o !== undefined) return o;
     const authoredIndex = stage - offset;
-    return authoredIndex < 0 ? null : authored[authoredIndex] ?? null;
+    // 予選の節。BOT対戦予選だけは「全参加者が同じマップで戦う」ための専用指定を持つ
+    if (authoredIndex < 0) {
+      return hasBotStage(loaded.def.format) ? loaded.def.rules.botStageMap : null;
+    }
+    return authored[authoredIndex] ?? null;
   });
 }
 
@@ -176,15 +222,16 @@ export function resolveStageMaps(loaded: LoadedTournament): (string | null)[] {
  * stage ごとの表示名 (index = stage)。節数の算出を frontend に二重定義しないよう、
  * 試合グラフから組み立てて配信ペイロードに載せる。
  */
-export function stageLabelsOf(matches: TournamentMatch[]): string[] {
+export function stageLabelsOf(matches: TournamentMatch[], botStage = false): string[] {
   const count  = stageCountOf(matches);
   const offset = groupStageCountOf(matches);
   const bracketStages = count - offset;
 
   return Array.from({ length: count }, (_, stage) => (
-    stage < offset
-      ? `予選 第${stage + 1}節`
-      : stageLabel(stage - offset, bracketStages)
+    stage >= offset ? stageLabel(stage - offset, bracketStages)
+    // BOT対戦予選は1段だけなので「第N節」と数える意味が無い
+    : botStage      ? 'BOT対戦予選'
+    :                 `予選 第${stage + 1}節`
   ));
 }
 
@@ -252,7 +299,19 @@ function syncPrograms(
   const programs: TournamentState['programs'] = { ...prev };
   const errors: string[] = [];
 
-  for (const p of def.participants) {
+  // 運営BOT は participants に居ないが、実体を持つ点は参加者と全く同じなので同じ経路で登録する
+  const entries: { id: string; name: string; program: ParticipantProgram }[] = [
+    ...def.participants.map(p => ({ id: p.id, name: p.name, program: p.program })),
+    ...(hasBotStage(def.format)
+      ? [{
+          id:      BOT_PARTICIPANT_ID,
+          name:    def.rules.botName ?? '運営BOT',
+          program: def.rules.botProgram,
+        }]
+      : []),
+  ];
+
+  for (const p of entries) {
     if (!p.program || p.program.kind !== 'file') continue;
 
     const src = path.join(dirOf(def.id), p.program.file);
@@ -324,11 +383,16 @@ export function loadTournament(id: string): LoadedTournament | null {
 
   let state: TournamentState;
   if (prev && stateMatchesDefinition(def, prev)) {
-    const overrides = sanitizeQualifierOverrides(def, prev.qualifierOverrides);
+    const overrides  = sanitizeQualifierOverrides(def, prev.qualifierOverrides);
+    const exclusions = sanitizeQualifierExclusions(def, prev.qualifierExclusions);
     state = { ...prev, programs, matches: prev.matches };
     if (overrides === undefined) delete state.qualifierOverrides;
     else state.qualifierOverrides = overrides;
-    state.matches = resolveMatches(prev.matches, Date.now(), contextOf(def, overrides ?? {}));
+    if (exclusions === undefined) delete state.qualifierExclusions;
+    else state.qualifierExclusions = exclusions;
+    state.matches = resolveMatches(
+      prev.matches, Date.now(), contextOf(def, overrides ?? {}, exclusions ?? []),
+    );
   } else {
     state = { tournamentId: id, matches: buildMatches(def), programs, updatedAt: Date.now() };
   }
@@ -421,13 +485,15 @@ export function renameTournament(oldId: string, newId: string): RenameResult {
   return 'ok';
 }
 
-/** 未提出だった参加者に、あとからプログラムライブラリのエントリを紐付ける */
+/** 未提出だった参加者 (BOT対戦予選では運営BOT も) に、プログラムライブラリのエントリを紐付ける */
 export function assignProgram(
   id: string, participantId: string, catalogId: string | null,
 ): LoadedTournament | null {
   const loaded = loadTournament(id);
   if (!loaded) return null;
-  if (!loaded.def.participants.some(p => p.id === participantId)) return null;
+
+  const isBot = participantId === BOT_PARTICIPANT_ID && hasBotStage(loaded.def.format);
+  if (!isBot && !loaded.def.participants.some(p => p.id === participantId)) return null;
 
   const programs = { ...loaded.state.programs };
   if (catalogId === null) {
@@ -537,28 +603,47 @@ function findDefinitionRoot(staging: string): string | null {
 
 // ── 配信ペイロード ────────────────────────────────────────────────────────
 
+/**
+ * 配信する参加者一覧。
+ *
+ * BOT対戦予選では**末尾に運営BOT を合成して足す**。BOT は `def.participants` に居ないので
+ * エントリー数・順位表・決勝トーナメントからは自動的に外れるが、試合の slot は普通の
+ * participant としてこの id を指す。おかげで armMatch・カード表示・CSV 書き出しは
+ * BOT を知らないまま動く。
+ */
 export function resolveParticipants(loaded: LoadedTournament): ResolvedParticipant[] {
-  const ordered = orderBySeed(loaded.def.participants);
-  return ordered.map((p, i) => {
-    const link  = loaded.state.programs[p.id];
+  const resolve = (
+    id: string, name: string, program: ParticipantProgram, seed: number,
+  ): ResolvedParticipant => {
+    const link  = loaded.state.programs[id];
     const entry = link ? getCatalogEntry(link.catalogId) : undefined;
-    const cpu   = p.program?.kind === 'builtin';
+    const cpu   = program?.kind === 'builtin';
     return {
-      id:               p.id,
-      name:             p.name,
-      seed:             i + 1,
+      id, name, seed,
       programCatalogId: entry?.id ?? null,
       builtinCpu:       cpu,
       programName:      cpu ? '内蔵CPU' : entry?.displayName ?? null,
     };
-  });
+  };
+
+  const ordered = orderBySeed(loaded.def.participants)
+    .map((p, i) => resolve(p.id, p.name, p.program, i + 1));
+
+  if (!hasBotStage(loaded.def.format)) return ordered;
+
+  // seed 0 = 選手番号を持たない。BOT は組み合わせ表に載る存在ではない
+  const bot = resolve(
+    BOT_PARTICIPANT_ID, loaded.def.rules.botName ?? '運営BOT', loaded.def.rules.botProgram, 0,
+  );
+  return [...ordered, { ...bot, isBot: true }];
 }
 
-/** 予選リーグごとの順位表。予選を持たない形式では null */
+/** 予選グループごとの順位表。予選を持たない形式では null */
 export function groupStandingsOf(loaded: LoadedTournament): GroupStanding[] | null {
-  if (loaded.def.format !== 'group-then-bracket') return null;
+  if (!hasQualifying(loaded.def.format)) return null;
   return computeGroupStandings(
     groupsOf(loaded.def), loaded.state.matches, loaded.def.rules.leaguePoints,
+    rankByOf(loaded.def),
   );
 }
 
@@ -569,6 +654,17 @@ export function qualifiersOf(loaded: LoadedTournament): QualifierSlot[] | null {
   return computeQualifiers(
     groups, loaded.state.matches, loaded.def.rules.advancePerGroup,
     loaded.state.qualifierOverrides ?? {},
+    loaded.state.qualifierExclusions ?? [],
+  );
+}
+
+/** 決勝進出者の最終決定確認リスト。予選を持たない形式では null */
+export function qualifierCandidatesOf(loaded: LoadedTournament): QualifierCandidate[] | null {
+  const groups = groupStandingsOf(loaded);
+  if (!groups) return null;
+  return computeQualifierCandidates(
+    groups, loaded.state.matches, loaded.def.rules.advancePerGroup,
+    loaded.state.qualifierExclusions ?? [],
   );
 }
 
@@ -580,7 +676,7 @@ export function qualifiersOf(loaded: LoadedTournament): QualifierSlot[] | null {
  * すべてでフラグを消して回る必要がなくなる。
  */
 export function qualifiersConfirmedOf(loaded: LoadedTournament): boolean {
-  if (!hasGroupStage(loaded.def.format)) return false;
+  if (!hasQualifying(loaded.def.format)) return false;
   return loaded.state.qualifiersConfirmed === true && isGroupStageDone(loaded.state.matches);
 }
 
@@ -602,9 +698,10 @@ export function buildStatePayload(
       : null,
     groups:       groupStandingsOf(loaded),
     qualifiers:   qualifiersOf(loaded),
+    qualifierCandidates: qualifierCandidatesOf(loaded),
     qualifiersConfirmed: qualifiersConfirmedOf(loaded),
     stageMaps:    resolveStageMaps(loaded),
-    stageLabels:  stageLabelsOf(loaded.state.matches),
+    stageLabels:  stageLabelsOf(loaded.state.matches, hasBotStage(loaded.def.format)),
     displayView,
     autoPlay,
     armedMatchId,

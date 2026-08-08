@@ -35,7 +35,7 @@ function match(id: string, stage: number, a: string, b: string, winnerSide: 0 | 
 function standing(participantId: string, rank: number): StandingRow {
   return {
     participantId, played: 3, wins: 0, draws: 0, losses: 0,
-    points: 0, totalPoints: 0, rank, tied: false,
+    points: 0, totalPoints: 0, itemPoints: 0, strikePoints: 0, sweepPoints: 0, rank, tied: false,
   };
 }
 
@@ -50,8 +50,9 @@ function state(
       doubleMode: false, mapCatalogId: null, stageMaps: [],
       thirdPlaceMatch: false, leaguePoints: { win: 3, draw: 1, loss: 0 },
       doubleRoundRobin: false, groupCount: 2, advancePerGroup: 2,
+      botProgram: null, botName: null, botStageMap: null, participantSide: 0,
     },
-    participants, matches, standings, groups: null, qualifiers: null, stageMaps: [], stageLabels: [],
+    participants, matches, standings, groups: null, qualifiers: null, qualifierCandidates: null, stageMaps: [], stageLabels: [],
     qualifiersConfirmed: false,
     displayView: 'auto', autoPlay: { enabled: false, loop: false, stoppedReason: null },
     armedMatchId: null, boundRoomId: 'room', updatedAt: 0,

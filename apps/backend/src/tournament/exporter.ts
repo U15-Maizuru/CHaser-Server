@@ -1,8 +1,8 @@
 import type { StandingRow, TournamentMatch } from '@u15/ws-types';
-import { groupLabel } from '@u15/ws-types';
+import { groupLabel, hasBotStage } from '@u15/ws-types';
 import { computeStandings } from './standings.js';
 import {
-  groupStandingsOf, qualifiersOf, resolveParticipants, type LoadedTournament,
+  groupStandingsOf, qualifiersOf, rankByOf, resolveParticipants, type LoadedTournament,
 } from './TournamentStore.js';
 
 // 大会結果の書き出し。大会後の記録・表彰に使う。
@@ -67,7 +67,9 @@ export function matchesCsv(loaded: LoadedTournament): string {
     // 「予選 第1節」と「決勝T 1回戦」が同じ数字で並んで見分けられない
     const base: unknown[] = [
       m.id,
-      m.group === undefined ? '決勝T' : `予選${groupLabel(m.group)}`,
+      m.group === undefined         ? '決勝T'
+      : hasBotStage(loaded.def.format) ? '予選'
+      :                                `予選${groupLabel(m.group)}`,
       m.stage + 1, m.label, statusLabel(m),
       m.byeA ? '(不戦)' : nameOf(m.resolvedA),
       m.byeB ? '(不戦)' : nameOf(m.resolvedB),
@@ -103,39 +105,65 @@ const STANDINGS_HEADER = [
   '順位', 'チーム', '試合数', '勝', '分', '敗', '勝ち点', '合計ポイント', '同順位',
 ];
 
+// BOT対戦予選は勝ち点で順位を付けないので勝ち点列を出さず、代わりに順位を決めた内訳を出す
+// (「合計 → 一撃 → アイテム」の順に見れば、同点がどこで割れたのかが読める)
+const BOT_STANDINGS_HEADER = [
+  '順位', 'チーム', '結果', '合計ポイント', '一撃ボーナス', 'アイテムポイント', '総取りボーナス', '同順位',
+];
+
 /**
- * リーグ順位表の CSV。
+ * 順位表の CSV。
  *
- * 予選リーグがある大会ではリーグごとに見出し行を挟んで続けて出す。1つのファイルに
+ * 予選がある大会ではグループごとに見出し行を挟んで続けて出す。1つのファイルに
  * まとめるのは、運営が「予選の結果」として1枚で持ち帰れるようにするため。
  */
 export function standingsCsv(loaded: LoadedTournament): string {
   const ps     = resolveParticipants(loaded);
   const nameOf = (id: string) => ps.find(p => p.id === id)?.name ?? id;
+  const bot    = hasBotStage(loaded.def.format);
 
-  const row = (s: StandingRow): unknown[] => [
-    s.rank, nameOf(s.participantId), s.played, s.wins, s.draws, s.losses,
-    s.points, s.totalPoints, s.tied ? 'はい' : '',
-  ];
+  const row = (s: StandingRow): unknown[] => (bot
+    ? [
+        s.rank, nameOf(s.participantId), resultMark(s),
+        s.totalPoints, s.strikePoints, s.itemPoints, s.sweepPoints, s.tied ? 'はい' : '',
+      ]
+    : [
+        s.rank, nameOf(s.participantId), s.played, s.wins, s.draws, s.losses,
+        s.points, s.totalPoints, s.tied ? 'はい' : '',
+      ]);
+
+  const header = bot ? BOT_STANDINGS_HEADER : STANDINGS_HEADER;
 
   const groups = groupStandingsOf(loaded);
   if (groups) {
     const rows: unknown[][] = [];
     for (const g of groups) {
-      rows.push([`${g.label}リーグ`]);
-      rows.push(STANDINGS_HEADER);
+      // BOT対戦予選は1グループしか無いので「Aリーグ」と名乗る意味が無い
+      rows.push([bot ? 'BOT対戦予選' : `${g.label}リーグ`]);
+      rows.push(header);
       for (const s of g.standings) rows.push(row(s));
       rows.push([]);
     }
     return toCsv(rows);
   }
 
-  return toCsv([STANDINGS_HEADER, ...standingsOf(loaded).map(row)]);
+  return toCsv([header, ...standingsOf(loaded).map(row)]);
+}
+
+/** BOT に勝ったか (1試合しかないので○△●の1文字で足りる) */
+function resultMark(s: StandingRow): string {
+  if (s.played === 0) return '';
+  if (s.wins   > 0)   return '○';
+  if (s.draws  > 0)   return '△';
+  return '●';
 }
 
 function standingsOf(loaded: LoadedTournament): StandingRow[] {
   const ps = resolveParticipants(loaded);
-  return computeStandings(ps.map(p => p.id), loaded.state.matches, loaded.def.rules.leaguePoints);
+  return computeStandings(
+    ps.filter(p => !p.isBot).map(p => p.id),
+    loaded.state.matches, loaded.def.rules.leaguePoints, rankByOf(loaded.def),
+  );
 }
 
 /** 全部入りの JSON (定義 + 進行 + 順位) */

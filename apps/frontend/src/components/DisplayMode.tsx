@@ -1,5 +1,5 @@
 import type { InlineMapData, ServerStatusPayload, TournamentStatePayload } from '@u15/ws-types';
-import { DEFAULT_DISPLAY_PREFS, hasGroupStage, MapObject } from '@u15/ws-types';
+import { DEFAULT_DISPLAY_PREFS, hasQualifying, MapObject } from '@u15/ws-types';
 import { useGameState } from '../hooks/useGameState';
 import { useGamePhaseSound } from '../hooks/useGamePhaseSound';
 import { useStartCountdown } from '../hooks/useStartCountdown';
@@ -11,8 +11,8 @@ import { FitArea } from './FitArea';
 import { MapThumbnail } from './MapThumbnail';
 import { sourceLabel } from './MapSourceSection';
 import { BracketView } from './tournament/BracketView';
-import { GroupStageView, displayGroupPhase } from './tournament/GroupStageView';
-import type { GroupStagePhase } from './tournament/GroupStageView';
+import { QualifyingView, displayQualifyingPhase } from './tournament/QualifyingView';
+import type { QualifyingPhase } from './tournament/QualifyingView';
 import { LeagueTable } from './tournament/LeagueTable';
 import { TournamentFinale } from './tournament/TournamentFinale';
 import { TournamentStandby } from './tournament/TournamentStandby';
@@ -38,7 +38,7 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
   const prefs = serverStatus?.displayPrefs ?? DEFAULT_DISPLAY_PREFS;
   const phase = serverStatus?.phase ?? 'setup';
   // 大会中でなければ結果は使われない
-  const groupView = displayGroupPhase(tournamentState);
+  const groupView = displayQualifyingPhase(tournamentState);
 
   useGamePhaseSound(snapshot, serverStatus, gameEnd, turnInfo, prefs.muted, true);
   const countdown = useStartCountdown(serverStatus?.phase, turnInfo);
@@ -143,7 +143,7 @@ function SetupWaiting({ serverStatus, displayTitle, tournament, groupPhase, curr
   /** 大会運営中なら、待機中にトーナメント表 / リーグ表を見せる */
   tournament?: TournamentStatePayload | null;
   /** 予選ありのとき、いま出すもの */
-  groupPhase?: GroupStagePhase;
+  groupPhase?: QualifyingPhase;
   /** これから戦うマップ。取得前は null */
   currentMap?: InlineMapData | null;
   theme: string;
@@ -234,8 +234,8 @@ function SetupWaiting({ serverStatus, displayTitle, tournament, groupPhase, curr
       {/* 大会運営中は勝ち上がりを観客に見せる (待機中の間だけ) */}
       {tournament && (
         <div style={sw.bracket}>
-          {hasGroupStage(tournament.format) ? (
-            <GroupStageView state={tournament} phase={groupPhase} />
+          {hasQualifying(tournament.format) ? (
+            <QualifyingView state={tournament} phase={groupPhase} />
           ) : tournament.format === 'league' ? (
             <LeagueTable
               matches={tournament.matches}

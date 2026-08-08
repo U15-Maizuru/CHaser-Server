@@ -14,7 +14,9 @@ export class DefinitionError extends Error {}
 
 const DEFAULT_LEAGUE_POINTS: LeaguePoints = { win: 3, draw: 1, loss: 0 };
 
-const FORMATS: TournamentFormat[] = ['single-elimination', 'league', 'group-then-bracket'];
+const FORMATS: TournamentFormat[] = [
+  'single-elimination', 'league', 'group-then-bracket', 'bot-then-bracket',
+];
 
 const DEFAULT_GROUP_COUNT       = 2;
 const DEFAULT_ADVANCE_PER_GROUP = 2;
@@ -92,6 +94,13 @@ function parseRules(v: unknown): TournamentRules {
     doubleRoundRobin: asBool(o['doubleRoundRobin'], false),
     groupCount:       asNumber(o['groupCount'],      DEFAULT_GROUP_COUNT),
     advancePerGroup:  asNumber(o['advancePerGroup'], DEFAULT_ADVANCE_PER_GROUP),
+    botProgram:       parseProgram(o['botProgram'], 'rules.botProgram'),
+    botName:          typeof o['botName']     === 'string' && o['botName'].trim() !== ''
+      ? o['botName'].trim() : null,
+    botStageMap:      typeof o['botStageMap'] === 'string' && o['botStageMap'] !== ''
+      ? o['botStageMap'] : null,
+    // 0 = 先攻 / 1 = 後攻。それ以外の値は先攻に倒す
+    participantSide:  o['participantSide'] === 1 ? 1 : 0,
   };
 }
 
@@ -198,6 +207,35 @@ function validateGroupStage(participants: ParticipantDef[], rules: TournamentRul
   }
 }
 
+/**
+ * BOT対戦予選の設定を検証する。
+ *
+ * この形式の根拠は「運営側はプログラムもマップも全参加者に対して同一」なので、
+ * **マップが決まっていないものは大会として成立しない** — ランダム生成のまま走らせると
+ * 参加者ごとに違う盤面になり、ポイントで順位を付ける前提が崩れる。
+ * BOT プログラム自体は当日割り当てを許す (参加者の未提出と同じ扱い)。
+ */
+function validateBotStage(participants: ParticipantDef[], rules: TournamentRules): void {
+  const { advancePerGroup } = rules;
+
+  if (!Number.isInteger(advancePerGroup) || advancePerGroup < 2) {
+    throw new DefinitionError(
+      `rules.advancePerGroup (決勝トーナメント進出人数) は2以上の整数である必要があります (実際の値: ${advancePerGroup})`,
+    );
+  }
+  if (participants.length < advancePerGroup) {
+    throw new DefinitionError(
+      `決勝トーナメント進出人数 ${advancePerGroup} に対して参加者が足りません (実際の人数: ${participants.length})`,
+    );
+  }
+  if (rules.botStageMap === null && rules.mapCatalogId === null) {
+    throw new DefinitionError(
+      'BOT対戦予選では全参加者が同じマップで戦う必要があります。'
+      + 'rules.botStageMap か rules.mapCatalogId でマップを指定してください',
+    );
+  }
+}
+
 export interface ParseOptions {
   /** id 省略時に使うフォルダ名 */
   fallbackId?: string;
@@ -231,15 +269,21 @@ export function parseTournamentDefinition(raw: unknown, opts: ParseOptions = {})
     id, name, format: format as TournamentFormat, rules, participants,
   };
 
-  if (def.format === 'group-then-bracket') {
-    validateGroupStage(participants, rules);
-    // 1回戦の顔ぶれは予選の結果で決まるので、明示的な組み合わせ指定は意味を持たない。
-    // 黙って無視すると「指定したのに効かない」になるため、はっきり断る
+  // 予選のある形式では、1回戦の顔ぶれは予選の結果で決まるので明示的な組み合わせ指定は
+  // 意味を持たない。黙って無視すると「指定したのに効かない」になるため、はっきり断る
+  if (def.format === 'group-then-bracket' || def.format === 'bot-then-bracket') {
+    const what = def.format === 'group-then-bracket'
+      ? { name: '予選リーグ + 決勝トーナメント', pairs: 'リーグごとに自動生成されます' }
+      : { name: 'BOT対戦予選 + 決勝トーナメント', pairs: '参加者ごとに BOT との1試合が自動生成されます' };
+
+    if (def.format === 'group-then-bracket') validateGroupStage(participants, rules);
+    else                                     validateBotStage(participants, rules);
+
     if (o['bracket'] !== undefined && o['bracket'] !== null) {
-      throw new DefinitionError('予選リーグ + 決勝トーナメントでは bracket を指定できません (1回戦は予選の順位で決まります)');
+      throw new DefinitionError(`${what.name}では bracket を指定できません (1回戦は予選の順位で決まります)`);
     }
     if (o['schedule'] !== undefined && o['schedule'] !== null) {
-      throw new DefinitionError('予選リーグ + 決勝トーナメントでは schedule を指定できません (対戦カードはリーグごとに自動生成されます)');
+      throw new DefinitionError(`${what.name}では schedule を指定できません (対戦カードは${what.pairs})`);
     }
     return def;
   }

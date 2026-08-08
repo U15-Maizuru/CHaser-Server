@@ -1,4 +1,6 @@
-import type { MatchSlotRef, ResolvedParticipant, TournamentMatch } from '@u15/ws-types';
+import type {
+  MatchSlotRef, ResolvedParticipant, TournamentFormat, TournamentMatch,
+} from '@u15/ws-types';
 import { slotPlaceholder } from '@u15/ws-types';
 import {
   BG_CARD, BORDER_COLOR, COOL_COLOR, COOL_PALE, FONT_NUM, FONT_UI,
@@ -13,12 +15,12 @@ export const CARD_W = 208;
 export const CARD_H = 68;
 
 const STATUS_LABEL: Record<TournamentMatch['status'], string> = {
-  pending:          '待機',
-  ready:            '準備OK',
+  pending:          '勝者待ち',
+  ready:            '対戦確定',
   armed:            '準備完了',
   in_progress:      '対戦中',
   awaiting_confirm: '結果確認',
-  done:             '確定',
+  done:             '試合終了',
 };
 
 const STATUS_COLOR: Record<TournamentMatch['status'], string> = {
@@ -33,6 +35,8 @@ const STATUS_COLOR: Record<TournamentMatch['status'], string> = {
 export interface MatchCardProps {
   match:        TournamentMatch;
   participants: ResolvedParticipant[];
+  /** 未確定の枠の呼び名を形式に合わせるため (「Aリーグ 1位」/「予選 1位」)。省略可 */
+  format?:      TournamentFormat;
   /** true なら選択できる (control / 専用窓)。display では false */
   interactive?: boolean;
   selected?:    boolean;
@@ -45,15 +49,18 @@ export interface MatchCardProps {
 }
 
 export function MatchCard({
-  match, participants, interactive = false, selected = false, upcoming = false,
+  match, participants, format, interactive = false, selected = false, upcoming = false,
   justFinished = false, onSelect, style,
 }: MatchCardProps) {
   // まだ相手が決まっていない枠でも、決まり方が分かるなら書く (「Aリーグ 1位」)。
   // 予選の結果待ちの準決勝が「—」だけだと、観客にも運営にも何を待っているのか伝わらない
   const nameOf = (id: string | null, isBye: boolean, ref: MatchSlotRef): string => {
     if (isBye) return '不戦';
-    if (!id)   return slotPlaceholder(ref) ?? '—';
-    return participants.find(p => p.id === id)?.name ?? id;
+    if (!id)   return slotPlaceholder(ref, format) ?? '—';
+    const p = participants.find(x => x.id === id);
+    if (!p) return id;
+    // 運営BOT は参加者ではないので、名前だけだとエントリーの1人に見える
+    return p.isBot ? `🤖 ${p.name}` : p.name;
   };
 
   const winner = match.result?.winnerSide ?? null;

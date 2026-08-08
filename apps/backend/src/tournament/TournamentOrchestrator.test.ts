@@ -875,4 +875,161 @@ describe('TournamentOrchestrator', () => {
       expect(() => orch.setStageMap(ROOM, bracketStage, null)).not.toThrow();
     });
   });
+
+  // ── BOT対戦予選 + 決勝トーナメント ──────────────────────────────────────
+  describe('BOT対戦予選 + 決勝トーナメント', () => {
+    /** 6人が同じ BOT と1試合ずつ。上位4名が決勝トーナメントへ */
+    const botCup = ({ rules, ...overrides }: Record<string, unknown> = {}) => cupDef({
+      format: 'bot-then-bracket',
+      participants: Array.from({ length: 6 }, (_, i) => ({
+        id: `p${i + 1}`, name: `T${i + 1}`, seed: i + 1, program: { builtin: 'cpu' },
+      })),
+      ...overrides,
+      rules: {
+        doubleMode: false, advancePerGroup: 4,
+        botProgram: { builtin: 'cpu' }, botName: '運営BOT', botStageMap: 'fixed-map',
+        ...(rules as object ?? {}),
+      },
+    });
+
+    /** 予選を「選手番号が小さいほど高得点」で終わらせる → 順位は p1..p6 の順になる */
+    const finishQualifying = (points: Record<string, number> = {}) => {
+      for (const m of lastState()!.matches.filter(x => x.group !== undefined)) {
+        const pid = [m.resolvedA, m.resolvedB].find(id => id !== '__bot__')!;
+        const no  = Number(pid.slice(1));
+        const total = points[pid] ?? (100 - no * 10);
+        // 参加者は slotA (既定は先攻)。合計ポイントだけ与えて確定させる
+        orch.setWalkover(ROOM, m.id, 0);
+        const match = lastState()!.matches.find(x => x.id === m.id)!;
+        match.result!.set = {
+          totals: [total, 0], wins: [1, 0], draws: 0, winnerSide: 0, decidedBy: 'points',
+        };
+        match.result!.roundResults = [];
+      }
+      // set を直接書き換えたので、順位表を計算し直させる
+      orch.rescan(ROOM);
+    };
+
+    it('予選は参加者ごとに BOT との1試合になり、BOT は参加者一覧にだけ現れる', () => {
+      writeCup(botCup());
+      orch.bind(ROOM, CUP);
+      const st = lastState()!;
+
+      const qualifying = st.matches.filter(m => m.group !== undefined);
+      expect(qualifying).toHaveLength(6);
+      expect(qualifying.every(m => m.resolvedB === '__bot__')).toBe(true);
+      expect(qualifying.every(m => m.status === 'ready')).toBe(true);
+
+      // BOT はエントリーではない — 順位表にも、決勝トーナメントにも入らない
+      expect(st.participants.find(p => p.isBot)?.name).toBe('運営BOT');
+      expect(st.groups![0]!.participantIds).not.toContain('__bot__');
+      expect(st.groups![0]!.participantIds).toHaveLength(6);
+    });
+
+    it('参加者後攻の設定なら BOT が slotA になる', () => {
+      writeCup(botCup({ rules: { participantSide: 1 } }));
+      orch.bind(ROOM, CUP);
+      const qualifying = lastState()!.matches.filter(m => m.group !== undefined);
+      expect(qualifying.every(m => m.resolvedA === '__bot__')).toBe(true);
+    });
+
+    it('予選が終わると上位が決勝トーナメントへ入り、確定するまで準備できない', async () => {
+      writeCup(botCup());
+      orch.bind(ROOM, CUP);
+      finishQualifying();
+
+      const st = lastState()!;
+      expect(st.groups![0]!.standings.map(s => s.participantId))
+        .toEqual(['p1', 'p2', 'p3', 'p4', 'p5', 'p6']);
+      expect(st.qualifiers!.map(q => q.participantId)).toEqual(['p1', 'p2', 'p3', 'p4']);
+      // 4人進出 → seedOrder(4) = [1,4,2,3] なので 1位-4位 / 2位-3位
+      expect([matchOf('SF1').resolvedA, matchOf('SF1').resolvedB]).toEqual(['p1', 'p4']);
+      expect([matchOf('SF2').resolvedA, matchOf('SF2').resolvedB]).toEqual(['p2', 'p3']);
+
+      await expect(orch.armMatch(ROOM, 'SF1')).rejects.toThrow(TournamentError);
+      orch.confirmQualifiers(ROOM, true);
+      await expect(orch.armMatch(ROOM, 'SF1')).resolves.toBeUndefined();
+    });
+
+    it('ボーダーが同点なら確認リストが定員より多く並ぶ', () => {
+      writeCup(botCup());
+      orch.bind(ROOM, CUP);
+      // 4位と5位を並ばせる
+      finishQualifying({ p4: 50, p5: 50 });
+
+      const list = lastState()!.qualifierCandidates!;
+      expect(list).toHaveLength(5);
+      expect(list.filter(c => c.onBorder).map(c => c.participantId).sort())
+        .toEqual(['p4', 'p5']);
+    });
+
+    it('確認リストから削除すると下の順位が繰り上がる', () => {
+      writeCup(botCup());
+      orch.bind(ROOM, CUP);
+      finishQualifying();
+      expect(lastState()!.qualifiers!.map(q => q.participantId))
+        .toEqual(['p1', 'p2', 'p3', 'p4']);
+
+      orch.setQualifierExclusion(ROOM, 'p2', true);
+      expect(lastState()!.qualifiers!.map(q => q.participantId))
+        .toEqual(['p1', 'p3', 'p4', 'p5']);
+      // 削除した人は行として残る (取り消せるように)
+      expect(lastState()!.qualifierCandidates!.find(c => c.participantId === 'p2')?.excluded)
+        .toBe(true);
+
+      orch.setQualifierExclusion(ROOM, 'p2', false);
+      expect(lastState()!.qualifiers!.map(q => q.participantId))
+        .toEqual(['p1', 'p2', 'p3', 'p4']);
+    });
+
+    it('実施済みの決勝トーナメントがあれば cascade なしで削除できない', () => {
+      writeCup(botCup());
+      orch.bind(ROOM, CUP);
+      finishQualifying();
+      orch.confirmQualifiers(ROOM, true);
+      orch.setWalkover(ROOM, 'SF1', 0);
+
+      expect(() => orch.setQualifierExclusion(ROOM, 'p2', true)).toThrow(TournamentError);
+
+      orch.setQualifierExclusion(ROOM, 'p2', true, true);
+      expect(matchOf('SF1').result).toBeUndefined();
+      expect(matchOf('SF2').resolvedA).toBe('p3');
+    });
+
+    it('予選のマップは差し替えられるが、実施済みがあれば拒否する', () => {
+      writeCup(botCup());
+      orch.bind(ROOM, CUP);
+
+      // 全参加者が同じマップで戦うのが形式の根拠なので、予選も差し替えられる
+      expect(() => orch.setStageMap(ROOM, 0, 'other-map')).not.toThrow();
+      expect(lastState()!.stageMaps[0]).toBe('other-map');
+
+      orch.setWalkover(ROOM, 'B-M1', 0);
+      expect(() => orch.setStageMap(ROOM, 0, 'third-map')).toThrow(TournamentError);
+    });
+
+    it('予選の stage 名は「BOT対戦予選」になる (節と数えない)', () => {
+      writeCup(botCup());
+      orch.bind(ROOM, CUP);
+      expect(lastState()!.stageLabels[0]).toBe('BOT対戦予選');
+    });
+
+    it('オートプレイは同点のボーダーでも止まらず自動で確定する', async () => {
+      writeCup(botCup());
+      orch.bind(ROOM, CUP);
+      finishQualifying({ p4: 50, p5: 50 });
+      expect(lastState()!.qualifierCandidates!.some(c => c.onBorder)).toBe(true);
+
+      orch.setAutoPlay(ROOM, true);
+      const until = Date.now() + 5_000;
+      while (!lastState()!.qualifiersConfirmed) {
+        if (Date.now() > until) throw new Error('タイムアウト: 決勝進出者の確定');
+        await new Promise(r => setTimeout(r, 20));
+      }
+      orch.setAutoPlay(ROOM, false);
+
+      expect(lastState()!.qualifiersConfirmed).toBe(true);
+      expect(lastState()!.autoPlay.stoppedReason).toBeNull();
+    });
+  });
 });

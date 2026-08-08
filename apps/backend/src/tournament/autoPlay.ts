@@ -3,7 +3,7 @@ import type {
   TournamentFormat,
   TournamentMatch,
 } from '@u15/ws-types';
-import { hasGroupStage } from '@u15/ws-types';
+import { hasQualifying } from '@u15/ws-types';
 import { isKnockoutMatch, nextReadyMatch } from './progress.js';
 
 // オートプレイ (自動進行) の「次の一手」を決める純関数。
@@ -118,8 +118,11 @@ export function nextAutoPlayAction(i: AutoPlayInput): AutoPlayAction | null {
 
   // ③ 予選が終わっていれば、決勝進出者を確定して決勝トーナメントへ進む。
   //    観戦画面はここが確定するまで予選の最終結果を出し続けるので、
-  //    qualifiers の待機時間がそのまま「順位表を見せる時間」になる
-  if (hasGroupStage(i.format) && i.groupStageDone && !i.qualifiersConfirmed) {
+  //    qualifiers の待機時間がそのまま「順位表を見せる時間」になる。
+  //
+  //    **ボーダーが同点でも止めない。** 自動判定は順位表の並び順で必ず決定的に枠を埋めるので、
+  //    運営が居なくても大会は完走する。同点を人が決め直したいときは自動進行を切る運用。
+  if (hasQualifying(i.format) && i.groupStageDone && !i.qualifiersConfirmed) {
     return { kind: 'confirm-qualifiers' };
   }
 

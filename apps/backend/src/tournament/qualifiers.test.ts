@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import type { LeaguePoints, TournamentMatch, TournamentMatchResult } from '@u15/ws-types';
-import { computeGroupStandings, computeQualifiers, resolveGroupRank } from './qualifiers.js';
+import {
+  computeGroupStandings, computeQualifierCandidates, computeQualifiers, resolveGroupRank,
+} from './qualifiers.js';
 
 const LP: LeaguePoints = { win: 3, draw: 1, loss: 0 };
 
@@ -132,6 +134,66 @@ describe('computeQualifiers', () => {
     const once  = qualifiersOf([GROUPS_A], CLEAR_A, 2).map(s => s.participantId);
     const twice = qualifiersOf([GROUPS_A], CLEAR_A, 2).map(s => s.participantId);
     expect(once).toEqual(twice);
+  });
+});
+
+describe('最終決定確認リストからの削除 (exclusions)', () => {
+  const candidatesOf = (
+    groups: string[][], matches: TournamentMatch[], advance: number,
+    exclusions: string[] = [],
+  ) => computeQualifierCandidates(
+    computeGroupStandings(groups, matches, LP), matches, advance, exclusions);
+
+  it('予選が終わるまでは候補を出さない', () => {
+    const undecided = [match('GA1', 0, 'a1', 'a2', 0, [30, 10], false)];
+    expect(candidatesOf([GROUPS_A], undecided, 2)).toEqual([]);
+  });
+
+  it('決着していれば定員ぶんだけ並び、ボーダーの印は立たない', () => {
+    const list = candidatesOf([GROUPS_A], CLEAR_A, 2);
+    expect(list.map(c => c.participantId)).toEqual(['a1', 'a2']);
+    expect(list.every(c => !c.onBorder && !c.excluded)).toBe(true);
+  });
+
+  it('ボーダーが同点なら定員より多く並び、その行に onBorder が立つ', () => {
+    // a2 と a3 が完全に並ぶ。上位2なら片方しか上がれない
+    const matches = [
+      match('GA1', 0, 'a1', 'a2', 0, [30, 10]),
+      match('GA2', 0, 'a1', 'a3', 0, [30, 10]),
+      match('GA3', 0, 'a2', 'a3', null, [10, 10]),
+    ];
+    const list = candidatesOf([GROUPS_A], matches, 2);
+
+    expect(list).toHaveLength(3);
+    expect(list[0]!.onBorder).toBe(false);            // 1位は決まっている
+    expect(list.filter(c => c.onBorder).map(c => c.participantId).sort())
+      .toEqual(['a2', 'a3']);
+  });
+
+  it('削除すると下の順位が繰り上がり、削除済みは行として残る', () => {
+    const list = candidatesOf([GROUPS_A], CLEAR_A, 2, ['a1']);
+    expect(list.filter(c => !c.excluded).map(c => c.participantId)).toEqual(['a2', 'a3']);
+    expect(list.filter(c => c.excluded).map(c => c.participantId)).toEqual(['a1']);
+  });
+
+  it('削除した人は決勝トーナメントの枠にも入らない', () => {
+    const slots = computeQualifiers(
+      computeGroupStandings([GROUPS_A], CLEAR_A, LP), CLEAR_A, 2, {}, ['a1'],
+    );
+    expect(slots.map(s => s.participantId)).toEqual(['a2', 'a3']);
+  });
+
+  it('削除で人数が足りなくなった枠は bye になる', () => {
+    const slots = computeQualifiers(
+      computeGroupStandings([GROUPS_A], CLEAR_A, LP), CLEAR_A, 2, {}, ['a1', 'a2'],
+    );
+    expect(slots[0]!.participantId).toBe('a3');
+    expect(slots[1]!.bye).toBe(true);
+  });
+
+  it('resolveGroupRank も削除を反映して繰り上げる', () => {
+    expect(resolveGroupRank(GROUPS_A, CLEAR_A, LP, 1, undefined, 'league-points', ['a1']))
+      .toEqual({ id: 'a2', bye: false, known: true });
   });
 });
 

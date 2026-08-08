@@ -35,6 +35,10 @@ describe('parseTournamentDefinition', () => {
       doubleRoundRobin: false,
       groupCount: 2,
       advancePerGroup: 2,
+      botProgram: null,
+      botName: null,
+      botStageMap: null,
+      participantSide: 0,
     });
   });
 
@@ -210,5 +214,72 @@ describe('予選リーグ + 決勝トーナメント', () => {
   it('1回戦は予選の結果で決まるので bracket / schedule は指定できない', () => {
     expect(() => parseGroup({ bracket: { slots: ['p1', 'p2'] } })).toThrow(/bracket/);
     expect(() => parseGroup({ schedule: { pairs: [['p1', 'p2']] } })).toThrow(/schedule/);
+  });
+});
+
+describe('BOT対戦予選 + 決勝トーナメント', () => {
+  const BOT_OK = {
+    name: 'BOT予選大会',
+    format: 'bot-then-bracket',
+    rules: { botStageMap: 'map-1', advancePerGroup: 4 },
+    participants: Array.from({ length: 6 }, (_, i) => ({
+      id: `p${i + 1}`, name: `T${i + 1}`, program: null,
+    })),
+  };
+  const parseBot = (o: Record<string, unknown>) =>
+    parseTournamentDefinition(
+      { ...BOT_OK, ...o, rules: { ...BOT_OK.rules, ...(o['rules'] as object ?? {}) } },
+      { fallbackId: 'cup' },
+    );
+
+  it('最小構成を読める', () => {
+    const def = parseBot({});
+    expect(def.format).toBe('bot-then-bracket');
+    expect(def.rules.botStageMap).toBe('map-1');
+    expect(def.rules.advancePerGroup).toBe(4);
+  });
+
+  it('botProgram を参加者と同じ書式で読む', () => {
+    expect(parseBot({ rules: { botProgram: { file: 'programs/bot.py' } } }).rules.botProgram)
+      .toEqual({ kind: 'file', file: 'programs/bot.py' });
+    expect(parseBot({ rules: { botProgram: { builtin: 'cpu' } } }).rules.botProgram)
+      .toEqual({ kind: 'builtin', builtin: 'cpu' });
+  });
+
+  it('botName は空文字なら null (既定名にフォールバックさせる)', () => {
+    expect(parseBot({ rules: { botName: '運営くん' } }).rules.botName).toBe('運営くん');
+    expect(parseBot({ rules: { botName: '  ' } }).rules.botName).toBeNull();
+  });
+
+  it('participantSide は 0 (先攻) が既定で、1 のときだけ後攻になる', () => {
+    expect(parseBot({}).rules.participantSide).toBe(0);
+    expect(parseBot({ rules: { participantSide: 1 } }).rules.participantSide).toBe(1);
+    // 想定外の値は先攻に倒す (壊れた定義でも読めなくしない)
+    expect(parseBot({ rules: { participantSide: 7 } }).rules.participantSide).toBe(0);
+  });
+
+  it('マップが決まっていなければ弾く (全参加者同一条件がこの形式の根拠)', () => {
+    expect(() => parseBot({ rules: { botStageMap: null } })).toThrow(/同じマップ/);
+    // 大会全体の固定マップでもよい
+    expect(() => parseBot({ rules: { botStageMap: null, mapCatalogId: 'map-9' } })).not.toThrow();
+  });
+
+  it('進出人数が2未満なら弾く (決勝が組めない)', () => {
+    expect(() => parseBot({ rules: { advancePerGroup: 1 } })).toThrow(/advancePerGroup/);
+  });
+
+  it('進出人数に参加者が足りなければ弾く', () => {
+    expect(() => parseBot({
+      participants: BOT_OK.participants.slice(0, 3), rules: { advancePerGroup: 4 },
+    })).toThrow(/参加者が足りません/);
+  });
+
+  it('BOT プログラム未提出は許す (当日割り当てるため)', () => {
+    expect(parseBot({}).rules.botProgram).toBeNull();
+  });
+
+  it('対戦カードは自動生成なので bracket / schedule は指定できない', () => {
+    expect(() => parseBot({ bracket: { slots: ['p1', 'p2'] } })).toThrow(/bracket/);
+    expect(() => parseBot({ schedule: { pairs: [['p1', 'p2']] } })).toThrow(/schedule/);
   });
 });

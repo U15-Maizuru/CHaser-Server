@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Buffer } from 'node:buffer';
-import type { ParticipantDef, TournamentDefinition } from '@u15/ws-types';
+import type { ParticipantDef, ParticipantProgram, TournamentDefinition } from '@u15/ws-types';
+import { BOT_PARTICIPANT_ID, hasBotStage } from '@u15/ws-types';
 import { getCatalogEntry } from '../programCatalog.js';
 import { DEFAULT_ZIP_LIMITS, writeZip, type ZipWriteEntry } from './zip.js';
 import { tournamentRootDir, type LoadedTournament } from './TournamentStore.js';
@@ -38,16 +39,18 @@ interface ProgramSource {
  * ライブラリから割り当てただけの大会 (state.programs 由来) の両方を拾う。
  * 後者を拾わないと、画面で作った大会が「参加者だけの空の .zip」になってしまう。
  */
-function findProgram(loaded: LoadedTournament, p: ParticipantDef): ProgramSource | null {
-  if (p.program?.kind === 'file') {
+function findProgram(
+  loaded: LoadedTournament, id: string, program: ParticipantProgram,
+): ProgramSource | null {
+  if (program?.kind === 'file') {
     const src: ProgramSource = {
-      srcPath: path.join(tournamentRootDir(), loaded.def.id, p.program.file),
+      srcPath: path.join(tournamentRootDir(), loaded.def.id, program.file),
     };
-    if (p.program.displayName !== undefined) src.displayName = p.program.displayName;
+    if (program.displayName !== undefined) src.displayName = program.displayName;
     return src;
   }
 
-  const assigned = loaded.state.programs[p.id];
+  const assigned = loaded.state.programs[id];
   if (!assigned) return null;
 
   const entry = getCatalogEntry(assigned.catalogId);
@@ -70,62 +73,70 @@ export function buildTournamentBundle(loaded: LoadedTournament): BundleResult {
   const skipped: string[]        = [];
   const files:   ZipWriteEntry[] = [];
   const taken    = new Set<string>();
-  const bundled: ParticipantDef[] = [];
 
-  for (const [i, p] of loaded.def.participants.entries()) {
+  /**
+   * プログラム1つぶんを同梱し、tournament.json に残す指定を返す。
+   * 運営BOT (bot-then-bracket) も参加者と全く同じ扱いなので、この1関数を共用する。
+   */
+  const bundleProgram = (
+    id: string, name: string, program: ParticipantProgram, index: number,
+  ): ParticipantProgram => {
     // 組み込み CPU は実体を持たないのでそのまま運べる
-    if (p.program?.kind === 'builtin') {
-      bundled.push(p);
-      continue;
-    }
+    if (program?.kind === 'builtin') return program;
 
-    const found = findProgram(loaded, p);
-    if (!found) {
-      bundled.push({ ...p, program: null });
-      continue;
-    }
+    const found = findProgram(loaded, id, program);
+    if (!found) return null;
 
     const ext = path.extname(found.srcPath).toLowerCase();
     if (ext !== BUNDLABLE_EXT) {
       // .exe を ZIP から展開しないのは取り込み側の防御線 (zip.ts の allowedExtensions)。
       // 同梱しても捨てられるだけなので、ここで断って運営に知らせる
-      skipped.push(`${p.name}: ${ext} のプログラムは同梱できません (移動先で割り当て直してください)`);
-      bundled.push({ ...p, program: null });
-      continue;
+      skipped.push(`${name}: ${ext} のプログラムは同梱できません (移動先で割り当て直してください)`);
+      return null;
     }
 
     let data: Buffer;
     try {
       data = fs.readFileSync(found.srcPath);
     } catch {
-      skipped.push(`${p.name}: プログラムの実体が見つかりませんでした`);
-      bundled.push({ ...p, program: null });
-      continue;
+      skipped.push(`${name}: プログラムの実体が見つかりませんでした`);
+      return null;
     }
 
     // 自分の importer が弾く .zip を作らない
     if (data.length > DEFAULT_ZIP_LIMITS.maxEntryBytes) {
       skipped.push(
-        `${p.name}: プログラムが大きすぎます (上限 ${DEFAULT_ZIP_LIMITS.maxEntryBytes / 1024}KB)`,
+        `${name}: プログラムが大きすぎます (上限 ${DEFAULT_ZIP_LIMITS.maxEntryBytes / 1024}KB)`,
       );
-      bundled.push({ ...p, program: null });
-      continue;
+      return null;
     }
 
-    const file = `programs/${safeBaseName(p.id, i, taken)}${BUNDLABLE_EXT}`;
+    const file = `programs/${safeBaseName(id, index, taken)}${BUNDLABLE_EXT}`;
     files.push({ name: file, data });
-    bundled.push({
-      ...p,
-      program: found.displayName === undefined
-        ? { kind: 'file', file }
-        : { kind: 'file', file, displayName: found.displayName },
-    });
-  }
+    return found.displayName === undefined
+      ? { kind: 'file', file }
+      : { kind: 'file', file, displayName: found.displayName };
+  };
 
-  // rules.mapCatalogId / rules.stageMaps はこの PC のマップライブラリ ID なので移動先では
-  // 解決しない。それでも残す — 見つからない ID は黙って無視される決まり (definition.ts) で、
-  // 消すと元の PC で読み直したときに回戦ごとのマップ設定が飛んでしまう。
+  const bundled: ParticipantDef[] = loaded.def.participants.map((p, i) => ({
+    ...p,
+    program: bundleProgram(p.id, p.name, p.program, i),
+  }));
+
+  // rules.mapCatalogId / rules.stageMaps / rules.botStageMap はこの PC のマップライブラリ ID
+  // なので移動先では解決しない。それでも残す — 見つからない ID は黙って無視される決まり
+  // (definition.ts) で、消すと元の PC で読み直したときにマップ設定が飛んでしまう。
   const def: TournamentDefinition = { ...loaded.def, participants: bundled };
+
+  if (hasBotStage(loaded.def.format)) {
+    def.rules = {
+      ...loaded.def.rules,
+      botProgram: bundleProgram(
+        BOT_PARTICIPANT_ID, loaded.def.rules.botName ?? '運営BOT',
+        loaded.def.rules.botProgram, loaded.def.participants.length,
+      ),
+    };
+  }
 
   const zip = writeZip([
     { name: 'tournament.json', data: Buffer.from(JSON.stringify(def, null, 2), 'utf-8') },
