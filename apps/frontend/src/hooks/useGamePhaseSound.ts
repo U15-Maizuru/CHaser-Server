@@ -8,8 +8,7 @@ function isBlunder(reason: Reason): boolean {
 }
 
 /**
- * フェーズ遷移 (go/finish/win/lose) とスコア変化 (get_C/get_H) の SE 再生をまとめて行う。
- * ControlApp (App.tsx) と DisplayMode.tsx で同一ロジックが重複していたため共通化。
+ * フェーズ遷移 (go/finish/win/lose) とスコア変化 (get_C/get_H) の SE 再生。
  *
  * enabled=false の窓では一切再生しない。両窓が同時にマウントされるため、両方で
  * 再生すると二重再生 (フラム) になる — 観戦窓 (DisplayMode) のみ enabled=true にする。

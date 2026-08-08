@@ -3,9 +3,7 @@ import { useEffect, useState } from 'react';
 export type TextureKey = 'Floor' | 'Block' | 'Item' | 'Cool' | 'Hot';
 const TEXTURE_KEYS: TextureKey[] = ['Floor', 'Block', 'Item', 'Cool', 'Hot'];
 
-/**
- * GameBoardCanvas と MapEditorDialog で重複していたテーマ別テクスチャ読込ロジックを共通化。
- */
+/** テーマ別のテクスチャ画像を読み込む (盤面の描画とマップエディタで共有) */
 export function useTextures(theme: string): Partial<Record<TextureKey, HTMLImageElement>> {
   const [textures, setTextures] = useState<Partial<Record<TextureKey, HTMLImageElement>>>({});
   useEffect(() => {

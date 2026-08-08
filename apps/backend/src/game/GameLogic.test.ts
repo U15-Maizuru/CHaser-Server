@@ -84,7 +84,7 @@ describe('getAroundData', () => {
     expect(around.data[3]).toBe(MapObject.BLOCK); // 左
   });
 
-  it('method を渡さなければ従来どおり自機中心の 3x3 を返す', () => {
+  it('method を渡さなければ自機中心の 3x3 を返す', () => {
     const state = makeState({ teamPos: [{ x: 5, y: 5 }, { x: 9, y: 9 }] });
     const around = getAroundData(state, Team.COOL);
     const expected = getScanCells({ x: 5, y: 5 }, Action.WALK, Rote.UNKNOWN)

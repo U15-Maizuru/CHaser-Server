@@ -159,7 +159,7 @@ function SetupWaiting({ serverStatus, displayTitle, tournament, groupPhase, curr
 
   // カードの左右は MainWindow と同じく idxForSide で決める。そうしないと swapSlotConfigs 後の
   // 待機画面だけプログラムの左右が入れ替わって見え、第2ゲームが始まるとまた元に戻ってしまう。
-  // 第1ゲーム前 (currentRound=0) は恒等写像なので、従来どおり COOL が左・HOT が右になる。
+  // 第1ゲーム前 (currentRound=0) は恒等写像なので COOL が左・HOT が右になる。
   const leftIdx  = idxForSide(0, currentRound);
   const rightIdx = idxForSide(1, currentRound);
 

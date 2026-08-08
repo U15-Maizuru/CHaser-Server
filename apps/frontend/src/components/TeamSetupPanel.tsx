@@ -76,7 +76,7 @@ export function TeamSetupPanel({ slot, label, color, bgColor, darkColor, info, h
         {label}
       </div>
       <div style={{ ...s.body, background: bgColor }}>
-        {/* Mode selector */}
+        {/* 接続方法の切り替え */}
         <div style={s.typeRow}>
           {TYPE_LABELS.map(({ type, label: lbl }) => (
             <button
@@ -89,7 +89,7 @@ export function TeamSetupPanel({ slot, label, color, bgColor, darkColor, info, h
           ))}
         </div>
 
-        {/* Program library: select or upload */}
+        {/* 対戦で使うプログラムの選択 */}
         {info.type === 'process' && (
           <div style={s.uploadSection}>
             <ProgramLibrarySection
@@ -106,7 +106,7 @@ export function TeamSetupPanel({ slot, label, color, bgColor, darkColor, info, h
           </div>
         )}
 
-        {/* TCP mode: show port */}
+        {/* TCP 接続: 待ち受けポートを見せる */}
         {info.type === 'tcp' && (
           <div style={s.tcpInfo}>
             <span style={s.portLabel}>ポート</span>
@@ -114,7 +114,7 @@ export function TeamSetupPanel({ slot, label, color, bgColor, darkColor, info, h
           </div>
         )}
 
-        {/* Status badge */}
+        {/* 接続状態 */}
         <div style={s.statusRow}>
           <span style={{ ...s.badge, background: stateColor }}>
             {STATE_LABEL[info.state] ?? info.state}
@@ -133,7 +133,7 @@ export function TeamSetupPanel({ slot, label, color, bgColor, darkColor, info, h
           <pre style={s.errorDetail}>{info.error}</pre>
         )}
 
-        {/* Library management */}
+        {/* ライブラリの整理へ */}
         {info.type === 'process' && (
           <LibrarySection slot={slot} httpBase={httpBase} roomId={roomId} />
         )}

@@ -24,20 +24,13 @@ export type TournamentFormat =
 /**
  * 予選 (リーグ / BOT対戦) を持ち、決勝進出者の確定を挟む形式か。
  *
- * `format === 'league'` の三項演算子で分岐している箇所を素直に広げると、新しい形式が
- * 黙ってトーナメント側に落ちて事故になる。判定は必ず述語を通すこと。
- *
- * **「予選がある」を意味する判定はすべてこれ。** `hasGroupStage` は予選リーグ固有の
- * もの (星取表・リーグ数・所属リーグ) だけに使う — 両者を取り違えると、BOT対戦予選が
- * 決勝進出者の確定を飛ばして始まってしまう。
+ * **「予選がある」を意味する判定はすべてこれ。** `format === 'league'` の三項演算子で
+ * 分岐を書くと、新しい形式が黙ってトーナメント側に落ちて事故になる。
+ * 予選リーグ固有のもの (星取表・リーグ数・所属リーグ) は
+ * `format === 'group-then-bracket'` で直に分ける。
  */
 export function hasQualifying(format: TournamentFormat): boolean {
   return format === 'group-then-bracket' || format === 'bot-then-bracket';
-}
-
-/** 予選「リーグ」(グループ) を持つ形式か。星取表・リーグ数・所属リーグはこちらだけ */
-export function hasGroupStage(format: TournamentFormat): boolean {
-  return format === 'group-then-bracket';
 }
 
 /** BOT対戦予選 (全員が同じ運営BOT・同じマップと戦う) を持つ形式か */
@@ -319,7 +312,7 @@ export type MatchSlotRef =
  * 決まりようのある枠 (participant / winner-of など) は null を返す。
  *
  * BOT対戦予選は1グループしかないので「Aリーグ」と名乗る意味が無い。format を渡せば
- * 「予選 1位」になる (渡さなければ従来どおりリーグ名を付ける)。
+ * 「予選 1位」になる (省略するとリーグ名を付ける)。
  */
 export function slotPlaceholder(ref: MatchSlotRef, format?: TournamentFormat): string | null {
   if (ref.kind !== 'group-rank') return null;

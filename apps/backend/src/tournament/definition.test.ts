@@ -36,7 +36,7 @@ describe('parseTournamentDefinition', () => {
   });
 
   it('形式が意味を持たない設定は捨てる', () => {
-    // 平坦だった頃の名残で league の項目が書いてあっても、トーナメントには持ち込まない
+    // 他の形式の項目が書いてあっても、トーナメントには持ち込まない
     const def = parse({ ...OK, stage: { league: { doubleRoundRobin: true } } });
     expect(def.stage).not.toHaveProperty('league');
   });

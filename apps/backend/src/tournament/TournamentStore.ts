@@ -209,11 +209,10 @@ export function stageCountOf(matches: TournamentMatch[]): number {
 /**
  * 回戦ごとの実効マップ (index = stage)。null は「大会の設定に従う」。
  *
- * **index は予選と決勝を通した stage 番号 (combined) で統一する。** 運営中の差し替え
- * (stageMapOverrides) も mapForStage への引数も combined なので、ここで index 空間を
- * 分けると必ずズレる。ゲタを当てるのは「定義に書かれた回戦ごとのマップ」の読み出しだけ —
- * 作成画面は決勝トーナメントの回戦しか出さないので、そちらは決勝T相対で書かれている。
- * 予選を持たない形式ではゲタが 0 なので、従来の挙動と1ミリも変わらない。
+ * **index は予選と決勝を通した stage 番号で統一する。** 運営中の差し替え
+ * (decisions.stageMaps) も mapForStage への引数もこの番号なので、ここで index 空間を
+ * 分けると必ずズレる。予選の節ぶんのゲタを当てるのは、定義側 (MapPlan.bracketStages) の
+ * 読み出しだけ — 作成画面は決勝トーナメントの回戦しか出さないので決勝T相対で書かれている。
  */
 export function resolveStageMaps(loaded: LoadedTournament): (string | null)[] {
   const { def, state } = loaded;
@@ -237,16 +236,24 @@ export function resolveStageMaps(loaded: LoadedTournament): (string | null)[] {
  * stage ごとの表示名 (index = stage)。節数の算出を frontend に二重定義しないよう、
  * 試合グラフから組み立てて配信ペイロードに載せる。
  */
-export function stageLabelsOf(matches: TournamentMatch[], botStage = false): string[] {
+export function stageLabelsOf(loaded: LoadedTournament): string[] {
+  const { matches } = loaded.state;
+  const format = loaded.def.stage.format;
   const count  = stageCountOf(matches);
+
+  // リーグは勝ち上がりが無いので、stage は回戦ではなく節
+  if (format === 'league') {
+    return Array.from({ length: count }, (_, stage) => `第${stage + 1}節`);
+  }
+
   const offset = groupStageCount(matches);
   const bracketStages = count - offset;
 
   return Array.from({ length: count }, (_, stage) => (
-    stage >= offset ? stageLabel(stage - offset, bracketStages)
+    stage >= offset                    ? stageLabel(stage - offset, bracketStages)
     // BOT対戦予選は1段だけなので「第N節」と数える意味が無い
-    : botStage      ? 'BOT対戦予選'
-    :                 `予選 第${stage + 1}節`
+    : format === 'bot-then-bracket'    ? 'BOT対戦予選'
+    :                                    `予選 第${stage + 1}節`
   ));
 }
 
@@ -726,7 +733,7 @@ export function buildStatePayload(
     qualifierCandidates: qualifierCandidatesOf(loaded),
     qualifiersConfirmed: qualifiersConfirmedOf(loaded),
     stageMaps:    resolveStageMaps(loaded),
-    stageLabels:  stageLabelsOf(loaded.state.matches, loaded.def.stage.format === 'bot-then-bracket'),
+    stageLabels:  stageLabelsOf(loaded),
     displayView,
     autoPlay,
     armedMatchId,

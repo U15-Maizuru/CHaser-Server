@@ -329,7 +329,7 @@ export function MainWindow({
             ...s.bottomCard,
             // ターンゲージ表示中 (!gameEnd) は左右カラムを content-fit (auto) にして
             // 空のときは幅0にし、中央カラム (1fr) が残り幅を全て取ってゲージを画面幅
-            // いっぱいまで広げる。結果ピル表示中は左右均等な 1fr のまま (従来通り)。
+            // いっぱいまで広げる。結果ピル表示中は左右均等な 1fr のままにする。
             gridTemplateColumns: gameEnd
               ? 'minmax(0, 1fr) auto minmax(0, 1fr)'
               : 'auto minmax(0, 1fr) auto',

@@ -32,7 +32,7 @@ export enum MapOverlay {
 }
 
 // Action / Rote は @u15/ws-types が単一情報源 (フロントの手動操作 UI と共有するため)。
-// 上の re-export により、バックエンド側は従来どおり './types.js' から import できる。
+// バックエンドはゲーム関連の型をこのファイルに集約して import する。
 
 export interface Method {
   team:   Team;
