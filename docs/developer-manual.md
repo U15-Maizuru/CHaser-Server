@@ -171,6 +171,8 @@ U15-server-maizuru/
 │   │           └── localIp.ts               LAN から到達できる自分の IPv4 アドレス
 │   │
 │   ├── frontend/
+│   │   ├── public/
+│   │   │   └── favicon.ico      ブラウザのタブ用アイコン (icon.ico と同じ絵。dist の直下へコピーされる)
 │   │   └── src/
 │   │       ├── App.tsx             ?room=/?mode= に応じて画面を分岐 (Lobby/Display/Control/Tournament/Manual)
 │   │       ├── ui/                 画面共通の見た目 (tokens / Button / Card / Dialog / Field / Tabs)
@@ -211,7 +213,7 @@ U15-server-maizuru/
 │   │       │   └── ...
 │   │       ├── lib/
 │   │       │   ├── api.ts             バックエンドの HTTP API を叩く場所 (URL とレスポンスの形はここだけが知る)
-│   │       │   ├── appMode.ts         URL のクエリから「どの画面を出すか」を読む
+│   │       │   ├── appMode.ts         URL のクエリから「どの画面を出すか」を読む + ウィンドウ/タブのタイトル
 │   │       │   ├── boardDraw.ts       盤面 canvas の共通部品 (色・反転の式・テクスチャのフォールバック)
 │   │       │   ├── boardLayers.ts     盤面に重ねるレイヤー (決着演出・ダーク幕)
 │   │       │   ├── panelDim.ts        サイドパネルの寸法計算
@@ -222,6 +224,8 @@ U15-server-maizuru/
 │   │       └── ...
 │   │
 │   └── electron/
+│       ├── assets/
+│       │   └── icon.ico   アプリのアイコン (ウィンドウ・タスクバー・インストーラー・exe で共用)
 │       └── src/
 │           └── main.ts   バックエンド起動 → /api/default-room から roomId を取得 → 対戦表示/コントロール
 │                          ウィンドウを開く。手動操作ウィンドウは manual:openWindow IPC で必要時に開く
