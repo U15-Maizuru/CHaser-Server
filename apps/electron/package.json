@@ -1,6 +1,6 @@
 {
   "name": "@u15/electron",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "private": true,
   "main": "dist/main.js",
   "scripts": {
