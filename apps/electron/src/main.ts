@@ -82,6 +82,11 @@ const WEB_PREFS = {
   nodeIntegration: false,
 };
 
+// ウィンドウとタスクバーのアイコン。dist/main.js から見た相対位置なので、
+// dev (apps/electron/dist) でもパッケージ版 (app.asar 内) でも同じ式で解決できる。
+// electron-builder には package.json の build.win.icon で同じファイルを渡している。
+const ICON_PATH = path.join(__dirname, '../assets/icon.ico');
+
 function loadUrl(win: BrowserWindow, search: string): void {
   if (isDev) {
     // 'localhost' ではなく 127.0.0.1 を使う。Chromium 側の名前解決が詰まると
@@ -116,7 +121,7 @@ async function fetchDefaultRoom(retries = 20): Promise<string> {
 
 // ── ウィンドウ ─────────────────────────────────────────────────────────────
 //
-// 4種類のウィンドウはサイズとタイトル以外ほぼ同じ手順で作る。個別に書くと
+// 4種類のウィンドウはサイズ以外ほぼ同じ手順で作る。個別に書くと
 // preload の配線や「既に開いていたら focus」のガードが片方だけ抜ける
 // (実際、以前は display と control にだけガードが無かった) ため、生成はここに集約する。
 //
@@ -125,9 +130,13 @@ async function fetchDefaultRoom(retries = 20): Promise<string> {
 // 特定しているので、値を変えるときは両方を直すこと。
 type WindowMode = 'display' | 'control' | 'manual' | 'tournament';
 
+// ページを読み込むまでの一瞬だけ出るタイトル。用途つきの正式なタイトル
+// (「対戦表示 — CHaser Server」等) はフロントエンドが mode から組み立てて
+// document.title に入れ、ウィンドウタイトルはそれに追従する。
+// 名前を持つのは apps/frontend/src/lib/appMode.ts の appWindowTitle だけ。
+const INITIAL_TITLE = 'CHaser Server';
+
 interface WindowSpec {
-  /** 'CHaser Server — ' に続く部分 */
-  title:  string;
   width:  number;
   height: number;
   /** 観覧用ウィンドウはネイティブメニューバー (File/Edit/...) を表示しない */
@@ -156,7 +165,8 @@ function createAppWindow(key: string, mode: WindowMode, roomId: string, spec: Wi
   const win = new BrowserWindow({
     width:  spec.width,
     height: spec.height,
-    title:  `CHaser Server — ${spec.title}`,
+    title:  INITIAL_TITLE,
+    icon:   ICON_PATH,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), ...WEB_PREFS },
   });
   if (spec.removeMenu) win.removeMenu();
@@ -170,30 +180,28 @@ function createAppWindow(key: string, mode: WindowMode, roomId: string, spec: Wi
   openWindows.set(key, win);
 }
 
-const MANUAL_LABEL = ['COOL', 'HOT'] as const;
-
 function openDisplayWindow(roomId: string): void {
   createAppWindow('display', 'display', roomId, {
-    title: '対戦画面', width: 1280, height: 800, removeMenu: true,
+    width: 1280, height: 800, removeMenu: true,
   });
 }
 
 function openControlWindow(roomId: string): void {
   createAppWindow('control', 'control', roomId, {
-    title: 'コントロール', width: 1280, height: 800, removeMenu: false, quitOnClose: true,
+    width: 1280, height: 800, removeMenu: false, quitOnClose: true,
   });
 }
 
 function openManualWindow(roomId: string, slot: 0 | 1): void {
   createAppWindow(`manual:${slot}`, 'manual', roomId, {
-    title: `手動操作 (${MANUAL_LABEL[slot]})`, width: 360, height: 560, removeMenu: false,
+    width: 360, height: 560, removeMenu: false,
     extraSearch: `&slot=${slot}`,
   });
 }
 
 function openTournamentWindow(roomId: string): void {
   createAppWindow('tournament', 'tournament', roomId, {
-    title: '大会運営', width: 1440, height: 900, removeMenu: true,
+    width: 1440, height: 900, removeMenu: true,
   });
 }
 

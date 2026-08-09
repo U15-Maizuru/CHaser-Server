@@ -26,7 +26,8 @@
       "output": "release"
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "assets/icon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -34,7 +35,8 @@
     },
     "files": [
       "dist/**",
-      "!dist/**/*.map"
+      "!dist/**/*.map",
+      "assets/icon.ico"
     ],
     "extraResources": [
       {
