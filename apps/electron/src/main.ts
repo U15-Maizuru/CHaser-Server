@@ -155,6 +155,35 @@ function getWindow(key: string): BrowserWindow | null {
   return win && !win.isDestroyed() ? win : null;
 }
 
+/**
+ * 全画面をキーボードだけで解除できるようにする (ESC で解除 / F11 で入り切り)。
+ *
+ * 全画面にすると、解除する手段が画面上から消えてしまう:
+ * 対戦表示ウィンドウはネイティブメニューを外してあり (WindowSpec.removeMenu)、
+ * 唯一の切り替え口であるコントロールウィンドウの ⛶ ボタンは全画面の裏に隠れる。
+ * Electron のウィンドウ全画面はブラウザの全画面と違って ESC が既定では効かないので、
+ * 最後の逃げ道として自分で配線する。F11 でどのウィンドウも全画面にできる以上、
+ * 逃げ道も全ウィンドウに要る。生成を集約しているのと同じ理由でここに一本化する。
+ *
+ * 注意: Playwright の `keyboard.press()` は CDP でレンダラへ直接注入するため
+ * `before-input-event` を発火させない。E2E からはここの動作を検証できない。
+ */
+function enableFullscreenEscape(win: BrowserWindow): void {
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || input.isAutoRepeat) return;
+
+    const isFullScreen = win.isFullScreen();
+    const next = input.key === 'F11'                    ? !isFullScreen
+               : input.key === 'Escape' && isFullScreen ? false
+               : null;
+    if (next === null) return;
+
+    win.setFullScreen(next);
+    // 使ったキーはページへ渡さない (ESC でモーダルまで一緒に閉じてしまわないように)
+    event.preventDefault();
+  });
+}
+
 function createAppWindow(key: string, mode: WindowMode, roomId: string, spec: WindowSpec): void {
   const existing = getWindow(key);
   if (existing) {
@@ -170,6 +199,7 @@ function createAppWindow(key: string, mode: WindowMode, roomId: string, spec: Wi
     webPreferences: { preload: path.join(__dirname, 'preload.js'), ...WEB_PREFS },
   });
   if (spec.removeMenu) win.removeMenu();
+  enableFullscreenEscape(win);
 
   loadUrl(win, `?room=${roomId}&mode=${mode}${spec.extraSearch ?? ''}`);
 

@@ -48,6 +48,18 @@ netstat -ano | grep -E ":5173|:8765"
 
 で掴んでいる PID を確認して落とす。
 
+### Playwright のキー入力ではメインプロセスのキー処理を検証できない
+
+`page.keyboard.press()` は CDP でレンダラへ直接注入するため、**Electron の
+`before-input-event` は発火しない**。メインプロセス側でキーを見る処理
+(`main.ts` の `enableFullscreenEscape` など) は、Playwright で押しても素通りする。
+「実装は正しいのにテストだけ落ちる」形になるので、テストの落ち方を疑うこと。
+
+本物のキー入力で確かめたいときは、対象ウィンドウを `win.focus()` で前面に出してから
+別プロセスで送る (Windows なら PowerShell の
+`[System.Windows.Forms.SendKeys]::SendWait('{ESC}')`)。ただし前面ウィンドウを
+奪う手段なので、常設の E2E には入れていない。
+
 ### E2E は文言ではなく `data-testid` / `data-*` で掴む
 
 ボタンのテキストで探すヘルパ (`clickText`) は便利だが、UI の言い回しを変えると壊れる。
