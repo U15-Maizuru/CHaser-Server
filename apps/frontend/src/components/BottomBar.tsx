@@ -102,7 +102,11 @@ export function BottomBar({
         </Button>
         <Button onClick={onOpenSettings}>設定</Button>
         {onToggleFullscreen && (
-          <Button variant="icon" title="観戦画面を全画面化" onClick={onToggleFullscreen}>⛶</Button>
+          <Button
+            variant="icon"
+            title="観戦画面を全画面化 (解除は観戦画面で ESC / F11)"
+            onClick={onToggleFullscreen}
+          >⛶</Button>
         )}
         {!resetIsPrimary && (
           <Button title="対戦をリセットしてセットアップに戻る" onClick={handleSecondaryReset}>

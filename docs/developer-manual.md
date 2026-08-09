@@ -95,6 +95,10 @@
 `createManualWindow`)。COOL/HOT それぞれ独立したウィンドウで、`ManualControls.tsx` の
 矢印キー操作またはボタンで `manual_action` メッセージを送信する。
 
+対戦表示ウィンドウの全画面化は、コントロール画面の `⛶` から `display:toggleFullscreen` IPC で行う。
+全画面中は切り替え元のボタンが裏に隠れるため、`main.ts` の `enableFullscreenEscape` が
+全ウィンドウの `before-input-event` を見て `ESC` (解除) と `F11` (切り替え) を受け付ける。
+
 ### Web サービスモード (U15_MODE=web)
 
 ```
