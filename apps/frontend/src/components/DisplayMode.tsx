@@ -1,4 +1,4 @@
-import type { InlineMapData, ServerStatusPayload, TournamentStatePayload } from '@u15/ws-types';
+import type { InlineMapData, ServerPhase, ServerStatusPayload, TournamentStatePayload } from '@u15/ws-types';
 import { DEFAULT_DISPLAY_PREFS, hasQualifying, idxForSide, MapObject, roundPointsFor } from '@u15/ws-types';
 import { useGameState } from '../hooks/useGameState';
 import { useGamePhaseSound } from '../hooks/useGamePhaseSound';
@@ -29,6 +29,36 @@ import {
   TEAM_PALETTE, teamGradient,
 } from '../ui';
 
+// ── 観客に出している画面 ──────────────────────────────────────────────────────
+//
+// 対戦中 (playing) はどの場合も盤面が主役。それ以外は大会運営中かどうかと
+// armedMatchId が分かれ目になる:
+//
+//   armed 無し … 運営を始めた直後 / 試合を確定した直後 → 表だけを大きく見せる
+//   armed 有り … 「この試合を準備」以降 → 準備画面、対戦が終われば結果画面
+//
+// 確定しても phase は 'finished' のまま (バックエンドはルームに触れない) なので、
+// armedMatchId を見ないと結果画面から抜けられない。最後の試合には次の arm も無い。
+//
+// 予選ありの大会では「予選表 / 決勝表 のどちらを出すか」を運営パネルが決める
+// (運営席の表示とは連動しない)。全工程が終わったうえで決勝側を見ていれば表彰画面。
+
+type DisplayScene = 'award' | 'standby' | 'waiting' | 'playing' | 'result';
+
+function displayScene(
+  phase:      ServerPhase,
+  tournament: TournamentStatePayload | null | undefined,
+  groupPhase: QualifyingPhase,
+): DisplayScene {
+  if (tournament && phase !== 'playing') {
+    if (groupPhase === 'bracket' && isTournamentComplete(tournament)) return 'award';
+    if (!tournament.armedMatchId)                                     return 'standby';
+  }
+  if (phase === 'playing')  return 'playing';
+  if (phase === 'finished') return 'result';
+  return 'waiting';
+}
+
 export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId: string; httpBase: string }) {
   const state   = useGameState(wsUrl, roomId);
   const { serverStatus, snapshot, turnInfo, gameEnd, isConnected, tournamentState } = state;
@@ -37,8 +67,17 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
   // 大会中でなければ結果は使われない
   const groupView = displayQualifyingPhase(tournamentState);
 
-  useGamePhaseSound(snapshot, serverStatus, gameEnd, turnInfo, prefs.muted, true);
   const countdown = useStartCountdown(serverStatus?.phase, turnInfo);
+
+  // いま観客に出している画面。**下の出し分けも BGM もこの値だけを見る** —
+  // 条件を二か所に書くと、画面と音が食い違う
+  const scene = displayScene(phase, tournamentState, groupView.phase);
+
+  useGamePhaseSound({
+    httpBase, snapshot, serverStatus, gameEnd, turnInfo, countdown,
+    awarding: scene === 'award',
+    muted: prefs.muted, enabled: true,
+  });
   useBgm(httpBase, serverStatus?.phase, prefs.bgmTrack, prefs.bgmMuted, true);
   // 待機中にこれから戦うマップを見せる (対戦中は盤面そのものが出るので使わない)
   const { currentMap } = useCurrentMap(httpBase, roomId, isConnected, serverStatus);
@@ -64,23 +103,22 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
   //
   // 予選ありの大会では「予選表 / 決勝表 のどちらを出すか」を運営パネルが決める
   // (運営席の表示とは連動しない)。全工程が終わったうえで決勝側を見ていれば表彰画面。
-  if (tournamentState && phase !== 'playing') {
-    if (groupView.phase === 'bracket' && isTournamentComplete(tournamentState)) {
-      return <TournamentFinale state={tournamentState} displayTitle={prefs.displayTitle} />;
-    }
-    if (!tournamentState.armedMatchId) {
-      return (
-        <TournamentStandby
-          state={tournamentState}
-          displayTitle={prefs.displayTitle}
-          groupPhase={groupView.phase}
-          holdingGroupResult={groupView.holdingResult}
-        />
-      );
-    }
+  if (scene === 'award' && tournamentState) {
+    return <TournamentFinale state={tournamentState} displayTitle={prefs.displayTitle} />;
   }
 
-  if (phase === 'setup') {
+  if (scene === 'standby' && tournamentState) {
+    return (
+      <TournamentStandby
+        state={tournamentState}
+        displayTitle={prefs.displayTitle}
+        groupPhase={groupView.phase}
+        holdingGroupResult={groupView.holdingResult}
+      />
+    );
+  }
+
+  if (scene === 'waiting') {
     return (
       <SetupWaiting
         serverStatus={serverStatus}
