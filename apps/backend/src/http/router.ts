@@ -5,11 +5,12 @@ import { handleTournamentRequest, type TournamentRouteDeps } from '../tournament
 import type { RoomManager } from '../RoomManager.js';
 import { ensureCatalogDir } from '../programCatalog.js';
 import { ensureMapCatalogDir } from '../mapCatalog.js';
-import { MUSIC_DIR } from './paths.js';
+import { MUSIC_DIR, SOUND_DIR } from './paths.js';
 import { handleProgramRequest } from './programs.js';
 import { handleMapRequest } from './maps.js';
 import { handleLibRequest } from './libs.js';
 import { handleMusicRequest } from './music.js';
+import { handleSoundRequest } from './sounds.js';
 import { FRONTEND_DIST, serveStatic } from './static.js';
 
 // HTTP のルーティング。実体の処理はリソースごとのモジュールにあり、ここは
@@ -20,7 +21,9 @@ import { FRONTEND_DIST, serveStatic } from './static.js';
 // (ランダムマップ生成) まで紛れ込んでいた。
 
 export function ensureDirectories(): void {
+  // 音源の置き場は空でも作る。利用者がここへ入れると分かるようにするため
   fs.mkdirSync(MUSIC_DIR, { recursive: true });
+  fs.mkdirSync(SOUND_DIR, { recursive: true });
   ensureCatalogDir();
   ensureMapCatalogDir();
 }
@@ -51,6 +54,7 @@ export function handleHttpRequest(
   if (handleMapRequest(req, res, url, rm))         return;
   if (handleLibRequest(req, res, url))             return;
   if (handleMusicRequest(req, res, url))           return;
+  if (handleSoundRequest(req, res, url))           return;
 
   // 本番: フロントエンド静的ファイル配信 (SPA フォールバック付き)
   if (FRONTEND_DIST && req.method === 'GET') {
