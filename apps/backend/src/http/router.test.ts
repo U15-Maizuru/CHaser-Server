@@ -253,4 +253,48 @@ describe('HttpServer', () => {
       expect(files).toEqual([]);
     });
   });
+
+  describe('SE (sounds)', () => {
+    const soundDir = path.resolve('server/sounds');
+
+    afterEach(() => {
+      fs.rmSync(soundDir, { recursive: true, force: true });
+    });
+
+    it('置かれた mp3 を一覧・再生取得できる', async () => {
+      fs.mkdirSync(soundDir, { recursive: true });
+      fs.writeFileSync(path.join(soundDir, 'countdown.mp3'), 'fake mp3 bytes');
+
+      const listRes = await fetch(`${baseUrl}/api/sounds`);
+      expect(listRes.status).toBe(200);
+      const { files } = await listRes.json();
+      expect(files).toContain('countdown.mp3');
+
+      const playRes = await fetch(`${baseUrl}/api/sounds/${encodeURIComponent('countdown.mp3')}`);
+      expect(playRes.status).toBe(200);
+      expect(playRes.headers.get('content-type')).toBe('audio/mpeg');
+      expect(await playRes.text()).toBe('fake mp3 bytes');
+    });
+
+    it('音源以外の拡張子は一覧に載せない', async () => {
+      fs.mkdirSync(soundDir, { recursive: true });
+      fs.writeFileSync(path.join(soundDir, 'readme.txt'), 'not audio');
+
+      const res = await fetch(`${baseUrl}/api/sounds`);
+      const { files } = await res.json();
+      expect(files).toEqual([]);
+    });
+
+    it('存在しないファイルの再生取得は 404', async () => {
+      const res = await fetch(`${baseUrl}/api/sounds/${encodeURIComponent('nothing.mp3')}`);
+      expect(res.status).toBe(404);
+    });
+
+    it('SE フォルダが無い場合の一覧取得は空配列', async () => {
+      const res = await fetch(`${baseUrl}/api/sounds`);
+      expect(res.status).toBe(200);
+      const { files } = await res.json();
+      expect(files).toEqual([]);
+    });
+  });
 });

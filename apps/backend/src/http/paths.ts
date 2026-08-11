@@ -14,6 +14,13 @@ export function roomDirs(roomId: string) {
   } as const;
 }
 
-/** BGM 再生用 (原本の ./Music フォルダに相当)。ルームに紐付かないグローバル共有 */
+// 音源の置き場。ルームに紐付かないグローバル共有。
+// **どちらも空でありえる** — BGM は空なら無音、SE は空ならフロントエンド同梱の音が鳴る。
+
+/** BGM 用 (原本の ./Music フォルダに相当)。ここに置かれたものが選択肢になる */
 export const MUSIC_DIR = path.resolve('server/music');
 export const MUSIC_EXTENSIONS = ['.mp3', '.wav'];
+
+/** SE の差し替え用。同梱の音と同じ名前で置くと、そちらが優先される */
+export const SOUND_DIR = path.resolve('server/sounds');
+export const SOUND_EXTENSIONS = ['.mp3', '.wav'];
