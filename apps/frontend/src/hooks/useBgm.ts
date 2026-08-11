@@ -1,25 +1,24 @@
 import { useEffect, useRef } from 'react';
-import type { ServerPhase } from '@u15/ws-types';
 
 /**
- * ゲーム中の BGM ループ再生。原本 (U15-server) は ./Music フォルダの mp3/wav を
- * ゲーム開始前に選択し、ゲーム中ループ再生、終了時に停止して SE (finish/win/lose) に
- * 差し替える。ここでは phase==='playing' の間だけループ再生し、それ以外では停止する。
+ * 場面ごとの BGM ループ再生。鳴らす曲は呼び出し側が場面から決めて `track` に渡す。
+ *
+ * **Audio は常に 1 つしか持たない。** 場面ごとに Audio を用意すると、切り替わった
+ * ときに前の曲が止まらず重なって鳴る。
  *
  * 観戦画面 (DisplayMode) のみで有効にする — コントロール窓と両方で鳴らすと
  * 効果音と同様に二重再生になるため (useGamePhaseSound の enabled と同じ理由)。
  */
 export function useBgm(
   httpBase: string,
-  phase:    ServerPhase | undefined,
+  /** いま鳴らすべき曲のファイル名。'none' なら止める */
   track:    string,
   muted:    boolean,
   enabled:  boolean,
 ): void {
-  const audioRef     = useRef<HTMLAudioElement | null>(null);
-  const prevPhaseRef = useRef(phase);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // トラック変更時のみ Audio 要素を作り直す
+  // 曲が変われば前を捨てて作り直す。新しい Audio は頭から始まる
   useEffect(() => {
     if (!enabled || track === 'none') return;
     const audio = new Audio(`${httpBase}/api/music/${encodeURIComponent(track)}`);
@@ -31,18 +30,13 @@ export function useBgm(
     };
   }, [httpBase, track, enabled]);
 
-  // phase / muted の変化に応じて再生・停止を切り替える
+  // 再生・停止の切り替え。**この effect は上より後に置くこと** — React は同じコミット内で
+  // 宣言順に走るので、先に置くと差し替え前の Audio を見て古い曲を鳴らしてしまう。
+  // track を依存に入れているのも、差し替え直後にこの effect を走らせるため。
   useEffect(() => {
     const audio = audioRef.current;
-    const justStarted = prevPhaseRef.current !== 'playing' && phase === 'playing';
-    prevPhaseRef.current = phase;
     if (!audio) return;
-
-    if (!muted && phase === 'playing') {
-      if (justStarted) audio.currentTime = 0;
-      if (audio.paused) void audio.play().catch(() => {});
-    } else {
-      audio.pause();
-    }
-  }, [phase, muted, track, enabled]);
+    if (muted)             audio.pause();
+    else if (audio.paused) void audio.play().catch(() => {});
+  }, [track, muted, enabled]);
 }
