@@ -58,9 +58,14 @@ function ControlApp({ roomId }: { roomId: string }) {
   // 開いても互いの古い値で上書きし合わないよう、クライアントにキャッシュを持たない
   const prefs = serverStatus?.displayPrefs ?? DEFAULT_DISPLAY_PREFS;
 
-  // コントロール窓では SE を鳴らさない (観戦窓との二重再生を防ぐため)
-  useGamePhaseSound(snapshot, serverStatus, gameEnd, state.turnInfo, prefs.muted, false);
   const countdown = useStartCountdown(serverStatus?.phase, state.turnInfo);
+
+  // コントロール窓では SE を鳴らさない (観戦窓との二重再生を防ぐため)
+  useGamePhaseSound({
+    httpBase: HTTP_BASE,
+    snapshot, serverStatus, gameEnd, turnInfo: state.turnInfo, countdown,
+    awarding: false, muted: prefs.muted, enabled: false,
+  });
 
   const [showSettings,       setShowSettings]       = useState(false);
   const [showMapLibrary,     setShowMapLibrary]     = useState(false);

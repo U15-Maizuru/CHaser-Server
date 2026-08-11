@@ -1,28 +1,82 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { GameStateSnapshot } from '@u15/ws-types';
+import { fetchSoundFiles } from '../lib/api';
 
-type SoundKey = 'go' | 'ready' | 'finish' | 'get_C' | 'get_H' | 'win' | 'lose';
+/**
+ * 鳴らす音の種類。**値がそのまま音源のファイル名 (拡張子なし)** で、
+ * `server/sounds` に置く差し替えファイルもこの名前で探す。
+ *
+ * 決着の3種は勝敗ではなく**決着の付き方**で分かれる。勝った側の画面でも負けた側の画面でも
+ * 同じ音が鳴るので、勝敗を表す名前を付けると鳴る場面を取り違える。
+ */
+export type SoundKey =
+  | 'countdown'      // 開始カウントダウン
+  | 'players-ready'  // 両者の準備完了
+  | 'game-start'     // ターンループの開始
+  | 'item-cool'      // COOL のアイテム取得
+  | 'item-hot'       // HOT のアイテム取得
+  | 'end-score'      // ターン切れ。得点で決着 (Reason.SCORE)
+  | 'end-decisive'   // 相手を追い詰めての決着 (Reason.TRAPPED / ATTACK)
+  | 'end-blunder'    // 自滅による決着 (isBlunder = 自縛・衝突・通信エラー)
+  | 'award-fanfare'; // 表彰画面へ切り替わった瞬間
 
-const SOUND_FILES: Record<SoundKey, string> = {
-  go:     new URL('../assets/Sound/go.mp3',     import.meta.url).href,
-  ready:  new URL('../assets/Sound/ready.mp3',  import.meta.url).href,
-  finish: new URL('../assets/Sound/finish.mp3', import.meta.url).href,
-  get_C:  new URL('../assets/Sound/get_C.mp3',  import.meta.url).href,
-  get_H:  new URL('../assets/Sound/get_H.mp3',  import.meta.url).href,
-  win:    new URL('../assets/Sound/win.mp3',    import.meta.url).href,
-  lose:   new URL('../assets/Sound/lose.mp3',   import.meta.url).href,
+// 同梱の SE。**`new URL` の第1引数は静的な文字列で書くこと** — Vite はこれをビルド時に
+// 解決してハッシュ付きの名前 (countdown-DstjK5Rn.wav) に置き換える。キーから組み立てると
+// 解決されず、本番ビルドで参照が壊れる。キーと同じ名前を並べて書くのはこのため。
+const BUNDLED: Record<SoundKey, string> = {
+  'countdown':     new URL('../assets/Sound/countdown.wav',     import.meta.url).href,
+  'players-ready': new URL('../assets/Sound/players-ready.wav', import.meta.url).href,
+  'game-start':    new URL('../assets/Sound/game-start.wav',    import.meta.url).href,
+  'item-cool':     new URL('../assets/Sound/item-cool.wav',     import.meta.url).href,
+  'item-hot':      new URL('../assets/Sound/item-hot.wav',      import.meta.url).href,
+  'end-score':     new URL('../assets/Sound/end-score.wav',     import.meta.url).href,
+  'end-decisive':  new URL('../assets/Sound/end-decisive.wav',  import.meta.url).href,
+  'end-blunder':   new URL('../assets/Sound/end-blunder.wav',   import.meta.url).href,
+  'award-fanfare': new URL('../assets/Sound/award-fanfare.wav', import.meta.url).href,
 };
 
-export function useSound() {
+const KEYS = Object.keys(BUNDLED) as SoundKey[];
+
+/**
+ * SE の再生。同梱の音をすぐ使えるように先に読み、`server/sounds` に同名のファイルが
+ * 置かれていればそちらへ差し替える。
+ *
+ * **同梱を読むのは同期的に済ませること。** 差し替えの一覧を待ってから Audio を作ると、
+ * 接続直後に始まったゲームの開始音に間に合わない。
+ *
+ * `enabled=false` の窓では何も読み込まない。鳴らさない窓まで先読みすることになるため。
+ */
+export function useSound(httpBase: string, enabled: boolean) {
   const cache = useRef<Partial<Record<SoundKey, HTMLAudioElement>>>({});
 
   useEffect(() => {
-    for (const [key, src] of Object.entries(SOUND_FILES) as [SoundKey, string][]) {
-      const audio = new Audio(src);
+    if (!enabled) return;
+    let cancelled = false;
+
+    for (const key of KEYS) {
+      const audio = new Audio(BUNDLED[key]);
       audio.preload = 'auto';
       cache.current[key] = audio;
     }
-  }, []);
+
+    void fetchSoundFiles(httpBase).then(files => {
+      if (cancelled) return;
+      // 拡張子は落として突き合わせる — mp3 でも wav でも同じ音として扱う
+      const byName = new Map(files.map(f => [f.replace(/\.[^.]+$/, ''), f]));
+      for (const key of KEYS) {
+        const file = byName.get(key);
+        if (!file) continue;
+        const audio = new Audio(`${httpBase}/api/sounds/${encodeURIComponent(file)}`);
+        audio.preload = 'auto';
+        cache.current[key] = audio;
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      cache.current = {};
+    };
+  }, [httpBase, enabled]);
 
   const play = useCallback((key: SoundKey) => {
     const audio = cache.current[key];
@@ -47,8 +101,8 @@ export function useScoreSound(
     if (!sc) return;
     // スコア追跡は mute の状態に関わらず常時継続し、play() 呼び出しのみ mute でゲートする
     if (!muted) {
-      if (sc[0] > prevC.current) play('get_C');
-      if (sc[1] > prevH.current) play('get_H');
+      if (sc[0] > prevC.current) play('item-cool');
+      if (sc[1] > prevH.current) play('item-hot');
     }
     prevC.current = sc[0];
     prevH.current = sc[1];

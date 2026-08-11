@@ -137,10 +137,17 @@ export function deleteLibFile(
   );
 }
 
-// ── BGM ───────────────────────────────────────────────────────────────────
+// ── BGM / SE ──────────────────────────────────────────────────────────────
+//
+// どちらの一覧も空でありえる。BGM は空なら無音、SE は空なら同梱の音が鳴る。
 
 export async function fetchMusicFiles(httpBase: string): Promise<string[]> {
   const body = await getJson<{ files: string[] }>(`${httpBase}/api/music`);
+  return body?.files ?? [];
+}
+
+export async function fetchSoundFiles(httpBase: string): Promise<string[]> {
+  const body = await getJson<{ files: string[] }>(`${httpBase}/api/sounds`);
   return body?.files ?? [];
 }
 
