@@ -1,4 +1,4 @@
-import type { InlineMapData, ServerPhase, ServerStatusPayload, TournamentStatePayload } from '@u15/ws-types';
+import type { DisplayPrefs, InlineMapData, ServerPhase, ServerStatusPayload, TournamentStatePayload } from '@u15/ws-types';
 import { DEFAULT_DISPLAY_PREFS, hasQualifying, idxForSide, MapObject, roundPointsFor } from '@u15/ws-types';
 import { useGameState } from '../hooks/useGameState';
 import { useGamePhaseSound } from '../hooks/useGamePhaseSound';
@@ -59,6 +59,17 @@ function displayScene(
   return 'waiting';
 }
 
+// 場面ごとに鳴らす BGM。決着後 (result) を接続待ちと分けているのは、決着した盤面を
+// 見せる時間と、次のプログラムを待つ時間とで会場の空気が違うため。
+// 大会の待機表 (standby) は接続待ちと同じ曲でよい — どちらも次の対戦を待つ場面。
+const BGM_OF_SCENE: Record<DisplayScene, (p: DisplayPrefs) => string> = {
+  award:   p => p.bgmTrackAward,
+  standby: p => p.bgmTrackWait,
+  waiting: p => p.bgmTrackWait,
+  playing: p => p.bgmTrack,
+  result:  p => p.bgmTrackResult,
+};
+
 export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId: string; httpBase: string }) {
   const state   = useGameState(wsUrl, roomId);
   const { serverStatus, snapshot, turnInfo, gameEnd, isConnected, tournamentState } = state;
@@ -78,7 +89,12 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
     awarding: scene === 'award',
     muted: prefs.muted, enabled: true,
   });
-  useBgm(httpBase, serverStatus?.phase, prefs.bgmTrack, prefs.bgmMuted, true);
+  // 対戦中の BGM は開始カウントダウンが終わってから鳴らす (カウント中は無音)。
+  // 合図に turnInfo を使うのは、phase が playing になった時点ではまだカウント中で、
+  // かつ **カウントの残り秒は effect で入るため最初の描画では null** になるから。
+  // 残り秒で判定すると、その1描画のあいだだけ曲が鳴り出してしまう。
+  const holdingBgm = scene === 'playing' && !turnInfo;
+  useBgm(httpBase, holdingBgm ? 'none' : BGM_OF_SCENE[scene](prefs), prefs.bgmMuted, true);
   // 待機中にこれから戦うマップを見せる (対戦中は盤面そのものが出るので使わない)
   const { currentMap } = useCurrentMap(httpBase, roomId, isConnected, serverStatus);
 
@@ -91,18 +107,6 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
     );
   }
 
-  // ── 大会運営中の出し分け ──────────────────────────────────────────────────
-  //
-  // 対戦中 (playing) はどの場合も盤面が主役。それ以外は armedMatchId が分かれ目になる:
-  //
-  //   armed 無し … 運営を始めた直後 / 試合を確定した直後 → 表だけを大きく見せる
-  //   armed 有り … 「この試合を準備」以降 → 準備画面、対戦が終われば結果画面
-  //
-  // 確定しても phase は 'finished' のまま (バックエンドはルームに触れない) なので、
-  // armedMatchId を見ないと結果画面から抜けられない。最後の試合には次の arm も無い。
-  //
-  // 予選ありの大会では「予選表 / 決勝表 のどちらを出すか」を運営パネルが決める
-  // (運営席の表示とは連動しない)。全工程が終わったうえで決勝側を見ていれば表彰画面。
   if (scene === 'award' && tournamentState) {
     return <TournamentFinale state={tournamentState} displayTitle={prefs.displayTitle} />;
   }

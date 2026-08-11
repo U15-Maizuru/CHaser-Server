@@ -219,8 +219,26 @@ export function SettingDialog({
         {tab === 'bgm' && (
           <table style={s.table}>
             <tbody>
-              <Row label="再生する BGM">
+              <Row label="接続待ちの BGM">
+                <Select value={prefs.bgmTrackWait} onChange={e => onSetDisplayPrefs({ bgmTrackWait: e.target.value })}>
+                  <option value="none">なし</option>
+                  {musicFiles.map(f => <option key={f} value={f}>{f}</option>)}
+                </Select>
+              </Row>
+              <Row label="対戦中の BGM">
                 <Select value={prefs.bgmTrack} onChange={e => onSetDisplayPrefs({ bgmTrack: e.target.value })}>
+                  <option value="none">なし</option>
+                  {musicFiles.map(f => <option key={f} value={f}>{f}</option>)}
+                </Select>
+              </Row>
+              <Row label="ゲーム終了の BGM">
+                <Select value={prefs.bgmTrackResult} onChange={e => onSetDisplayPrefs({ bgmTrackResult: e.target.value })}>
+                  <option value="none">なし</option>
+                  {musicFiles.map(f => <option key={f} value={f}>{f}</option>)}
+                </Select>
+              </Row>
+              <Row label="表彰の BGM">
+                <Select value={prefs.bgmTrackAward} onChange={e => onSetDisplayPrefs({ bgmTrackAward: e.target.value })}>
                   <option value="none">なし</option>
                   {musicFiles.map(f => <option key={f} value={f}>{f}</option>)}
                 </Select>

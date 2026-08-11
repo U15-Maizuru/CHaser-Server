@@ -166,9 +166,15 @@ export interface ServerStatusPayload {
  * 置くと、観戦画面を複数ウィンドウ/複数端末で開いたときに互いに反映されない。
  */
 export interface DisplayPrefs {
-  muted:        boolean; // SE ミュート
-  bgmMuted:     boolean; // BGM ミュート (SE 用の muted とは別)
-  bgmTrack:     string;  // 選択中の BGM ファイル名 ('none' = 再生しない)
+  muted:          boolean; // SE ミュート
+  bgmMuted:       boolean; // BGM ミュート (SE 用の muted とは別)
+  // 場面ごとに選ぶ BGM のファイル名 ('none' = 再生しない)。決着後 (result) を接続待ちと
+  // 分けているのは、決着した盤面を見せる時間と次のプログラムを待つ時間とで会場の空気が
+  // 違うため。大会の待機表 (standby) は接続待ちと同じ曲でよい
+  bgmTrack:       string; // 対戦中
+  bgmTrackWait:   string; // 接続待ち・大会待機中
+  bgmTrackResult: string; // ゲーム終了 (決着した盤面を見せている間)
+  bgmTrackAward:  string; // 表彰
   theme:        string;  // 'Jewel' | 'Light' | 'Heavy' | 'RPG'
   displayTitle: string;  // 観戦/表示画面のタイトル文字列
   // ダークモードで盤面を覆う幕の濃さ (0-1)。同じ濃さでも会場のプロジェクタ/照明では
@@ -181,12 +187,15 @@ export const VEIL_ALPHA_MAX     = 0.95;
 export const VEIL_ALPHA_DEFAULT = 0.55; // 視界と探索範囲だけが見える演出を保ちつつ、盤面全体の形は読める濃さ
 
 export const DEFAULT_DISPLAY_PREFS: Readonly<DisplayPrefs> = {
-  muted:        false,
-  bgmMuted:     false,
-  bgmTrack:     'none',
-  theme:        'Jewel',
-  displayTitle: 'CHaser Server',
-  veilAlpha:    VEIL_ALPHA_DEFAULT,
+  muted:          false,
+  bgmMuted:       false,
+  bgmTrack:       'none',
+  bgmTrackWait:   'none',
+  bgmTrackResult: 'none',
+  bgmTrackAward:  'none',
+  theme:          'Jewel',
+  displayTitle:   'CHaser Server',
+  veilAlpha:      VEIL_ALPHA_DEFAULT,
 };
 
 // --- Commands (Frontend → Backend) ---
