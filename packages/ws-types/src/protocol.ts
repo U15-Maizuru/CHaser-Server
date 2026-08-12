@@ -10,6 +10,14 @@ export interface Point { x: number; y: number }
 // ゲーム開始時のカウントダウン秒数 (フロント表示・バックエンドのターン開始待機の両方で使う単一情報源)
 export const START_COUNTDOWN_SECONDS = 3;
 
+// 観戦画面の場面転換 (暗転→明転) 1回ぶんの長さ (ミリ秒)。BGM のクロスフェードも同じ長さで揃える。
+// 待機画面→対戦画面では、暗転が閉じきって対戦画面がマウントされるまでにこの長さがかかる
+// (そこから明転しながら見えてくる)。開始カウントダウンは対戦画面がマウントされた瞬間に始まるので、
+// バックエンドの実際の開始待機 (ServerManager の startDelayMs) も同じ長さだけ伸ばして、
+// 観客側では画面が出てから新たに START_COUNTDOWN_SECONDS で 0 になるようにする。
+// フロント・バックエンドの両方が参照する単一情報源
+export const SCENE_FADE_MS = 800;
+
 // Protocol enums (values must match the game engine integers)
 export enum MapObject {
   NOTHING = 0,
