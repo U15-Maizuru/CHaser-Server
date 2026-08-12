@@ -171,7 +171,9 @@ export interface DisplayPrefs {
   // 場面ごとに選ぶ BGM のファイル名 ('none' = 再生しない)。決着後 (result) を接続待ちと
   // 分けているのは、決着した盤面を見せる時間と次のプログラムを待つ時間とで会場の空気が
   // 違うため。大会の待機表 (standby) は接続待ちと同じ曲でよい
-  bgmTrack:       string; // 対戦中
+  // 対戦中は2ゲーム制の1ゲーム目・2ゲーム目で分けられる。2ゲーム制でないときは常に bgmTrack0 を使う
+  bgmTrack0:      string; // 対戦中 (1ゲーム目)
+  bgmTrack1:      string; // 対戦中 (2ゲーム目)
   bgmTrackWait:   string; // 接続待ち・大会待機中
   bgmTrackResult: string; // ゲーム終了 (決着した盤面を見せている間)
   bgmTrackAward:  string; // 表彰
@@ -189,7 +191,8 @@ export const VEIL_ALPHA_DEFAULT = 0.55; // 視界と探索範囲だけが見え�
 export const DEFAULT_DISPLAY_PREFS: Readonly<DisplayPrefs> = {
   muted:          false,
   bgmMuted:       false,
-  bgmTrack:       'none',
+  bgmTrack0:      'none',
+  bgmTrack1:      'none',
   bgmTrackWait:   'none',
   bgmTrackResult: 'none',
   bgmTrackAward:  'none',

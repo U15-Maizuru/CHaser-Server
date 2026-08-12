@@ -62,11 +62,12 @@ function displayScene(
 // 場面ごとに鳴らす BGM。決着後 (result) を接続待ちと分けているのは、決着した盤面を
 // 見せる時間と、次のプログラムを待つ時間とで会場の空気が違うため。
 // 大会の待機表 (standby) は接続待ちと同じ曲でよい — どちらも次の対戦を待つ場面。
-const BGM_OF_SCENE: Record<DisplayScene, (p: DisplayPrefs) => string> = {
+// playing だけは currentRound (2ゲーム制の1ゲーム目/2ゲーム目) も見て選ぶ
+const BGM_OF_SCENE: Record<DisplayScene, (p: DisplayPrefs, round: 0 | 1) => string> = {
   award:   p => p.bgmTrackAward,
   standby: p => p.bgmTrackWait,
   waiting: p => p.bgmTrackWait,
-  playing: p => p.bgmTrack,
+  playing: (p, round) => round === 1 ? p.bgmTrack1 : p.bgmTrack0,
   result:  p => p.bgmTrackResult,
 };
 
@@ -94,7 +95,11 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
   // かつ **カウントの残り秒は effect で入るため最初の描画では null** になるから。
   // 残り秒で判定すると、その1描画のあいだだけ曲が鳴り出してしまう。
   const holdingBgm = scene === 'playing' && !turnInfo;
-  useBgm(httpBase, holdingBgm ? 'none' : BGM_OF_SCENE[scene](prefs), prefs.bgmMuted, true);
+  useBgm(
+    httpBase,
+    holdingBgm ? 'none' : BGM_OF_SCENE[scene](prefs, serverStatus?.currentRound ?? 0),
+    prefs.bgmMuted, true,
+  );
   // 待機中にこれから戦うマップを見せる (対戦中は盤面そのものが出るので使わない)
   const { currentMap } = useCurrentMap(httpBase, roomId, isConnected, serverStatus);
 

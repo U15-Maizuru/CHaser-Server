@@ -225,8 +225,14 @@ export function SettingDialog({
                   {musicFiles.map(f => <option key={f} value={f}>{f}</option>)}
                 </Select>
               </Row>
-              <Row label="対戦中の BGM">
-                <Select value={prefs.bgmTrack} onChange={e => onSetDisplayPrefs({ bgmTrack: e.target.value })}>
+              <Row label="対戦中の BGM (1ゲーム目)">
+                <Select value={prefs.bgmTrack0} onChange={e => onSetDisplayPrefs({ bgmTrack0: e.target.value })}>
+                  <option value="none">なし</option>
+                  {musicFiles.map(f => <option key={f} value={f}>{f}</option>)}
+                </Select>
+              </Row>
+              <Row label="対戦中の BGM (2ゲーム目)">
+                <Select value={prefs.bgmTrack1} onChange={e => onSetDisplayPrefs({ bgmTrack1: e.target.value })}>
                   <option value="none">なし</option>
                   {musicFiles.map(f => <option key={f} value={f}>{f}</option>)}
                 </Select>
