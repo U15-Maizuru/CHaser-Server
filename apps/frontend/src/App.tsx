@@ -3,7 +3,7 @@ import { useGameState }      from './hooks/useGameState';
 import { useMatchConfig }    from './hooks/useMatchConfig';
 import { useMapGenParams, toMapParams } from './hooks/useMapGenParams';
 import { useCurrentMap } from './hooks/useCurrentMap';
-import { downloadMapFile, fetchCurrentMap, saveMapToLibrary, uploadMusic } from './lib/api';
+import { downloadMapFile, deleteSoundFile, fetchCurrentMap, saveMapToLibrary, uploadMusic, uploadSound } from './lib/api';
 import { readAppLocation } from './lib/appMode';
 import { useEnvConfig }      from './hooks/useEnvConfig';
 import { useGamePhaseSound } from './hooks/useGamePhaseSound';
@@ -20,7 +20,7 @@ import { DisplayMode }     from './components/DisplayMode';
 import { ManualMode }      from './components/ManualMode';
 import { ErrorBoundary }   from './components/ErrorBoundary';
 import { Lobby }           from './components/Lobby';
-import type { ClientStatusPayload, InlineMapData, MapCatalogEntry } from '@u15/ws-types';
+import type { ClientStatusPayload, InlineMapData, MapCatalogEntry, SoundKey } from '@u15/ws-types';
 import { DEFAULT_DISPLAY_PREFS, MapObject } from '@u15/ws-types';
 import type { EditableMap } from './components/MapEditorDialog';
 
@@ -164,6 +164,8 @@ function ControlApp({ roomId }: { roomId: string }) {
   };
 
   const handleUploadMusic = (file: File) => uploadMusic(HTTP_BASE, file);
+  const handleUploadSound = (key: SoundKey, file: File) => uploadSound(HTTP_BASE, key, file);
+  const handleDeleteSound = (filename: string) => deleteSoundFile(HTTP_BASE, filename);
 
   const openMapEditor = async () => {
     const data = await fetchCurrentMap(HTTP_BASE, roomId);
@@ -216,6 +218,8 @@ function ControlApp({ roomId }: { roomId: string }) {
           onChangeMatchConfig={updateMatchConfig}
           onCommitMatchConfig={commitMatchConfig}
           onUploadMusic={handleUploadMusic}
+          onUploadSound={handleUploadSound}
+          onDeleteSound={handleDeleteSound}
           onClose={() => setShowSettings(false)}
         />
       )}

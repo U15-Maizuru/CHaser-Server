@@ -114,12 +114,13 @@ function abortUpload(req: IncomingMessage, bb: ReturnType<typeof busboy>, stream
 }
 
 export function handleUpload(
-  req:      IncomingMessage,
-  res:      ServerResponse,
-  dir:      string,
-  allowed:  string[],
-  maxBytes: number,
-  onSaved?: (outPath: string, originalFilename: string) => Record<string, unknown> | void,
+  req:             IncomingMessage,
+  res:             ServerResponse,
+  dir:             string,
+  allowed:         string[],
+  maxBytes:        number,
+  onSaved?:        (outPath: string, originalFilename: string) => Record<string, unknown> | void,
+  outputFilename?: (ext: string) => string,
 ): void {
   let bb: ReturnType<typeof busboy>;
   try {
@@ -141,7 +142,7 @@ export function handleUpload(
       return;
     }
 
-    const safe    = sanitizeFilename(info.filename);
+    const safe    = outputFilename ? outputFilename(ext) : sanitizeFilename(info.filename);
     const outPath = path.join(dir, safe);
     serverPath    = outPath;
 

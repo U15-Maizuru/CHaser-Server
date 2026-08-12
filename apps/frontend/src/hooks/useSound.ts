@@ -1,24 +1,8 @@
 import { useCallback, useEffect, useRef } from 'react';
-import type { GameStateSnapshot } from '@u15/ws-types';
+import { SOUND_KEYS, type GameStateSnapshot, type SoundKey } from '@u15/ws-types';
 import { fetchSoundFiles } from '../lib/api';
 
-/**
- * 鳴らす音の種類。**値がそのまま音源のファイル名 (拡張子なし)** で、
- * `server/sounds` に置く差し替えファイルもこの名前で探す。
- *
- * 決着の3種は勝敗ではなく**決着の付き方**で分かれる。勝った側の画面でも負けた側の画面でも
- * 同じ音が鳴るので、勝敗を表す名前を付けると鳴る場面を取り違える。
- */
-export type SoundKey =
-  | 'countdown'      // 開始カウントダウン
-  | 'players-ready'  // 両者の準備完了
-  | 'game-start'     // ターンループの開始
-  | 'item-cool'      // COOL のアイテム取得
-  | 'item-hot'       // HOT のアイテム取得
-  | 'end-score'      // ターン切れ。得点で決着 (Reason.SCORE)
-  | 'end-decisive'   // 相手を追い詰めての決着 (Reason.TRAPPED / ATTACK)
-  | 'end-blunder'    // 自滅による決着 (isBlunder = 自縛・衝突・通信エラー)
-  | 'award-fanfare'; // 表彰画面へ切り替わった瞬間
+export type { SoundKey };
 
 // 同梱の SE。**`new URL` の第1引数は静的な文字列で書くこと** — Vite はこれをビルド時に
 // 解決してハッシュ付きの名前 (countdown-DstjK5Rn.wav) に置き換える。キーから組み立てると
@@ -35,7 +19,7 @@ const BUNDLED: Record<SoundKey, string> = {
   'award-fanfare': new URL('../assets/Sound/award-fanfare.wav', import.meta.url).href,
 };
 
-const KEYS = Object.keys(BUNDLED) as SoundKey[];
+const KEYS = SOUND_KEYS;
 
 /**
  * SE の再生。同梱の音をすぐ使えるように先に読み、`server/sounds` に同名のファイルが

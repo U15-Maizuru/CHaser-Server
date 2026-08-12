@@ -1,4 +1,4 @@
-import type { CatalogEntry, InlineMapData, MapCatalogEntry, MapParams } from '@u15/ws-types';
+import type { CatalogEntry, InlineMapData, MapCatalogEntry, MapParams, SoundKey } from '@u15/ws-types';
 
 // バックエンドの HTTP API を叩く場所。
 //
@@ -40,6 +40,20 @@ async function send(url: string, method: string): Promise<void> {
     await fetch(url, { method });
   } catch {
     // 一覧の取り直しで実際の状態に追いつくので、ここでは黙って諦める
+  }
+}
+
+/** ファイルを1つ POST する。成功なら null、失敗ならユーザーに見せるエラーメッセージ */
+async function uploadFile(url: string, file: File): Promise<string | null> {
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch(url, { method: 'POST', body: fd });
+    if (res.ok) return null;
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    return body.error ?? `アップロードに失敗しました (${res.status})`;
+  } catch (e) {
+    return `アップロードに失敗しました: ${(e as Error).message}`;
   }
 }
 
@@ -151,12 +165,16 @@ export async function fetchSoundFiles(httpBase: string): Promise<string[]> {
   return body?.files ?? [];
 }
 
-export async function uploadMusic(httpBase: string, file: File): Promise<void> {
-  const fd = new FormData();
-  fd.append('file', file);
-  try {
-    await fetch(`${httpBase}/api/upload/music`, { method: 'POST', body: fd });
-  } catch {
-    // アップロードに失敗しても一覧の取り直しで実際の状態に追いつく
-  }
+export function uploadMusic(httpBase: string, file: File): Promise<string | null> {
+  return uploadFile(`${httpBase}/api/upload/music`, file);
+}
+
+/** SE を1つ差し替える。保存名はサーバー側で key に強制されるので、ファイル名は問わない */
+export function uploadSound(httpBase: string, key: SoundKey, file: File): Promise<string | null> {
+  return uploadFile(`${httpBase}/api/upload/sounds/${encodeURIComponent(key)}`, file);
+}
+
+/** 差し替え済みの SE を削除し、同梱の音に戻す */
+export function deleteSoundFile(httpBase: string, filename: string): Promise<void> {
+  return send(`${httpBase}/api/sounds/${encodeURIComponent(filename)}`, 'DELETE');
 }

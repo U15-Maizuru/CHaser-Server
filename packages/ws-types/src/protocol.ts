@@ -18,6 +18,15 @@ export const START_COUNTDOWN_SECONDS = 3;
 // フロント・バックエンドの両方が参照する単一情報源
 export const SCENE_FADE_MS = 800;
 
+/** SE の場面キー。値がそのまま音源のファイル名 (拡張子なし)。
+ * フロントの同梱アセット名・server/sounds の差し替えファイル名・アップロード先の判定で共通して使う。 */
+export const SOUND_KEYS = [
+  'countdown', 'players-ready', 'game-start', 'item-cool', 'item-hot',
+  'end-score', 'end-decisive', 'end-blunder', 'award-fanfare',
+] as const;
+
+export type SoundKey = typeof SOUND_KEYS[number];
+
 // Protocol enums (values must match the game engine integers)
 export enum MapObject {
   NOTHING = 0,
