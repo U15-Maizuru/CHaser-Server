@@ -58,7 +58,8 @@ function ControlApp({ roomId }: { roomId: string }) {
   // 開いても互いの古い値で上書きし合わないよう、クライアントにキャッシュを持たない
   const prefs = serverStatus?.displayPrefs ?? DEFAULT_DISPLAY_PREFS;
 
-  const countdown = useStartCountdown(serverStatus?.phase, state.turnInfo);
+  // コントロール窓には場面転換の暗転が無いので、phase の変化がそのままカウントダウン開始の合図
+  const countdown = useStartCountdown(serverStatus?.phase === 'playing', state.turnInfo);
 
   // コントロール窓では SE を鳴らさない (観戦窓との二重再生を防ぐため)
   useGamePhaseSound({

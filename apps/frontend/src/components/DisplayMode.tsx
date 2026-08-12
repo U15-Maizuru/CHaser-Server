@@ -1,9 +1,10 @@
 import type { DisplayPrefs, InlineMapData, ServerPhase, ServerStatusPayload, TournamentStatePayload } from '@u15/ws-types';
-import { DEFAULT_DISPLAY_PREFS, hasQualifying, idxForSide, MapObject, roundPointsFor } from '@u15/ws-types';
+import { DEFAULT_DISPLAY_PREFS, hasQualifying, idxForSide, MapObject, roundPointsFor, SCENE_FADE_MS } from '@u15/ws-types';
 import { useGameState } from '../hooks/useGameState';
 import { useGamePhaseSound } from '../hooks/useGamePhaseSound';
 import { useStartCountdown } from '../hooks/useStartCountdown';
 import { useBgm } from '../hooks/useBgm';
+import { useSceneTransition } from '../hooks/useSceneTransition';
 import { useCurrentMap } from '../hooks/useCurrentMap';
 import { useTextures } from '../hooks/useTextures';
 import { MainWindow } from './MainWindow';
@@ -71,6 +72,14 @@ const BGM_OF_SCENE: Record<DisplayScene, (p: DisplayPrefs, round: 0 | 1) => stri
   result:  p => p.bgmTrackResult,
 };
 
+// 画面の暗転はこの単位で判定する。playing と result は同じ MainWindow をそのまま出し続ける
+// (盤面の上に結果を重ねるだけ) ので、両者の間に切り替えは無く暗転もしない。
+type VisualGroup = 'award' | 'standby' | 'waiting' | 'match';
+
+function visualGroupOf(scene: DisplayScene): VisualGroup {
+  return scene === 'playing' || scene === 'result' ? 'match' : scene;
+}
+
 export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId: string; httpBase: string }) {
   const state   = useGameState(wsUrl, roomId);
   const { serverStatus, snapshot, turnInfo, gameEnd, isConnected, tournamentState } = state;
@@ -79,11 +88,20 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
   // 大会中でなければ結果は使われない
   const groupView = displayQualifyingPhase(tournamentState);
 
-  const countdown = useStartCountdown(serverStatus?.phase, turnInfo);
-
-  // いま観客に出している画面。**下の出し分けも BGM もこの値だけを見る** —
-  // 条件を二か所に書くと、画面と音が食い違う
+  // いま観客に出すべき画面。BGM の曲選び (BGM_OF_SCENE) と awarding 判定は、鳴らす音を
+  // 即座に切り替えるためこの値をそのまま見る。描画だけは下の displayedGroup (暗転を挟んで
+  // 遅れて切り替わる方) を見る — 条件を増やすと画面と音の食い違いが起きるので、
+  // 「画面用に何を出すか」と「音用に何を鳴らすか」は常にこの scene 一つから決める
   const scene = displayScene(phase, tournamentState, groupView.phase);
+
+  // 画面の切り替え自体は即座にせず、BGM のクロスフェードと同じ長さの暗転を挟む
+  // (useSceneTransition のコメント参照)。以下の出し分けは displayedGroup だけを見る
+  const { displayed: displayedGroup, curtain } = useSceneTransition(visualGroupOf(scene));
+
+  // 対戦画面がマウントされた瞬間 (暗転が閉じきった瞬間) から開始カウントダウンを進める。
+  // ServerManager の startDelayMs 側に暗転ぶん (SCENE_FADE_MS) の余裕を足してあるので、
+  // 最初の目盛り (1秒後) が来るより前に明転が終わり、観客には常に "3" から見える
+  const countdown = useStartCountdown(displayedGroup === 'match', turnInfo);
 
   useGamePhaseSound({
     httpBase, snapshot, serverStatus, gameEnd, turnInfo, countdown,
@@ -112,12 +130,11 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
     );
   }
 
-  if (scene === 'award' && tournamentState) {
-    return <TournamentFinale state={tournamentState} displayTitle={prefs.displayTitle} />;
-  }
-
-  if (scene === 'standby' && tournamentState) {
-    return (
+  let content: React.ReactNode;
+  if (displayedGroup === 'award' && tournamentState) {
+    content = <TournamentFinale state={tournamentState} displayTitle={prefs.displayTitle} />;
+  } else if (displayedGroup === 'standby' && tournamentState) {
+    content = (
       <TournamentStandby
         state={tournamentState}
         displayTitle={prefs.displayTitle}
@@ -125,10 +142,8 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
         holdingGroupResult={groupView.holdingResult}
       />
     );
-  }
-
-  if (scene === 'waiting') {
-    return (
+  } else if (displayedGroup === 'waiting') {
+    content = (
       <SetupWaiting
         serverStatus={serverStatus}
         displayTitle={prefs.displayTitle}
@@ -138,26 +153,40 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
         theme={prefs.theme}
       />
     );
+  } else {
+    content = (
+      <div style={{ height: '100vh' }}>
+        <MainWindow
+          snapshot={snapshot}
+          turnInfo={turnInfo}
+          gameEnd={gameEnd}
+          serverStatus={serverStatus}
+          isConnected={isConnected}
+          phase={phase}
+          theme={prefs.theme}
+          veilAlpha={prefs.veilAlpha}
+          variant="display"
+          countdown={countdown}
+          displayTitle={prefs.displayTitle}
+        />
+      </div>
+    );
   }
 
   return (
-    <div style={{ height: '100vh' }}>
-      <MainWindow
-        snapshot={snapshot}
-        turnInfo={turnInfo}
-        gameEnd={gameEnd}
-        serverStatus={serverStatus}
-        isConnected={isConnected}
-        phase={phase}
-        theme={prefs.theme}
-        veilAlpha={prefs.veilAlpha}
-        variant="display"
-        countdown={countdown}
-        displayTitle={prefs.displayTitle}
-      />
-    </div>
+    <>
+      {content}
+      <div style={{ ...curtainStyle, opacity: curtain }} />
+    </>
   );
 }
+
+// 場面切り替えの暗転。displayedGroup が裏で入れ替わる間、画面全体を黒で覆う
+const curtainStyle: React.CSSProperties = {
+  position: 'fixed', inset: 0, background: '#000',
+  transition: `opacity ${SCENE_FADE_MS}ms ease`,
+  pointerEvents: 'none', zIndex: 9999,
+};
 
 // ── 待機画面 ──────────────────────────────────────────────────────────────────
 

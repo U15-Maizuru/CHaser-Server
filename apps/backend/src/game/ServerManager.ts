@@ -9,7 +9,7 @@ import { SlotManager } from './SlotManager.js';
 import { MapManager } from './MapManager.js';
 import { RoundController } from './RoundController.js';
 import { buildProcessConfig } from './processConfig.js';
-import { START_COUNTDOWN_SECONDS, Winner } from '@u15/ws-types';
+import { SCENE_FADE_MS, START_COUNTDOWN_SECONDS, Winner } from '@u15/ws-types';
 import type { ManualClient } from '../clients/ManualClient.js';
 import { pickRandomPair } from '../programCatalog.js';
 import { getMapCatalogEntry } from '../mapCatalog.js';
@@ -53,7 +53,10 @@ export class ServerManager extends EventEmitter {
 
   constructor(
     ports: [number, number] = [2009, 2010],
-    startDelayMs = START_COUNTDOWN_SECONDS * 1000,
+    // 待機画面→対戦画面の暗転が閉じきってから対戦画面がマウントされる (SCENE_FADE_MS) ぶん、
+    // 開始カウントダウンの表示開始が遅れる。同じだけ実際の開始も遅らせて、観客側は常に
+    // 画面が出てから新たに START_COUNTDOWN_SECONDS で 0 になるようにする
+    startDelayMs = START_COUNTDOWN_SECONDS * 1000 + SCENE_FADE_MS,
     demoDelaysMs: DemoDelaysMs = DEFAULT_DEMO_DELAYS_MS,
     // 既定は起動時の環境変数。引数で渡せるようにしてあるのは web モードの挙動をテストできるようにするため
     localMode = (process.env['U15_MODE'] ?? 'local') === 'local',
