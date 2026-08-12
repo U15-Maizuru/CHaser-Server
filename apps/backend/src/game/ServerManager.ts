@@ -11,6 +11,7 @@ import { RoundController } from './RoundController.js';
 import { buildProcessConfig } from './processConfig.js';
 import { SCENE_FADE_MS, START_COUNTDOWN_SECONDS, Winner } from '@u15/ws-types';
 import type { ManualClient } from '../clients/ManualClient.js';
+import type { BaseClient } from '../network/BaseClient.js';
 import { pickRandomPair } from '../programCatalog.js';
 import { getMapCatalogEntry } from '../mapCatalog.js';
 import type {
@@ -50,6 +51,13 @@ export class ServerManager extends EventEmitter {
   private logDir = DEFAULT_LOG_DIR;
   private roomId = 'local';
   private readonly localMode: boolean;
+
+  // requestStart の度に増える世代カウンタ。requestReset 等で対戦を中断した後、
+  // 裏で動き続けていた session.run() が遅れて戻ってきても、古い世代の結果で
+  // round/status を書き換えてしまわないようにするための番人。
+  private gameToken = 0;
+  private activeSession: GameSession | null = null;
+  private activeClients: [BaseClient, BaseClient] | null = null;
 
   constructor(
     ports: [number, number] = [2009, 2010],
@@ -182,18 +190,28 @@ export class ServerManager extends EventEmitter {
     if (!this.round.canStart()) return;
     if (!this.slots.allReady()) return;
 
+    const token = ++this.gameToken;
+
     this.round.phase = 'playing';
     this.emitStatus();
 
     const clients     = this.slots.buildClients();
     const playerNames  = this.slots.getPlayerNames();
     const session      = new GameSession();
+    this.activeSession = session;
+    this.activeClients = clients;
 
     this.emit('session_created', session, playerNames);
 
     const log    = openGameLog(this.logDir, this.round.currentRound);
     const result = await session.run(clients, this.mapManager.map, log, this.round.turnDelayMs, this.startDelayMs);
     console.log('Game finished:', result.status);
+
+    // 待っている間に requestReset 等で中断されていたら、この結果はもう反映しない
+    // (round は既に次の状態に進んでいるので、ここで書き換えると中断が巻き戻ってしまう)
+    if (token !== this.gameToken) return;
+    this.activeSession = null;
+    this.activeClients = null;
 
     // ゲーム結果を記録
     const roundResult = buildRoundResult(
@@ -247,6 +265,7 @@ export class ServerManager extends EventEmitter {
 
   async requestReset(): Promise<void> {
     this.clearDemoTimer();
+    this.stopActiveGame();
     this.slots.resetAllToDefault();
     this.mapManager.refreshForNewGame();
     this.round.resetForNewGame();
@@ -257,7 +276,29 @@ export class ServerManager extends EventEmitter {
 
   shutdown(): void {
     this.clearDemoTimer();
+    this.stopActiveGame();
     this.slots.shutdown();
+  }
+
+  /**
+   * 進行中の対戦 (あれば) を強制的に打ち切る。
+   *
+   * - gameToken を進めて、遅れて戻ってくる requestStart の続き (結果の記録・emitStatus) を無効化する
+   * - session のリスナーを外し、打ち切り後にもう一巡分の stateUpdate/gameEnd 等が
+   *   WsServer 経由でフロントに届いて SE が鳴るのを防ぐ
+   * - 各クライアントを forceDisconnect し、GameSession.run() のループを次のチェックポイントで
+   *   終わらせる (CPU 対戦は自ら切断しないので、これをしないと画面を離れても裏で走り続ける)
+   */
+  private stopActiveGame(): void {
+    this.gameToken++; // 遅れて戻ってくる requestStart の続きを無効化する
+
+    this.activeSession?.removeAllListeners();
+    this.activeSession = null;
+
+    if (this.activeClients) {
+      for (const client of this.activeClients) client.forceDisconnect();
+      this.activeClients = null;
+    }
   }
 
   getStatus(): ServerStatusPayload {

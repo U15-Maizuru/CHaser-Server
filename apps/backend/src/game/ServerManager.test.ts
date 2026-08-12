@@ -124,6 +124,27 @@ describe('ServerManager', () => {
       expect(status.clients[1].type).toBe('process');
     });
 
+    it('対戦中の requestReset (中断) はターン処理を打ち切り、後から古い結果で状態を上書きしない', async () => {
+      sm = makeServerManager([39441, 39442], 0);
+      sm.setTurnDelay(50); // 0 だと一瞬で試合が終わってしまい、中断のタイミングを作れない
+      await sm.setClientType(0, 'cpu');
+      await sm.setClientType(1, 'cpu');
+
+      const startPromise = sm.requestStart();
+      expect(sm.getStatus().phase).toBe('playing');
+
+      await sm.requestReset();
+      expect(sm.getStatus().phase).toBe('setup');
+
+      // 中断前に投げた requestStart は裏で進んでいた対戦の決着を待って戻ってくるが、
+      // 戻ってきた時点で既に古い世代なので round/status を書き換えてはいけない
+      await startPromise;
+
+      const status = sm.getStatus();
+      expect(status.phase).toBe('setup');
+      expect(status.roundResults).toEqual([]);
+    });
+
     it('requestNextRound は doubleMode で第1ゲーム・finished のときのみ第2ゲームを準備する', async () => {
       sm = makeServerManager([39414, 39415], 0);
       sm.setTurnDelay(0);
