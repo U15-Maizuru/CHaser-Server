@@ -50,6 +50,13 @@ export class ManualClient extends BaseClient {
   }
 
   async waitReturnMethod(around: AroundData): Promise<Method> {
+    // 中断が waitReturnMethod 呼び出しより先に来ていた場合、ここで新しい Promise を
+    // 作ってしまうと誰も解決しないまま永久に待ち続ける (フロント側の入力画面は
+    // 既に破棄されており receiveAction は二度と来ない) — 待たずに即終わらせる。
+    if (this.isDisconnected) {
+      return { team: this.team, action: Action.UNKNOWN, rote: Rote.UNKNOWN };
+    }
+
     // フロントエンドにアラウンドデータを送信して入力を待つ
     this.emit('need_input', this.slot, around.data.map(v => v as number));
 
@@ -64,5 +71,15 @@ export class ManualClient extends BaseClient {
 
   startup(): void {
     // 即座に準備完了
+  }
+
+  /** 入力待ちのまま中断された場合、pendingMethod を解決してループを先に進める */
+  forceDisconnect(): void {
+    this.isDisconnected = true;
+    if (this.pendingMethod) {
+      const resolve = this.pendingMethod;
+      this.pendingMethod = null;
+      resolve({ team: this.team, action: Action.UNKNOWN, rote: Rote.UNKNOWN });
+    }
   }
 }

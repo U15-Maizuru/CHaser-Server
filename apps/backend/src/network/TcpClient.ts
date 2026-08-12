@@ -72,6 +72,10 @@ export class TcpClient extends BaseClient {
     if (this.server.listening) this.server.close();
   }
 
+  forceDisconnect(): void {
+    this.close();
+  }
+
   private onData(data: Buffer): void {
     this.rxBuf += data.toString('utf8');
     this.tryResolve();

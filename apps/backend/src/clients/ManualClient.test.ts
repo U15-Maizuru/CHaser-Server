@@ -45,3 +45,25 @@ describe('ManualClient.receiveAction', () => {
     expect(() => client.receiveAction(Action.WALK, Rote.UP)).not.toThrow();
   });
 });
+
+describe('ManualClient.forceDisconnect', () => {
+  it('入力待ち中に呼ぶと pendingMethod を即座に UNKNOWN で解決する', async () => {
+    const client = new ManualClient(0);
+    const pending = client.waitReturnMethod(AROUND);
+
+    client.forceDisconnect();
+
+    expect(client.isDisconnected).toBe(true);
+    await expect(pending).resolves.toEqual({ team: Team.COOL, action: Action.UNKNOWN, rote: Rote.UNKNOWN });
+  });
+
+  it('入力待ちの前に呼んでいても、その後の waitReturnMethod が永久に待たされない', async () => {
+    const client = new ManualClient(1);
+    client.forceDisconnect(); // まだ waitReturnMethod を呼んでいない状態での中断
+
+    // 中断前に作った Promise が無いので、ここで新しく作った Promise が
+    // 誰にも解決されず永久に pending になっていないかを確認する
+    const method = await client.waitReturnMethod(AROUND);
+    expect(method).toEqual({ team: Team.HOT, action: Action.UNKNOWN, rote: Rote.UNKNOWN });
+  });
+});
