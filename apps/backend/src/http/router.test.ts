@@ -296,5 +296,61 @@ describe('HttpServer', () => {
       const { files } = await res.json();
       expect(files).toEqual([]);
     });
+
+    it('正しい key への差し替えアップロードで、ファイル名が key + 拡張子になる', async () => {
+      const form = new FormData();
+      form.append('file', new Blob(['fake wav bytes']), 'my-download.wav');
+      const uploadRes = await fetch(`${baseUrl}/api/upload/sounds/countdown`, { method: 'POST', body: form });
+      expect(uploadRes.status).toBe(200);
+
+      const listRes = await fetch(`${baseUrl}/api/sounds`);
+      const { files } = await listRes.json();
+      expect(files).toEqual(['countdown.wav']);
+
+      const playRes = await fetch(`${baseUrl}/api/sounds/${encodeURIComponent('countdown.wav')}`);
+      expect(playRes.status).toBe(200);
+      expect(await playRes.text()).toBe('fake wav bytes');
+    });
+
+    it('不明な key への差し替えアップロードは 400', async () => {
+      const form = new FormData();
+      form.append('file', new Blob(['fake wav bytes']), 'x.wav');
+      const res = await fetch(`${baseUrl}/api/upload/sounds/not-a-real-key`, { method: 'POST', body: form });
+      expect(res.status).toBe(400);
+    });
+
+    it('差し替えアップロードでも許可されていない拡張子は 400', async () => {
+      const form = new FormData();
+      form.append('file', new Blob(['not audio']), 'note.txt');
+      const res = await fetch(`${baseUrl}/api/upload/sounds/countdown`, { method: 'POST', body: form });
+      expect(res.status).toBe(400);
+    });
+
+    it('同じ key に別拡張子で再アップロードすると、古い拡張子のファイルは消える', async () => {
+      const upload = (filename: string) => {
+        const form = new FormData();
+        form.append('file', new Blob(['fake bytes']), filename);
+        return fetch(`${baseUrl}/api/upload/sounds/countdown`, { method: 'POST', body: form });
+      };
+      expect((await upload('a.wav')).status).toBe(200);
+      expect((await upload('b.mp3')).status).toBe(200);
+
+      const { files } = await (await fetch(`${baseUrl}/api/sounds`)).json();
+      expect(files).toEqual(['countdown.mp3']);
+    });
+
+    it('差し替えファイルを削除でき、以後は一覧から消える。存在しない削除も 204', async () => {
+      fs.mkdirSync(soundDir, { recursive: true });
+      fs.writeFileSync(path.join(soundDir, 'countdown.mp3'), 'fake mp3 bytes');
+
+      const deleteRes = await fetch(`${baseUrl}/api/sounds/${encodeURIComponent('countdown.mp3')}`, { method: 'DELETE' });
+      expect(deleteRes.status).toBe(204);
+
+      const { files } = await (await fetch(`${baseUrl}/api/sounds`)).json();
+      expect(files).not.toContain('countdown.mp3');
+
+      const deleteAgain = await fetch(`${baseUrl}/api/sounds/${encodeURIComponent('countdown.mp3')}`, { method: 'DELETE' });
+      expect(deleteAgain.status).toBe(204);
+    });
   });
 });

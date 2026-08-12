@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
-import { VEIL_ALPHA_MIN, VEIL_ALPHA_MAX, type DisplayPrefs, type ServerStatusPayload } from '@u15/ws-types';
+import {
+  SOUND_KEYS, VEIL_ALPHA_MIN, VEIL_ALPHA_MAX,
+  type DisplayPrefs, type ServerStatusPayload, type SoundKey,
+} from '@u15/ws-types';
 import type { EnvConfig } from '../hooks/useEnvConfig';
 import type { MatchConfig } from '../hooks/useMatchConfig';
 import {
@@ -7,7 +10,7 @@ import {
   Button, Callout, Checkbox, Chip, ChipRow, Dialog, NumberInput, Select, Tabs, TextInput,
   type TabDef,
 } from '../ui';
-import { fetchMusicFiles } from '../lib/api';
+import { fetchMusicFiles, fetchSoundFiles } from '../lib/api';
 
 interface Props {
   prefs:               DisplayPrefs;
@@ -24,15 +27,30 @@ interface Props {
   onSetDemoMode:       (enabled: boolean) => void;
   onChangeMatchConfig: (patch: Partial<MatchConfig>) => void;
   onCommitMatchConfig: () => void;
-  onUploadMusic:       (file: File) => Promise<void>;
+  onUploadMusic:       (file: File) => Promise<string | null>;
+  onUploadSound:       (key: SoundKey, file: File) => Promise<string | null>;
+  onDeleteSound:       (filename: string) => Promise<void>;
   onClose:             () => void;
 }
 
 const THEMES = ['Jewel', 'Light', 'Heavy', 'RPG'] as const;
 
-type SettingTab = 'display' | 'match' | 'bgm' | 'env';
+// docs/user-manual.md §10-2「効果音のファイル名」と同じ文言に揃えること
+const SOUND_KEY_LABELS: Record<SoundKey, string> = {
+  'countdown':     '開始カウントダウン',
+  'players-ready': '両者の準備完了',
+  'game-start':    'ゲーム開始',
+  'item-cool':     'COOL のアイテム取得',
+  'item-hot':      'HOT のアイテム取得',
+  'end-score':     '得点で決着',
+  'end-decisive':  '追い詰めての決着',
+  'end-blunder':   '自滅による決着',
+  'award-fanfare': '表彰画面',
+};
 
-// 設定の集約先。表示 / 対戦 / BGM / 環境の4タブ。
+type SettingTab = 'display' | 'match' | 'bgm' | 'se' | 'env';
+
+// 設定の集約先。表示 / 対戦 / BGM / SE / 環境の5タブ。
 //
 // 「環境」タブだけが下書き + [保存] 方式。表示・BGM・対戦ルールはサーバーが真実を持つ状態
 // (ServerStatusPayload) なので、クライアントに下書きを溜めるとコントロール窓を
@@ -42,17 +60,22 @@ export function SettingDialog({
   onSetDisplayPrefs, onSaveEnv, onSetDarkMode,
   onSetDoubleMode, onSetRepeatMode, onSetDemoMode,
   onChangeMatchConfig, onCommitMatchConfig,
-  onUploadMusic, onClose,
+  onUploadMusic, onUploadSound, onDeleteSound, onClose,
 }: Props) {
   const [tab, setTab]               = useState<SettingTab>('display');
   const [draftEnv, setDraftEnv]     = useState<EnvConfig>({ ...envConfig });
   const [musicFiles, setMusicFiles] = useState<string[]>([]);
+  const [soundFiles, setSoundFiles] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     void fetchMusicFiles(httpBase).then(files => { if (!cancelled) setMusicFiles(files); });
+    void fetchSoundFiles(httpBase).then(files => { if (!cancelled) setSoundFiles(files); });
     return () => { cancelled = true; };
   }, [httpBase]);
+
+  // 拡張子は落として突き合わせる — useSound.ts の再生側と同じ規則
+  const soundByKey = new Map(soundFiles.map(f => [f.replace(/\.[^.]+$/, ''), f]));
 
   const setEnv = <K extends keyof EnvConfig>(key: K, value: EnvConfig[K]) =>
     setDraftEnv(d => ({ ...d, [key]: value }));
@@ -84,6 +107,7 @@ export function SettingDialog({
     { id: 'display', label: '表示' },
     { id: 'match',   label: '対戦' },
     { id: 'bgm',     label: 'BGM' },
+    { id: 'se',      label: 'SE' },
     // 環境設定は Electron のファイル選択ダイアログを使うのでブラウザでは出さない
     ...(window.electronAPI ? [{ id: 'env' as const, label: '環境' }] : []),
   ];
@@ -119,9 +143,6 @@ export function SettingDialog({
                 <Select value={prefs.theme} onChange={e => onSetDisplayPrefs({ theme: e.target.value })}>
                   {THEMES.map(t => <option key={t} value={t}>{t}</option>)}
                 </Select>
-              </Row>
-              <Row label="SE ミュート">
-                <Checkbox checked={prefs.muted} onChange={e => onSetDisplayPrefs({ muted: e.target.checked })} />
               </Row>
               <Row label="ダークモード (視界のみ表示)">
                 <Checkbox checked={darkMode} onChange={e => onSetDarkMode(e.target.checked)} />
@@ -260,12 +281,60 @@ export function SettingDialog({
                   onChange={async e => {
                     const file = e.target.files?.[0];
                     if (!file) return;
-                    await onUploadMusic(file);
+                    const error = await onUploadMusic(file);
+                    if (error) window.alert(`BGM のアップロードに失敗しました:\n${error}`);
                     setMusicFiles(await fetchMusicFiles(httpBase));
                     e.target.value = '';
                   }}
                 />
               </Row>
+            </tbody>
+          </table>
+        )}
+
+        {tab === 'se' && (
+          <table style={s.table}>
+            <tbody>
+              <Row label="SE ミュート">
+                <Checkbox checked={prefs.muted} onChange={e => onSetDisplayPrefs({ muted: e.target.checked })} />
+              </Row>
+              {SOUND_KEYS.map(key => {
+                const file = soundByKey.get(key);
+                return (
+                  <Row key={key} label={SOUND_KEY_LABELS[key]}>
+                    <div style={s.soundRow}>
+                      <span style={s.hint}>{file ? `差し替え済み: ${file}` : '同梱'}</span>
+                      <div style={s.soundActions}>
+                        <input
+                          type="file"
+                          accept=".mp3,.wav"
+                          style={s.fileInput}
+                          onChange={async e => {
+                            const uploaded = e.target.files?.[0];
+                            if (!uploaded) return;
+                            const error = await onUploadSound(key, uploaded);
+                            if (error) window.alert(`SE のアップロードに失敗しました:\n${error}`);
+                            setSoundFiles(await fetchSoundFiles(httpBase));
+                            e.target.value = '';
+                          }}
+                        />
+                        {file && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={async () => {
+                              await onDeleteSound(file);
+                              setSoundFiles(await fetchSoundFiles(httpBase));
+                            }}
+                          >
+                            元に戻す
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </Row>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -346,7 +415,9 @@ const s: Record<string, React.CSSProperties> = {
   range:      { flex: 1, minWidth: 0, cursor: 'pointer', accentColor: COOL_COLOR },
   rangeValue: { fontSize: 11, color: TEXT_SECONDARY, fontFamily: FONT_NUM, width: 34, textAlign: 'right' },
 
-  fileInput: { fontSize: 11, color: TEXT_SECONDARY, maxWidth: '100%' },
+  fileInput:    { fontSize: 11, color: TEXT_SECONDARY, maxWidth: '100%' },
+  soundRow:     { display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' },
+  soundActions: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   pathRow:   { display: 'flex', alignItems: 'center', gap: 6 },
   pathText: {
     flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',

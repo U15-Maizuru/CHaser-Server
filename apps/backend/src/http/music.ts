@@ -4,7 +4,7 @@ import { type IncomingMessage, type ServerResponse } from 'node:http';
 import { handleUpload, json, sanitizeFilename } from '../network/httpUtil.js';
 import { MUSIC_DIR, MUSIC_EXTENSIONS } from './paths.js';
 
-const MAX_MUSIC_BYTES = 10 * 1024 * 1024;
+const MAX_MUSIC_BYTES = 100 * 1024 * 1024;
 
 /** 処理したら true。false なら router が後続のルートを試す */
 export function handleMusicRequest(
