@@ -179,26 +179,26 @@ export interface ServerStatusPayload {
 /**
  * 観戦画面 (display window / ブラウザ観戦) の表示・音まわりの設定。
  * コントロールパネルが送り、サーバーが真実を持つ (`ServerStatusPayload.displayPrefs`)。
- * ダークモードと同じ理由でクライアントにキャッシュを持たない — ローカルの `localStorage` に
- * 置くと、観戦画面を複数ウィンドウ/複数端末で開いたときに互いに反映されない。
+ * ブラウザ観戦は control ウィンドウと `localStorage` を共有しない別端末になりうるため、
+ * これらをクライアント側だけに置くと観戦画面に反映されない (SE/BGM ミュートだけは
+ * ブラウザ観戦者が自分の端末用に上書きできる — フロントエンド側のローカル設定で行う)。
  */
 export interface DisplayPrefs {
   muted:          boolean; // SE ミュート
   bgmMuted:       boolean; // BGM ミュート (SE 用の muted とは別)
-  // 場面ごとに選ぶ BGM のファイル名 ('none' = 再生しない)。決着後 (result) を接続待ちと
-  // 分けているのは、決着した盤面を見せる時間と次のプログラムを待つ時間とで会場の空気が
-  // 違うため。大会の待機表 (standby) は接続待ちと同じ曲でよい
+  // 場面ごとに選ぶ BGM のファイル名 ('none' = 再生しない)。
+  // サーバーに音源が置かれていなければ選択肢が無く、'none' のまま = 無音になる
   // 対戦中は2ゲーム制の1ゲーム目・2ゲーム目で分けられる。2ゲーム制でないときは常に bgmTrack0 を使う
   bgmTrack0:      string; // 対戦中 (1ゲーム目)
   bgmTrack1:      string; // 対戦中 (2ゲーム目)
   bgmTrackWait:   string; // 接続待ち・大会待機中
   bgmTrackResult: string; // ゲーム終了 (決着した盤面を見せている間)
   bgmTrackAward:  string; // 表彰
-  theme:        string;  // 'Jewel' | 'Light' | 'Heavy' | 'RPG'
-  displayTitle: string;  // 観戦/表示画面のタイトル文字列
+  theme:          string; // 'Jewel' | 'Light' | 'Heavy' | 'RPG'
+  displayTitle:   string; // 観戦/表示画面のタイトル文字列
   // ダークモードで盤面を覆う幕の濃さ (0-1)。同じ濃さでも会場のプロジェクタ/照明では
   // 白く飛んだり真っ暗になったりするため、投影環境に合わせて調整できるようにしている
-  veilAlpha:    number;
+  veilAlpha:      number;
 }
 
 export const VEIL_ALPHA_MIN     = 0.2;
