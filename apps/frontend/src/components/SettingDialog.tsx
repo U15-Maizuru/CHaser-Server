@@ -28,6 +28,7 @@ interface Props {
   onChangeMatchConfig: (patch: Partial<MatchConfig>) => void;
   onCommitMatchConfig: () => void;
   onUploadMusic:       (file: File) => Promise<string | null>;
+  onDeleteMusic:       (filename: string) => Promise<void>;
   onUploadSound:       (key: SoundKey, file: File) => Promise<string | null>;
   onDeleteSound:       (filename: string) => Promise<void>;
   onClose:             () => void;
@@ -50,6 +51,9 @@ const SOUND_KEY_LABELS: Record<SoundKey, string> = {
 
 type SettingTab = 'display' | 'match' | 'bgm' | 'se' | 'env';
 
+/** 場面ごとの BGM 選択を持つ DisplayPrefs のキー。削除したファイルへの参照を掃除するのに使う */
+const BGM_TRACK_KEYS = ['bgmTrackWait', 'bgmTrack0', 'bgmTrack1', 'bgmTrackResult', 'bgmTrackAward'] as const;
+
 // 設定の集約先。表示 / 対戦 / BGM / SE / 環境の5タブ。
 //
 // 「環境」タブだけが下書き + [保存] 方式。表示・BGM・対戦ルールはサーバーが真実を持つ状態
@@ -60,7 +64,7 @@ export function SettingDialog({
   onSetDisplayPrefs, onSaveEnv, onSetDarkMode,
   onSetDoubleMode, onSetRepeatMode, onSetDemoMode,
   onChangeMatchConfig, onCommitMatchConfig,
-  onUploadMusic, onUploadSound, onDeleteSound, onClose,
+  onUploadMusic, onDeleteMusic, onUploadSound, onDeleteSound, onClose,
 }: Props) {
   const [tab, setTab]               = useState<SettingTab>('display');
   const [draftEnv, setDraftEnv]     = useState<EnvConfig>({ ...envConfig });
@@ -79,6 +83,15 @@ export function SettingDialog({
 
   const setEnv = <K extends keyof EnvConfig>(key: K, value: EnvConfig[K]) =>
     setDraftEnv(d => ({ ...d, [key]: value }));
+
+  const handleDeleteMusic = async (filename: string) => {
+    await onDeleteMusic(filename);
+    setMusicFiles(await fetchMusicFiles(httpBase));
+    // 削除したファイルを選んでいた場面は「なし」に戻す (Select に存在しない値が残らないように)
+    const patch: Partial<DisplayPrefs> = {};
+    for (const k of BGM_TRACK_KEYS) if (prefs[k] === filename) patch[k] = 'none';
+    if (Object.keys(patch).length > 0) onSetDisplayPrefs(patch);
+  };
 
   const handleSave = () => {
     onSaveEnv(draftEnv);
@@ -240,6 +253,9 @@ export function SettingDialog({
         {tab === 'bgm' && (
           <table style={s.table}>
             <tbody>
+              <Row label="BGM ミュート">
+                <Checkbox checked={prefs.bgmMuted} onChange={e => onSetDisplayPrefs({ bgmMuted: e.target.checked })} />
+              </Row>
               <Row label="接続待ちの BGM">
                 <Select value={prefs.bgmTrackWait} onChange={e => onSetDisplayPrefs({ bgmTrackWait: e.target.value })}>
                   <option value="none">なし</option>
@@ -270,9 +286,6 @@ export function SettingDialog({
                   {musicFiles.map(f => <option key={f} value={f}>{f}</option>)}
                 </Select>
               </Row>
-              <Row label="BGM ミュート">
-                <Checkbox checked={prefs.bgmMuted} onChange={e => onSetDisplayPrefs({ bgmMuted: e.target.checked })} />
-              </Row>
               <Row label="BGM ファイルを追加 (mp3/wav)">
                 <input
                   type="file"
@@ -288,6 +301,20 @@ export function SettingDialog({
                   }}
                 />
               </Row>
+              {musicFiles.length > 0 && (
+                <Row label="BGM ファイル一覧">
+                  <div style={s.musicList}>
+                    {musicFiles.map(f => (
+                      <div key={f} style={s.musicRow}>
+                        <span style={s.musicName} title={f}>{f}</span>
+                        <Button size="sm" variant="ghost" onClick={() => handleDeleteMusic(f)}>
+                          削除
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </Row>
+              )}
             </tbody>
           </table>
         )}
@@ -418,6 +445,12 @@ const s: Record<string, React.CSSProperties> = {
   fileInput:    { fontSize: 11, color: TEXT_SECONDARY, maxWidth: '100%' },
   soundRow:     { display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' },
   soundActions: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  musicList: { display: 'flex', flexDirection: 'column', gap: 4 },
+  musicRow:  { display: 'flex', alignItems: 'center', gap: 8 },
+  musicName: {
+    flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+    fontSize: 11, color: TEXT_SECONDARY, fontFamily: FONT_NUM,
+  },
   pathRow:   { display: 'flex', alignItems: 'center', gap: 6 },
   pathText: {
     flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',

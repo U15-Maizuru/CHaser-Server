@@ -3,7 +3,7 @@ import { useGameState }      from './hooks/useGameState';
 import { useMatchConfig }    from './hooks/useMatchConfig';
 import { useMapGenParams, toMapParams } from './hooks/useMapGenParams';
 import { useCurrentMap } from './hooks/useCurrentMap';
-import { downloadMapFile, deleteSoundFile, fetchCurrentMap, saveMapToLibrary, uploadMusic, uploadSound } from './lib/api';
+import { downloadMapFile, deleteMusicFile, deleteSoundFile, fetchCurrentMap, saveMapToLibrary, uploadMusic, uploadSound } from './lib/api';
 import { readAppLocation } from './lib/appMode';
 import { useEnvConfig }      from './hooks/useEnvConfig';
 import { useGamePhaseSound } from './hooks/useGamePhaseSound';
@@ -164,6 +164,7 @@ function ControlApp({ roomId }: { roomId: string }) {
   };
 
   const handleUploadMusic = (file: File) => uploadMusic(HTTP_BASE, file);
+  const handleDeleteMusic = (filename: string) => deleteMusicFile(HTTP_BASE, filename);
   const handleUploadSound = (key: SoundKey, file: File) => uploadSound(HTTP_BASE, key, file);
   const handleDeleteSound = (filename: string) => deleteSoundFile(HTTP_BASE, filename);
 
@@ -218,6 +219,7 @@ function ControlApp({ roomId }: { roomId: string }) {
           onChangeMatchConfig={updateMatchConfig}
           onCommitMatchConfig={commitMatchConfig}
           onUploadMusic={handleUploadMusic}
+          onDeleteMusic={handleDeleteMusic}
           onUploadSound={handleUploadSound}
           onDeleteSound={handleDeleteSound}
           onClose={() => setShowSettings(false)}
