@@ -162,8 +162,9 @@ U15-server-maizuru/
 │   │       │   ├── maps.ts             /api/maps* (一覧・ランダム生成・保存・エクスポート)
 │   │       │   ├── libs.ts             /api/libs, /api/upload/library
 │   │       │   ├── music.ts            /api/music, /api/upload/music
+│   │       │   ├── sounds.ts           /api/sounds, /api/upload/sounds/:key (SE の差し替えファイル)
 │   │       │   ├── static.ts           frontend/dist の静的配信 (SPA フォールバック付き)
-│   │       │   └── paths.ts            ルームごとのディレクトリ規約
+│   │       │   └── paths.ts            ルーム・音源のディレクトリ規約
 │   │       └── network/
 │   │           ├── PortPool.ts             TCP ポートプール
 │   │           ├── BaseClient.ts           全クライアント種別の基底 (Process/Tcp/Manual/Com)
@@ -180,9 +181,12 @@ U15-server-maizuru/
 │   │   └── src/
 │   │       ├── App.tsx             ?room=/?mode= に応じて画面を分岐 (Lobby/Display/Control/Tournament/Manual)
 │   │       ├── ui/                 画面共通の見た目 (tokens / Button / Card / Dialog / Field / Tabs)
+│   │       ├── assets/
+│   │       │   ├── Image/          テーマ別の盤面テクスチャ (Jewel / Light / Heavy / RPG)
+│   │       │   └── Sound/          同梱の SE (server/sounds に同名を置くと差し替わる)
 │   │       ├── components/
 │   │       │   ├── Lobby.tsx           ロビー画面 (Web モード)
-│   │       │   ├── DisplayMode.tsx     対戦表示 (wsUrl/roomId を props で受け取る)
+│   │       │   ├── DisplayMode.tsx     観戦画面。出す画面を決め、BGM と SE もその場面に合わせる
 │   │       │   ├── StartupDialog.tsx
 │   │       │   ├── MapLibraryDialog.tsx     マップライブラリの管理モーダル (追加・DL・削除のみ。選択はしない)
 │   │       │   ├── MapSourceSection.tsx     使うマップの選択 (ライブラリ/ランダム生成/エディタ) — マップ列にインライン展開
@@ -206,11 +210,12 @@ U15-server-maizuru/
 │   │       ├── hooks/
 │   │       │   ├── useGameState.ts     WS 接続・roomId 引数・join_room 送信・ゲーム状態管理
 │   │       │   ├── useLobby.ts         ロビー用 WS フック
-│   │       │   ├── useGamePhaseSound.ts  フェーズ遷移とスコア変化の SE
+│   │       │   ├── useGamePhaseSound.ts  場面の切り替わりとスコア変化の SE
+│   │       │   ├── useSound.ts           SE の読込と再生 (同梱 + server/sounds での差し替え)
 │   │       │   ├── useTextures.ts        テーマ別テクスチャの読込
 │   │       │   ├── useCurrentMap.ts      今出ているマップの取得 (コントロール窓と観戦窓で共用)
 │   │       │   ├── useFitScale.ts        空き領域に合わせた表示倍率の算出 (FitArea の中身)
-│   │       │   ├── useBgm.ts             フェーズに応じた BGM 再生
+│   │       │   ├── useBgm.ts             場面に応じた BGM 再生
 │   │       │   ├── useStartCountdown.ts  ゲーム開始カウントダウンの表示制御
 │   │       │   ├── useBoardLayout.ts     盤面のセルサイズ・サイドパネル幅・スコアバー寸法の導出
 │   │       │   ├── useFitCorrection.ts   中身が高さに収まる最大の拡大率を二分探索で求める
@@ -248,6 +253,7 @@ U15-server-maizuru/
 │   ├── program-catalog/            プログラムライブラリ (CRUD カタログ、全ルーム共通)
 │   ├── map-catalog/                マップライブラリ (CRUD カタログ、全ルーム共通)
 │   ├── music/                      BGM ファイル (全ルーム共通)
+│   ├── sounds/                     SE の差し替えファイル (全ルーム共通)
 │   └── rooms/<roomId>/
 │       ├── programs/cool/          COOL プレイヤーのアップロードプログラム
 │       ├── programs/hot/
@@ -598,8 +604,17 @@ ws.onopen = () => {
 | `/api/upload/music` | POST | BGM (.mp3/.wav) アップロード — 全ルーム共通 (`server/music/`) |
 | `/api/music` | GET | 利用可能な BGM ファイル名の一覧 |
 | `/api/music/:filename` | GET | BGM の再生用ストリーム |
+| `/api/music/:filename` | DELETE | BGM ライブラリから削除。存在しないファイルへの DELETE も 204 (べき等) |
+| `/api/sounds` | GET | `server/sounds/` に在る差し替え用 SE のファイル名の一覧。無ければ空配列 |
+| `/api/sounds/:filename` | GET | 差し替え用 SE の再生用ストリーム |
+| `/api/upload/sounds/:key` | POST | SE (.mp3/.wav) の差し替えアップロード。`key` は `SoundKey` のいずれか。保存ファイル名は `key + 拡張子` に強制され、同じ key の別拡張子ファイルは削除される |
+| `/api/sounds/:filename` | DELETE | 差し替えファイルを削除し、同梱の音に戻す。存在しないファイルへの DELETE も 204 (べき等) |
 
-アップロードされたファイルは `server/rooms/<roomId>/programs/cool/` 等にルーム別に保存されます。プログラム・マップ・BGM は `server/program-catalog/` / `server/map-catalog/` / `server/music/` にルームを跨いで共通保存されます。
+アップロードされたファイルは `server/rooms/<roomId>/programs/cool/` 等にルーム別に保存されます。プログラム・マップ・BGM・SE は `server/program-catalog/` / `server/map-catalog/` / `server/music/` / `server/sounds/` にルームを跨いで共通保存されます。
+
+SE の実体は `apps/frontend/src/assets/Sound/` に同梱し、`server/sounds/` は**差し替え用**です。同名 (拡張子は問わない) が置かれていれば同梱分より優先されます。BGM (`music.ts`) が「自由な名前で蓄積して選ぶ」構造なのに対し、SE は場面ごとに名前 (`SoundKey`、`packages/ws-types` の `SOUND_KEYS` が単一情報源) が決まっていて選ぶ余地がないため、アップロードは「この場面キーを差し替える」1本のみで、保存名は常にサーバー側で場面キーへ強制する。設定ダイアログの SE タブから場面ごとにアップロード/削除できるほか、`server/sounds/` へ利用者が直接ファイルを置く (正規名にリネームして) こともできる。
+
+**`server/music/` と `server/sounds/` はどちらも空でありえます。** そのとき一覧は空配列を返し、BGM は無音、SE は同梱分が鳴ります。音源の有無で画面や進行が変わってはいけません。
 
 ---
 
@@ -793,15 +808,18 @@ App.tsx (ErrorBoundary でラップ)
 ├── Lobby.tsx               (?room なし — Web サービスモードのロビー)
 │
 ├── DisplayMode.tsx         (?room=xxx&mode=display)
-│   ├── SetupWaiting        (setup フェーズの待機画面)
+│   │                       displayScene() が出す画面を決め、BGM もその場面から選ぶ
+│   ├── SetupWaiting        (waiting = 接続待ち)
 │   │   ├── MapPreview (SetupWaiting 内) これから戦うマップ。第2ゲーム前は盤面と同じ向きに反転
 │   │   └── BracketView / LeagueTable    大会運営中の勝ち上がり (fit で空きいっぱいに拡大)
-│   └── MainWindow.tsx      (playing/finished フェーズ)
+│   ├── TournamentStandby   (standby = 大会運営中で次の試合が未準備。表だけを大きく見せる)
+│   ├── TournamentFinale    (award   = 全試合が確定したあとの表彰)
+│   └── MainWindow.tsx      (playing = 対戦中 / result = 決着した盤面)
 │       ├── PlayerSidePanel.tsx × 2   左右のスコアパネル (1ゲーム制/2ゲーム制で明細が変わる)
 │       └── GameBoardCanvas.tsx       盤面描画 (探索範囲・決着演出・ダーク幕)
 │
 ├── ControlApp              (?room=xxx&mode=control)
-│   ├── SettingDialog.tsx        表示/対戦/BGM/環境 (全フェーズ)。設定の集約先
+│   ├── SettingDialog.tsx        表示/対戦/BGM/SE/環境 (全フェーズ)。設定の集約先
 │   ├── ProgramLibraryDialog.tsx プログラムライブラリの管理 (setup フェーズのみ)
 │   ├── MapLibraryDialog.tsx     マップライブラリの管理 (setup フェーズのみ)
 │   ├── MapEditorDialog.tsx      (マップ列「エディタ」タブの「エディタで編集...」から開く)
@@ -842,16 +860,16 @@ App.tsx (ErrorBoundary でラップ)
 | `useGameState(wsUrl, roomId)` | WS 接続・join_room 送信・ゲーム状態管理 |
 | `useLobby(wsUrl)` | ロビー用 WS 接続・create_room / join_room |
 | `usePersistedState(key, defaults)` | localStorage 永続化 + storage イベントでのウィンドウ間同期の共通実装 |
-| `useClientPrefs()` | 表示・音の好み (muted/bgmMuted/bgmTrack/theme/displayTitle/veilAlpha)。`u15_client_prefs` |
+| `useMuteOverride()` | ブラウザ観戦者が自分の端末用に SE/BGM ミュートを上書きする値。`ServerStatusPayload` には乗らないローカル専用設定。`u15_mute_override` |
 | `useMatchConfig()` | timeout / turnDelay。`ServerStatusPayload` に無いためクライアント側でキャッシュ。`u15_match_config` |
 | `useEnvConfig()` | logDir / pythonCommand (Electron ローカル限定)。`u15_env_config` |
 | `useMapGenParams()` | ランダム生成のパラメータ (sizeIdx/blockNum/itemNum/turnNum/mirror)。`u15_map_gen_params` |
-| `useSound()` | SE 再生 |
-| `useGamePhaseSound(snapshot, serverStatus, gameEnd, muted)` | フェーズ遷移 (go/finish/win) とスコア変化の SE 再生。ControlApp と DisplayMode で共用 |
+| `useSound(httpBase, enabled)` | SE 再生。`SoundKey` の値がそのまま音源のファイル名。同梱の音を同期的に読み、`GET /api/sounds` に同名があればそちらへ差し替える。`enabled=false` の窓では読み込まない |
+| `useGamePhaseSound(input)` | 場面の切り替わりとスコア変化の SE 再生。ControlApp と DisplayMode で共用し、`enabled` で鳴らす窓を 1 つに絞る |
 | `useTextures(theme)` | テーマ別テクスチャ読込。GameBoardCanvas / MapEditorDialog / MapThumbnail で共用 |
 | `useCurrentMap(httpBase, roomId, isConnected, serverStatus)` | 今出ているマップ (`GET /api/maps/current`)。マップ変更の WS イベントは無いので setup 中は `server_status` のたびに取り直す。同じ内容なら state を更新しない |
 | `useFitScale(max, min)` | 入れ物と中身を実測して表示倍率を出す。`FitArea` 経由で使う |
-| `useBgm(phase, muted)` | フェーズに応じた BGM 再生・停止 |
+| `useBgm(httpBase, track, muted, enabled)` | BGM の再生・停止。鳴らす曲は呼び出し側が場面から決める。Audio は常に 1 つだけ持つ |
 | `useStartCountdown(phase, turnInfo)` | ゲーム開始カウントダウンの表示制御 |
 | `useFileUpload()` | XHR multipart アップロード |
 
@@ -861,18 +879,17 @@ App.tsx (ErrorBoundary でラップ)
 
 | 分類 | 例 | 真実の所在 | UI 上の置き場所 |
 |---|---|---|---|
-| A. クライアント表示設定 | `muted` `bgmTrack` `theme` `displayTitle` `veilAlpha` | localStorage (`useClientPrefs`)。storage イベントで観戦ウィンドウと同期する | `SettingDialog` (全フェーズ) |
+| A. 観戦画面の表示・音設定 | `muted` `bgmMuted` `bgmTrack{0,1,Wait,Result,Award}` `theme` `displayTitle` `veilAlpha` | **`ServerStatusPayload.displayPrefs`**。`darkMode` と同じくクライアントにキャッシュを持たない (SE/BGM ミュートだけはブラウザ観戦者が `useMuteOverride` でローカルに上書きできる) | `SettingDialog` (全フェーズ) |
 | B. 対戦設定・サーバー既読返し | `doubleMode` `repeatMode` `demoMode` `darkMode` | **`ServerStatusPayload`**。クライアントにキャッシュを持たない | `SettingDialog`「対戦」タブ (`darkMode` のみ「表示」タブ) |
 | C. 対戦設定・サーバー未返却 | `timeout` `turnDelay` | クライアントのキャッシュのみ (`useMatchConfig`) | `SettingDialog`「対戦」タブ |
 | B'. マップの選択状態 | `mapSource` (`random` / `catalog` / `editor`) | **`ServerStatusPayload.mapSource`**。`MapManager` が保持する | `StartupDialog` マップ列の `MapSourceSection` |
 | C'. マップ生成パラメータ | `sizeIdx` `blockNum` `itemNum` `turnNum` `mirror` | クライアントのキャッシュ (`useMapGenParams`) + **サーバーも `MapManager.params` として保持** | `MapSourceSection`「ランダム」タブ・`MapEditorDialog` |
 | D. 環境設定 (ローカル限定) | `logDir` `pythonCommand` | クライアントのキャッシュ (`useEnvConfig`) | `SettingDialog`「環境」タブ |
 
-**分類 A のうち `veilAlpha` (ダーク幕の濃さ) だけは `darkMode` と同じく [保存] を待たずに即反映する。**
-会場のプロジェクタに投影しながら見え方を確かめて決める値で、保存を挟むと調整にならないため。
-`SettingDialog` は draft にも同じ値を書き込み、後から [保存] を押しても開いた時点の濃さに
-巻き戻らないようにしている。範囲 (`VEIL_ALPHA_MIN`/`MAX`) と既定値は `useClientPrefs` が持ち、
-`GameBoardCanvas` 側でも同じ範囲にクランプする。
+**分類 A は表示・BGM・SE のどの項目も [保存] を待たずに即反映する。** `darkMode` と同じく
+サーバーが真実を持つ値で、会場のプロジェクタに投影しながら見え方や音を確かめて決めるため、
+保存を挟むと調整にならない。`veilAlpha` の範囲 (`VEIL_ALPHA_MIN`/`MAX`) と既定値は
+`@u15/ws-types` (`protocol.ts`) が持ち、`GameBoardCanvas` 側でも同じ範囲にクランプする。
 
 **分類 C' は接続後に一度 push すること。** `MapManager` は自分の `params` を使って
 起動時・`requestReset`・`requestRepeat` でマップを再生成する。クライアントが `set_map_params` を
