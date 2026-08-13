@@ -13,7 +13,7 @@ import {
 import { fetchMusicFiles, fetchSoundFiles } from '../lib/api';
 
 interface Props {
-  prefs:               DisplayPrefs;
+  displayPrefs:        DisplayPrefs;
   envConfig:           EnvConfig;
   status:              ServerStatusPayload;
   matchConfig:         MatchConfig;
@@ -56,11 +56,12 @@ const BGM_TRACK_KEYS = ['bgmTrackWait', 'bgmTrack0', 'bgmTrack1', 'bgmTrackResul
 
 // 設定の集約先。表示 / 対戦 / BGM / SE / 環境の5タブ。
 //
-// 「環境」タブだけが下書き + [保存] 方式。表示・BGM・対戦ルールはサーバーが真実を持つ状態
-// (ServerStatusPayload) なので、クライアントに下書きを溜めるとコントロール窓を
-// 複数開いたときに互いの古い値で上書きし合う。ダークモードと同じく即時反映にする。
+// 「環境」タブだけが下書き + [保存] 方式。それ以外 (表示・対戦・BGM・SE) はサーバーが
+// 真実を持つ状態 (ServerStatusPayload) なので、クライアントに下書きを溜めるとコントロール窓を
+// 複数開いたときに互いの古い値で上書きし合う。表示・BGM・SE はさらに全観戦画面 (Electron の
+// 表示ウィンドウ・ブラウザ観戦) に配信されるので、会場で映しながら決める値として即時反映にする。
 export function SettingDialog({
-  prefs, envConfig, status, matchConfig, darkMode, httpBase,
+  displayPrefs, envConfig, status, matchConfig, darkMode, httpBase,
   onSetDisplayPrefs, onSaveEnv, onSetDarkMode,
   onSetDoubleMode, onSetRepeatMode, onSetDemoMode,
   onChangeMatchConfig, onCommitMatchConfig,
@@ -89,7 +90,7 @@ export function SettingDialog({
     setMusicFiles(await fetchMusicFiles(httpBase));
     // 削除したファイルを選んでいた場面は「なし」に戻す (Select に存在しない値が残らないように)
     const patch: Partial<DisplayPrefs> = {};
-    for (const k of BGM_TRACK_KEYS) if (prefs[k] === filename) patch[k] = 'none';
+    for (const k of BGM_TRACK_KEYS) if (displayPrefs[k] === filename) patch[k] = 'none';
     if (Object.keys(patch).length > 0) onSetDisplayPrefs(patch);
   };
 
@@ -146,14 +147,14 @@ export function SettingDialog({
             <tbody>
               <Row label="観戦画面のタイトル">
                 <TextInput
-                  value={prefs.displayTitle}
+                  value={displayPrefs.displayTitle}
                   onChange={e => onSetDisplayPrefs({ displayTitle: e.target.value })}
                   placeholder="CHaser Server"
                   style={{ width: '100%' }}
                 />
               </Row>
               <Row label="テクスチャテーマ">
-                <Select value={prefs.theme} onChange={e => onSetDisplayPrefs({ theme: e.target.value })}>
+                <Select value={displayPrefs.theme} onChange={e => onSetDisplayPrefs({ theme: e.target.value })}>
                   {THEMES.map(t => <option key={t} value={t}>{t}</option>)}
                 </Select>
               </Row>
@@ -165,11 +166,11 @@ export function SettingDialog({
                   <input
                     type="range"
                     min={VEIL_ALPHA_MIN} max={VEIL_ALPHA_MAX} step={0.05}
-                    value={prefs.veilAlpha}
+                    value={displayPrefs.veilAlpha}
                     onChange={e => onSetDisplayPrefs({ veilAlpha: Number(e.target.value) })}
                     style={s.range}
                   />
-                  <span style={s.rangeValue}>{Math.round(prefs.veilAlpha * 100)}%</span>
+                  <span style={s.rangeValue}>{Math.round(displayPrefs.veilAlpha * 100)}%</span>
                 </div>
                 <span style={s.hint}>
                   {darkMode ? '明るい会場ほど濃くします。' : 'ダークモード ON 時の暗さです。'}
@@ -254,34 +255,52 @@ export function SettingDialog({
           <table style={s.table}>
             <tbody>
               <Row label="BGM ミュート">
-                <Checkbox checked={prefs.bgmMuted} onChange={e => onSetDisplayPrefs({ bgmMuted: e.target.checked })} />
+                <Checkbox
+                  checked={displayPrefs.bgmMuted}
+                  onChange={e => onSetDisplayPrefs({ bgmMuted: e.target.checked })}
+                />
               </Row>
               <Row label="接続待ちの BGM">
-                <Select value={prefs.bgmTrackWait} onChange={e => onSetDisplayPrefs({ bgmTrackWait: e.target.value })}>
+                <Select
+                  value={displayPrefs.bgmTrackWait}
+                  onChange={e => onSetDisplayPrefs({ bgmTrackWait: e.target.value })}
+                >
                   <option value="none">なし</option>
                   {musicFiles.map(f => <option key={f} value={f}>{f}</option>)}
                 </Select>
               </Row>
               <Row label="対戦中の BGM (1ゲーム目)">
-                <Select value={prefs.bgmTrack0} onChange={e => onSetDisplayPrefs({ bgmTrack0: e.target.value })}>
+                <Select
+                  value={displayPrefs.bgmTrack0}
+                  onChange={e => onSetDisplayPrefs({ bgmTrack0: e.target.value })}
+                >
                   <option value="none">なし</option>
                   {musicFiles.map(f => <option key={f} value={f}>{f}</option>)}
                 </Select>
               </Row>
               <Row label="対戦中の BGM (2ゲーム目)">
-                <Select value={prefs.bgmTrack1} onChange={e => onSetDisplayPrefs({ bgmTrack1: e.target.value })}>
+                <Select
+                  value={displayPrefs.bgmTrack1}
+                  onChange={e => onSetDisplayPrefs({ bgmTrack1: e.target.value })}
+                >
                   <option value="none">なし</option>
                   {musicFiles.map(f => <option key={f} value={f}>{f}</option>)}
                 </Select>
               </Row>
               <Row label="ゲーム終了の BGM">
-                <Select value={prefs.bgmTrackResult} onChange={e => onSetDisplayPrefs({ bgmTrackResult: e.target.value })}>
+                <Select
+                  value={displayPrefs.bgmTrackResult}
+                  onChange={e => onSetDisplayPrefs({ bgmTrackResult: e.target.value })}
+                >
                   <option value="none">なし</option>
                   {musicFiles.map(f => <option key={f} value={f}>{f}</option>)}
                 </Select>
               </Row>
               <Row label="表彰の BGM">
-                <Select value={prefs.bgmTrackAward} onChange={e => onSetDisplayPrefs({ bgmTrackAward: e.target.value })}>
+                <Select
+                  value={displayPrefs.bgmTrackAward}
+                  onChange={e => onSetDisplayPrefs({ bgmTrackAward: e.target.value })}
+                >
                   <option value="none">なし</option>
                   {musicFiles.map(f => <option key={f} value={f}>{f}</option>)}
                 </Select>
@@ -323,7 +342,10 @@ export function SettingDialog({
           <table style={s.table}>
             <tbody>
               <Row label="SE ミュート">
-                <Checkbox checked={prefs.muted} onChange={e => onSetDisplayPrefs({ muted: e.target.checked })} />
+                <Checkbox
+                  checked={displayPrefs.muted}
+                  onChange={e => onSetDisplayPrefs({ muted: e.target.checked })}
+                />
               </Row>
               {SOUND_KEYS.map(key => {
                 const file = soundByKey.get(key);

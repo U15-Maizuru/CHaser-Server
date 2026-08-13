@@ -1,6 +1,9 @@
-import type { DisplayPrefs, InlineMapData, ServerPhase, ServerStatusPayload, TournamentStatePayload } from '@u15/ws-types';
+import type {
+  DisplayPrefs, InlineMapData, ServerPhase, ServerStatusPayload, TournamentStatePayload,
+} from '@u15/ws-types';
 import { DEFAULT_DISPLAY_PREFS, hasQualifying, idxForSide, MapObject, roundPointsFor, SCENE_FADE_MS } from '@u15/ws-types';
 import { useGameState } from '../hooks/useGameState';
+import { useMuteOverride } from '../hooks/useMuteOverride';
 import { useGamePhaseSound } from '../hooks/useGamePhaseSound';
 import { useStartCountdown } from '../hooks/useStartCountdown';
 import { useBgm } from '../hooks/useBgm';
@@ -84,6 +87,15 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
   const state   = useGameState(wsUrl, roomId);
   const { serverStatus, snapshot, turnInfo, gameEnd, isConnected, tournamentState } = state;
   const prefs = serverStatus?.displayPrefs ?? DEFAULT_DISPLAY_PREFS;
+
+  // 表示・BGM 選曲・タイトル等はコントロールパネルが決めて全観戦画面に配信する値をそのまま使う。
+  // SE/BGM のミュートだけは、ブラウザで観戦している端末ごとに上書きできる (自分の音量として)。
+  // 会場の Electron 表示ウィンドウ (プロジェクタ等) には上書き UI を出さない
+  const isBrowserSpectator = !window.electronAPI;
+  const { override: muteOverride, setOverride: setMuteOverride } = useMuteOverride();
+  const effectiveMuted    = isBrowserSpectator && muteOverride !== null ? muteOverride : prefs.muted;
+  const effectiveBgmMuted = isBrowserSpectator && muteOverride !== null ? muteOverride : prefs.bgmMuted;
+
   const phase = serverStatus?.phase ?? 'setup';
   // 大会中でなければ結果は使われない
   const groupView = displayQualifyingPhase(tournamentState);
@@ -106,7 +118,7 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
   useGamePhaseSound({
     httpBase, snapshot, serverStatus, gameEnd, turnInfo, countdown,
     awarding: scene === 'award',
-    muted: prefs.muted, enabled: true,
+    muted: effectiveMuted, enabled: true,
   });
   // 対戦中の BGM は開始カウントダウンが終わってから鳴らす (カウント中は無音)。
   // 合図に turnInfo を使うのは、phase が playing になった時点ではまだカウント中で、
@@ -116,7 +128,7 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
   useBgm(
     httpBase,
     holdingBgm ? 'none' : BGM_OF_SCENE[scene](prefs, serverStatus?.currentRound ?? 0),
-    prefs.bgmMuted, true,
+    effectiveBgmMuted, true,
   );
   // 待機中にこれから戦うマップを見せる (対戦中は盤面そのものが出るので使わない)
   const { currentMap } = useCurrentMap(httpBase, roomId, isConnected, serverStatus);
@@ -126,6 +138,9 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
       <div style={splash.root}>
         <div style={splash.title}>{prefs.displayTitle}</div>
         <div style={splash.sub}>バックエンドに接続中...</div>
+        {isBrowserSpectator && (
+          <MuteToggle muted={effectiveMuted} onToggle={() => setMuteOverride(!effectiveMuted)} />
+        )}
       </div>
     );
   }
@@ -177,9 +192,33 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
     <>
       {content}
       <div style={{ ...curtainStyle, opacity: curtain }} />
+      {/* 対戦中 (match) は盤面上部のプレイヤー名表示と重なるので出さない */}
+      {isBrowserSpectator && displayedGroup !== 'match' && (
+        <MuteToggle muted={effectiveMuted} onToggle={() => setMuteOverride(!effectiveMuted)} />
+      )}
     </>
   );
 }
+
+/**
+ * ブラウザ観戦者だけに出す、自分の端末用のミュート切り替え。会場の Electron 表示ウィンドウ
+ * (プロジェクタ等、観客の目に触れる画面) には出さない — DisplayMode 側で isBrowserSpectator を見て出し分ける
+ */
+function MuteToggle({ muted, onToggle }: { muted: boolean; onToggle: () => void }) {
+  return (
+    <button type="button" onClick={onToggle} style={muteToggleStyle}>
+      {muted ? 'ミュート解除' : 'ミュート'}
+    </button>
+  );
+}
+
+const muteToggleStyle: React.CSSProperties = {
+  position: 'fixed', top: 12, right: 12, zIndex: 10000,
+  padding: '6px 12px', borderRadius: 999, border: 'none',
+  background: 'rgba(0, 0, 0, 0.55)', color: '#fff',
+  fontSize: 12, fontWeight: 700, letterSpacing: '0.04em',
+  cursor: 'pointer',
+};
 
 // 場面切り替えの暗転。displayedGroup が裏で入れ替わる間、画面全体を黒で覆う
 const curtainStyle: React.CSSProperties = {

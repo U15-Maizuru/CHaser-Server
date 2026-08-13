@@ -54,9 +54,7 @@ function ControlApp({ roomId }: { roomId: string }) {
   const { params: mapGenParams }               = useMapGenParams();
   const { envConfig, update: updateEnvConfig } = useEnvConfig();
   const { serverStatus, isConnected, gameEnd, snapshot } = state;
-  // 表示・BGM 設定はサーバーが真実を持つ (ダークモードと同じ)。複数のコントロール窓を
-  // 開いても互いの古い値で上書きし合わないよう、クライアントにキャッシュを持たない
-  const prefs = serverStatus?.displayPrefs ?? DEFAULT_DISPLAY_PREFS;
+  const displayPrefs = serverStatus?.displayPrefs ?? DEFAULT_DISPLAY_PREFS;
 
   // コントロール窓には場面転換の暗転が無いので、phase の変化がそのままカウントダウン開始の合図
   const countdown = useStartCountdown(serverStatus?.phase === 'playing', state.turnInfo);
@@ -65,7 +63,7 @@ function ControlApp({ roomId }: { roomId: string }) {
   useGamePhaseSound({
     httpBase: HTTP_BASE,
     snapshot, serverStatus, gameEnd, turnInfo: state.turnInfo, countdown,
-    awarding: false, muted: prefs.muted, enabled: false,
+    awarding: false, muted: displayPrefs.muted, enabled: false,
   });
 
   const [showSettings,       setShowSettings]       = useState(false);
@@ -204,7 +202,7 @@ function ControlApp({ roomId }: { roomId: string }) {
     <>
       {showSettings && (
         <SettingDialog
-          prefs={prefs}
+          displayPrefs={displayPrefs}
           envConfig={envConfig}
           status={serverStatus ?? defaultStatus}
           matchConfig={matchConfig}
@@ -236,7 +234,7 @@ function ControlApp({ roomId }: { roomId: string }) {
       {showMapEditor && editorSeed && (
         <MapEditorDialog
           initialMap={editorSeed}
-          theme={prefs.theme}
+          theme={displayPrefs.theme}
           httpBase={HTTP_BASE}
           onApply={handleMapEditorApply}
           onSaveToLibrary={(map, name) => saveMap(toInlineMapData(map), name)}
@@ -259,8 +257,8 @@ function ControlApp({ roomId }: { roomId: string }) {
               status={serverStatus ?? defaultStatus}
               httpBase={HTTP_BASE}
               roomId={roomId}
-              displayTitle={prefs.displayTitle}
-              theme={prefs.theme}
+              displayTitle={displayPrefs.displayTitle}
+              theme={displayPrefs.theme}
               currentMap={currentMap}
               canEditMap={canEditMap}
               onSetClient={state.setClient}
@@ -281,11 +279,11 @@ function ControlApp({ roomId }: { roomId: string }) {
               serverStatus={serverStatus}
               isConnected={isConnected}
               phase={phase}
-              theme={prefs.theme}
-              veilAlpha={prefs.veilAlpha}
+              theme={displayPrefs.theme}
+              veilAlpha={displayPrefs.veilAlpha}
               variant="control"
               countdown={countdown}
-              displayTitle={prefs.displayTitle}
+              displayTitle={displayPrefs.displayTitle}
             />
           )}
         </div>
