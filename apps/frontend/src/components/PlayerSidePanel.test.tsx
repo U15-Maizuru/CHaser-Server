@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import type { GameStateSnapshot, RoundResult, ServerStatusPayload } from '@u15/ws-types';
-import { Reason, Winner } from '@u15/ws-types';
+import { DEFAULT_DISPLAY_PREFS, Reason, Winner } from '@u15/ws-types';
 import { PlayerSidePanel } from './PlayerSidePanel';
 import { PENALTY_COLOR, WIN_BASE } from '../styles/tokens';
 
@@ -31,6 +31,7 @@ function makeStatus(over: Partial<ServerStatusPayload> = {}): ServerStatusPayloa
     doubleMode: true, repeatMode: false, demoMode: false,
     currentRound: 1, roundResults: [], darkMode: false,
     mapSource: { kind: 'random' } as ServerStatusPayload['mapSource'],
+    displayPrefs: DEFAULT_DISPLAY_PREFS,
     ...over,
   };
 }

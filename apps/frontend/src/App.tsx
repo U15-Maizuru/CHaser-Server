@@ -297,6 +297,7 @@ function ControlApp({ roomId }: { roomId: string }) {
               isConnected={isConnected}
               phase={phase}
               theme={prefs.theme}
+              veilAlpha={prefs.veilAlpha}
               variant="control"
               countdown={countdown}
               displayTitle={prefs.displayTitle}

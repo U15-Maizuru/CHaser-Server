@@ -106,6 +106,7 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
         isConnected={isConnected}
         phase={phase}
         theme={prefs.theme}
+        veilAlpha={prefs.veilAlpha}
         variant="display"
         countdown={countdown}
         displayTitle={prefs.displayTitle}

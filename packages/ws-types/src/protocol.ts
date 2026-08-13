@@ -164,7 +164,14 @@ export interface DisplayPrefs {
   bgmTrack:     string;  // 選択中の BGM ファイル名 ('none' = 再生しない)
   theme:        string;  // 'Jewel' | 'Light' | 'Heavy' | 'RPG'
   displayTitle: string;  // 観戦/表示画面のタイトル文字列
+  // ダークモードで盤面を覆う幕の濃さ (0-1)。同じ濃さでも会場のプロジェクタ/照明では
+  // 白く飛んだり真っ暗になったりするため、投影環境に合わせて調整できるようにしている
+  veilAlpha:    number;
 }
+
+export const VEIL_ALPHA_MIN     = 0.2;
+export const VEIL_ALPHA_MAX     = 0.95;
+export const VEIL_ALPHA_DEFAULT = 0.55; // 視界と探索範囲だけが見える演出を保ちつつ、盤面全体の形は読める濃さ
 
 export const DEFAULT_DISPLAY_PREFS: Readonly<DisplayPrefs> = {
   muted:        false,
@@ -172,6 +179,7 @@ export const DEFAULT_DISPLAY_PREFS: Readonly<DisplayPrefs> = {
   bgmTrack:     'none',
   theme:        'Jewel',
   displayTitle: 'CHaser Server',
+  veilAlpha:    VEIL_ALPHA_DEFAULT,
 };
 
 // --- Commands (Frontend → Backend) ---

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Action, MapObject } from '@u15/ws-types';
+import { Action, MapObject, VEIL_ALPHA_DEFAULT, VEIL_ALPHA_MIN, VEIL_ALPHA_MAX } from '@u15/ws-types';
 import type { GameStateSnapshot, Point, ScanInfo } from '@u15/ws-types';
 import { useTextures, type TextureKey } from '../hooks/useTextures';
 import type { DecisiveEffect } from '../lib/decisiveEffect';
@@ -28,8 +28,6 @@ const MIN_WALK_MS   = 60;
 const MAX_WALK_MS   = 260;
 
 const VEIL_WIPE_MS = 800; // ゲーム終了時にダーク幕が上から消えていくワイプ演出の所要時間
-// ダーク幕の濃さ。視界と探索範囲だけが見える演出を保ちつつ、盤面全体の形は読める濃さにする
-const VEIL_ALPHA = 0.55;
 
 // 決着演出 (敗者の上にブロック / 周囲4マスの強調) のインパクト部分の長さ。
 // これが終わったあとも、演出そのものは静止した状態で結果表示中ずっと残り続ける。
@@ -66,6 +64,8 @@ interface Props {
   theme?:   string;
   cellSize?: number;   // 外部からセルサイズを指定 (省略時は DEFAULT_CELL)
   darkMode?: boolean;  // true: 各チームの現在地周辺 (3x3) のみ明るく表示し、他は暗く覆う
+  /** ダーク幕の濃さ (0-1)。会場のプロジェクタ/照明に合わせて設定から調整する */
+  veilAlpha?: number;
   roundEnded?: boolean; // true: ゲームが終了した瞬間にダーク幕を上からワイプで解除する
   /** 決着演出 (全決着理由。勝者の 👑 と敗者の暗転を含む)。null なら何も描かない */
   decisive?: DecisiveEffect | null;
@@ -99,17 +99,21 @@ interface ScanFx {
 }
 
 interface DrawContext {
-  field:    MapObject[][];
-  size:     Point;
-  textures: Partial<Record<TextureKey, HTMLImageElement>>;
-  darkMode: boolean;
-  flip:     boolean;
-  CELL:     number;
-  W:        number;
-  H:        number;
+  field:     MapObject[][];
+  size:      Point;
+  textures:  Partial<Record<TextureKey, HTMLImageElement>>;
+  darkMode:  boolean;
+  veilAlpha: number;
+  flip:      boolean;
+  CELL:      number;
+  W:         number;
+  H:         number;
 }
 
-export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellSize = DEFAULT_CELL, darkMode = false, roundEnded = false, decisive = null }: Props) {
+export function GameBoardCanvas({
+  snapshot, flip = false, theme = 'Jewel', cellSize = DEFAULT_CELL,
+  darkMode = false, veilAlpha = VEIL_ALPHA_DEFAULT, roundEnded = false, decisive = null,
+}: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const maskCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const textures  = useTextures(theme);
@@ -119,9 +123,14 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
   const W = size.x * CELL;
   const H = size.y * CELL;
 
+  // 古い localStorage や外部からの指定で範囲外の値が来ても、幕が消える/真っ黒になる事故は避ける
+  const veil = Number.isFinite(veilAlpha)
+    ? Math.max(VEIL_ALPHA_MIN, Math.min(VEIL_ALPHA_MAX, veilAlpha))
+    : VEIL_ALPHA_DEFAULT;
+
   // rAF ループや複数の effect から常に最新の描画用データを読めるようにしておく
-  const drawCtxRef = useRef<DrawContext>({ field, size, textures, darkMode, flip, CELL, W, H });
-  drawCtxRef.current = { field, size, textures, darkMode, flip, CELL, W, H };
+  const drawCtxRef = useRef<DrawContext>({ field, size, textures, darkMode, veilAlpha: veil, flip, CELL, W, H });
+  drawCtxRef.current = { field, size, textures, darkMode, veilAlpha: veil, flip, CELL, W, H };
 
   const prevTargetRef       = useRef<[Point, Point] | null>(null);
   const lastSnapshotTimeRef = useRef<number | null>(null);
@@ -197,7 +206,7 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const { field, size, textures, darkMode, flip, CELL, W, H } = drawCtxRef.current;
+    const { field, size, textures, darkMode, veilAlpha, flip, CELL, W, H } = drawCtxRef.current;
 
     ctx.clearRect(0, 0, W, H);
 
@@ -424,7 +433,7 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
       const maskCtx = maskCanvas.getContext('2d');
       if (maskCtx) {
         maskCtx.clearRect(0, 0, W, H);
-        maskCtx.fillStyle = `rgba(0,0,0,${VEIL_ALPHA})`;
+        maskCtx.fillStyle = `rgba(0,0,0,${veilAlpha})`;
         // ワイプ進行中は幕の上端を下へ動かし、上から徐々に消えていくように見せる
         const wipe = wipeRef.current;
         const coverTop = wipe ? H * Math.min(1, (now - wipe.start) / wipe.duration) : 0;
@@ -709,11 +718,12 @@ export function GameBoardCanvas({ snapshot, flip = false, theme = 'Jewel', cellS
   }, [decisive]);
 
   // ターン間隔の計測やアニメーション状態とは無関係な見た目の変化 (テーマ・盤面サイズ・反転・
-  // ダークモード) は、現在の補間位置のまま即座に再描画する
+  // ダークモード・幕の濃さ) は、現在の補間位置のまま即座に再描画する。幕の濃さは設定を
+  // 操作しながら会場の見え方を確かめるため、ターンが進まなくても即反映される必要がある
   useEffect(() => {
     drawFrame(renderPosRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flip, darkMode, textures, CELL, W, H]);
+  }, [flip, darkMode, veil, textures, CELL, W, H]);
 
   useEffect(() => {
     return () => {

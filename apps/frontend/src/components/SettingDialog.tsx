@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { DisplayPrefs, ServerStatusPayload } from '@u15/ws-types';
+import { VEIL_ALPHA_MIN, VEIL_ALPHA_MAX, type DisplayPrefs, type ServerStatusPayload } from '@u15/ws-types';
 import type { EnvConfig } from '../hooks/useEnvConfig';
 import type { MatchConfig } from '../hooks/useMatchConfig';
 import {
@@ -145,6 +145,21 @@ export function SettingDialog({
                     onChange={e => onSetDarkMode(e.target.checked)}
                     style={s.check}
                   />
+                </Row>
+                <Row label="ダーク幕の濃さ">
+                  <div style={s.sliderRow}>
+                    <input
+                      type="range"
+                      min={VEIL_ALPHA_MIN} max={VEIL_ALPHA_MAX} step={0.05}
+                      value={prefs.veilAlpha}
+                      onChange={e => onSetDisplayPrefs({ veilAlpha: Number(e.target.value) })}
+                      style={s.range}
+                    />
+                    <span style={s.rangeValue}>{Math.round(prefs.veilAlpha * 100)}%</span>
+                  </div>
+                  <span style={s.hint}>
+                    {darkMode ? '明るい会場ほど濃くします。' : 'ダークモード ON 時の暗さです。'}
+                  </span>
                 </Row>
               </tbody>
             </table>
@@ -417,6 +432,9 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: 13, fontFamily: FONT_UI,
   },
   check: { width: 16, height: 16, cursor: 'pointer', accentColor: COOL_COLOR },
+  sliderRow:  { display: 'flex', alignItems: 'center', gap: 8 },
+  range:      { flex: 1, minWidth: 0, cursor: 'pointer', accentColor: COOL_COLOR },
+  rangeValue: { fontSize: 11, color: TEXT_SECONDARY, fontFamily: FONT_NUM, width: 34, textAlign: 'right' },
   pathRow: { display: 'flex', alignItems: 'center', gap: 6 },
   pathText: {
     flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',

@@ -765,7 +765,7 @@ App.tsx (ErrorBoundary でラップ)
 | `useGameState(wsUrl, roomId)` | WS 接続・join_room 送信・ゲーム状態管理 |
 | `useLobby(wsUrl)` | ロビー用 WS 接続・create_room / join_room |
 | `usePersistedState(key, defaults)` | localStorage 永続化 + storage イベントでのウィンドウ間同期の共通実装 |
-| `useClientPrefs()` | 表示・音の好み (muted/bgmMuted/bgmTrack/theme/displayTitle)。`u15_client_prefs` |
+| `useClientPrefs()` | 表示・音の好み (muted/bgmMuted/bgmTrack/theme/displayTitle/veilAlpha)。`u15_client_prefs` |
 | `useMatchConfig()` | timeout / turnDelay。`ServerStatusPayload` に無いためクライアント側でキャッシュ。`u15_match_config` |
 | `useEnvConfig()` | logDir / pythonCommand (Electron ローカル限定)。`u15_env_config` |
 | `useMapGenParams()` | ランダム生成のパラメータ (sizeIdx/blockNum/itemNum/turnNum/mirror)。`u15_map_gen_params` |
@@ -784,12 +784,18 @@ App.tsx (ErrorBoundary でラップ)
 
 | 分類 | 例 | 真実の所在 | UI 上の置き場所 |
 |---|---|---|---|
-| A. クライアント表示設定 | `muted` `bgmTrack` `theme` `displayTitle` | localStorage (`useClientPrefs`)。storage イベントで観戦ウィンドウと同期する | `SettingDialog` (全フェーズ) |
+| A. クライアント表示設定 | `muted` `bgmTrack` `theme` `displayTitle` `veilAlpha` | localStorage (`useClientPrefs`)。storage イベントで観戦ウィンドウと同期する | `SettingDialog` (全フェーズ) |
 | B. 対戦設定・サーバー既読返し | `doubleMode` `repeatMode` `demoMode` `darkMode` | **`ServerStatusPayload`**。クライアントにキャッシュを持たない | `SettingDialog`「対戦」タブ (`darkMode` のみ「表示」タブ) |
 | C. 対戦設定・サーバー未返却 | `timeout` `turnDelay` | クライアントのキャッシュのみ (`useMatchConfig`) | `SettingDialog`「対戦」タブ |
 | B'. マップの選択状態 | `mapSource` (`random` / `catalog` / `editor`) | **`ServerStatusPayload.mapSource`**。`MapManager` が保持する | `StartupDialog` マップ列の `MapSourceSection` |
 | C'. マップ生成パラメータ | `sizeIdx` `blockNum` `itemNum` `turnNum` `mirror` | クライアントのキャッシュ (`useMapGenParams`) + **サーバーも `MapManager.params` として保持** | `MapSourceSection`「ランダム」タブ・`MapEditorDialog` |
 | D. 環境設定 (ローカル限定) | `logDir` `pythonCommand` | クライアントのキャッシュ (`useEnvConfig`) | `SettingDialog`「環境」タブ |
+
+**分類 A のうち `veilAlpha` (ダーク幕の濃さ) だけは `darkMode` と同じく [保存] を待たずに即反映する。**
+会場のプロジェクタに投影しながら見え方を確かめて決める値で、保存を挟むと調整にならないため。
+`SettingDialog` は draft にも同じ値を書き込み、後から [保存] を押しても開いた時点の濃さに
+巻き戻らないようにしている。範囲 (`VEIL_ALPHA_MIN`/`MAX`) と既定値は `useClientPrefs` が持ち、
+`GameBoardCanvas` 側でも同じ範囲にクランプする。
 
 **分類 C' は接続後に一度 push すること。** `MapManager` は自分の `params` を使って
 起動時・`requestReset`・`requestRepeat` でマップを再生成する。クライアントが `set_map_params` を

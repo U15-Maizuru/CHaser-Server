@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type {
   ClientStatusPayload, RoundResult, ServerStatusPayload, TournamentMatch,
 } from '@u15/ws-types';
-import { Reason, Winner } from '@u15/ws-types';
+import { DEFAULT_DISPLAY_PREFS, Reason, Winner } from '@u15/ws-types';
 import { DEFAULT_AUTO_PLAY_DELAYS_MS, delayFor, nextAutoPlayAction } from './autoPlay.js';
 import type { AutoPlayInput } from './autoPlay.js';
 
@@ -30,6 +30,7 @@ function status(over: Partial<ServerStatusPayload> = {}): ServerStatusPayload {
     roundResults: [],
     darkMode:     false,
     mapSource:    { kind: 'random' },
+    displayPrefs: DEFAULT_DISPLAY_PREFS,
     ...over,
   };
 }

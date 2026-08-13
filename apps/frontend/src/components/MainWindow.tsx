@@ -28,6 +28,7 @@ interface Props {
   isConnected:     boolean;
   phase:           ServerPhase;
   theme?:          string;
+  veilAlpha?:      number;   // ダーク幕の濃さ (0-1)。会場に合わせて設定から調整する
   variant:         'control' | 'display';
   countdown:       number | null;
   displayTitle:    string;
@@ -73,7 +74,7 @@ function drawText(gameEnd: GameEndPayload): string {
 
 export function MainWindow({
   snapshot, turnInfo, gameEnd, serverStatus, isConnected, phase,
-  theme = 'Jewel', variant, countdown, displayTitle,
+  theme = 'Jewel', veilAlpha, variant, countdown, displayTitle,
 }: Props) {
   const darkMode = (serverStatus?.darkMode ?? false) && countdown === null;
 
@@ -300,6 +301,7 @@ export function MainWindow({
                 <div style={s.boardWrap}>
                   <GameBoardCanvas
                     snapshot={snapshot} theme={theme} cellSize={cellSize} darkMode={darkMode}
+                    veilAlpha={veilAlpha}
                     flip={flip} roundEnded={phase === 'finished'} decisive={decisive}
                   />
                   {countdown !== null && (
