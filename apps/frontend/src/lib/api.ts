@@ -169,6 +169,11 @@ export function uploadMusic(httpBase: string, file: File): Promise<string | null
   return uploadFile(`${httpBase}/api/upload/music`, file);
 }
 
+/** BGM ライブラリから削除する */
+export function deleteMusicFile(httpBase: string, filename: string): Promise<void> {
+  return send(`${httpBase}/api/music/${encodeURIComponent(filename)}`, 'DELETE');
+}
+
 /** SE を1つ差し替える。保存名はサーバー側で key に強制されるので、ファイル名は問わない */
 export function uploadSound(httpBase: string, key: SoundKey, file: File): Promise<string | null> {
   return uploadFile(`${httpBase}/api/upload/sounds/${encodeURIComponent(key)}`, file);

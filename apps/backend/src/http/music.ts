@@ -26,20 +26,32 @@ export function handleMusicRequest(
     return true;
   }
 
-  // GET /api/music/:filename → BGM ファイルの再生用ストリーム
+  // GET/DELETE /api/music/:filename
   const musicMatch = url.pathname.match(/^\/api\/music\/(.+)$/);
-  if (req.method === 'GET' && musicMatch) {
+  if (musicMatch) {
     const filename = sanitizeFilename(decodeURIComponent(musicMatch[1]!));
     const filepath = path.join(MUSIC_DIR, filename);
-    if (!filename || !fs.existsSync(filepath)) {
-      res.writeHead(404);
-      res.end('Not found');
+
+    // DELETE /api/music/:filename → ライブラリから削除
+    if (req.method === 'DELETE') {
+      if (filename && fs.existsSync(filepath)) fs.unlinkSync(filepath);
+      res.writeHead(204);
+      res.end();
       return true;
     }
-    const ext = path.extname(filepath).toLowerCase();
-    res.writeHead(200, { 'Content-Type': ext === '.wav' ? 'audio/wav' : 'audio/mpeg' });
-    fs.createReadStream(filepath).pipe(res);
-    return true;
+
+    // GET /api/music/:filename → BGM ファイルの再生用ストリーム
+    if (req.method === 'GET') {
+      if (!filename || !fs.existsSync(filepath)) {
+        res.writeHead(404);
+        res.end('Not found');
+        return true;
+      }
+      const ext = path.extname(filepath).toLowerCase();
+      res.writeHead(200, { 'Content-Type': ext === '.wav' ? 'audio/wav' : 'audio/mpeg' });
+      fs.createReadStream(filepath).pipe(res);
+      return true;
+    }
   }
 
   return false;

@@ -252,6 +252,21 @@ describe('HttpServer', () => {
       const { files } = await res.json();
       expect(files).toEqual([]);
     });
+
+    it('アップロードした BGM を削除でき、以後は一覧から消える。存在しない削除も 204', async () => {
+      const form = new FormData();
+      form.append('file', new Blob(['fake mp3 bytes']), 'theme.mp3');
+      await fetch(`${baseUrl}/api/upload/music`, { method: 'POST', body: form });
+
+      const deleteRes = await fetch(`${baseUrl}/api/music/${encodeURIComponent('theme.mp3')}`, { method: 'DELETE' });
+      expect(deleteRes.status).toBe(204);
+
+      const { files } = await (await fetch(`${baseUrl}/api/music`)).json();
+      expect(files).not.toContain('theme.mp3');
+
+      const deleteAgain = await fetch(`${baseUrl}/api/music/${encodeURIComponent('theme.mp3')}`, { method: 'DELETE' });
+      expect(deleteAgain.status).toBe(204);
+    });
   });
 
   describe('SE (sounds)', () => {
