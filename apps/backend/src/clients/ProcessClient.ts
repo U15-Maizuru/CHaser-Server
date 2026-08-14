@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
+import iconv from 'iconv-lite';
 import { TcpClient } from '../network/TcpClient.js';
 import { ensureLibDir } from '../libTemplates.js';
 
@@ -36,11 +37,14 @@ export class ProcessClient extends TcpClient {
     // したときに一緒に落ちる (ここを detached にすると別グループの孤児になり killTree が届かなくなる)
     const proc = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], env });
     this.proc = proc;
+    // 対戦プログラム (Python / 参加者提供の BOT exe) は、パイプ経由の標準出力では
+    // Windows のシステムロケール既定である CP932 (Shift_JIS) で日本語を出力するため、
+    // UTF-8 前提の Buffer#toString() だと文字化けする。CP932 として明示的に decode する。
     proc.stdout?.on('data', (d: Buffer) =>
-      process.stdout.write(`[proc] ${d.toString().trimEnd()}\n`),
+      process.stdout.write(`[proc] ${iconv.decode(d, 'cp932').trimEnd()}\n`),
     );
     proc.stderr?.on('data', (d: Buffer) => {
-      const text = d.toString();
+      const text = iconv.decode(d, 'cp932');
       process.stderr.write(`[proc] ${text.trimEnd()}\n`);
       // 管理画面にエラー原因 (Python の例外メッセージ等) を表示するため、直近の出力を保持しておく。
       this.stderrBuf = (this.stderrBuf + text).slice(-MAX_STDERR_CHARS);
@@ -55,8 +59,8 @@ export class ProcessClient extends TcpClient {
         reject(new Error(`プロセスの起動に失敗しました (${command}): ${err.message}`));
       });
       proc.on('close', (code) => {
-        console.log(`[proc] exit: ${code}`);
         if (code !== 0 && code !== null) {
+          console.error(`[proc] exit: ${code}`);
           reject(new Error(this.buildExitMessage(code)));
         }
       });
