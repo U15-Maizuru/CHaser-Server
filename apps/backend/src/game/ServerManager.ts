@@ -1,8 +1,10 @@
+import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { GameSession } from './Game.js';
 import { getLocalIP } from '../network/localIp.js';
 import { DEFAULT_LOG_DIR, openGameLog } from '../log/StableLog.js';
 import { buildRoundResult } from './roundResult.js';
+import { loadLocalSettings, saveLocalSettings } from './localSettingsStore.js';
 
 import type { GameStatus } from './types.js';
 import { SlotManager } from './SlotManager.js';
@@ -51,6 +53,8 @@ export class ServerManager extends EventEmitter {
   private logDir = DEFAULT_LOG_DIR;
   private roomId = 'local';
   private readonly localMode: boolean;
+  private readonly persistSettings: boolean;
+  private readonly localSettingsPath: string;
 
   // requestStart の度に増える世代カウンタ。requestReset 等で対戦を中断した後、
   // 裏で動き続けていた session.run() が遅れて戻ってきても、古い世代の結果で
@@ -68,9 +72,16 @@ export class ServerManager extends EventEmitter {
     demoDelaysMs: DemoDelaysMs = DEFAULT_DEMO_DELAYS_MS,
     // 既定は起動時の環境変数。引数で渡せるようにしてあるのは web モードの挙動をテストできるようにするため
     localMode = (process.env['U15_MODE'] ?? 'local') === 'local',
+    // 表示・BGM/SE・対戦ルールをディスクに永続化するか。ローカルモードの唯一の room だけが
+    // opt-in する (web モードの動的 room やテストは呼び出し元が渡さない限り既定で無効)。
+    // 2つとも使う呼び出し元がほぼ無いため1つのオプションにまとめ、片方だけ渡したい
+    // 呼び出し元 (RoomManager) が undefined を並べて埋める必要が無いようにしている
+    localPersistence: { persistSettings?: boolean; localSettingsPath?: string } = {},
   ) {
     super();
     this.localMode = localMode;
+    this.persistSettings = localPersistence.persistSettings ?? false;
+    this.localSettingsPath = localPersistence.localSettingsPath ?? path.resolve('server/local-settings.json');
     this.localIP   = getLocalIP();
     this.startDelayMs = startDelayMs;
     this.demoDelaysMs = demoDelaysMs;
@@ -78,11 +89,34 @@ export class ServerManager extends EventEmitter {
     this.mapManager = new MapManager();
     this.round     = new RoundController();
 
+    if (this.persistSettings) {
+      const saved = loadLocalSettings(this.localSettingsPath);
+      if (saved.darkMode !== undefined) this.darkMode = saved.darkMode;
+      if (saved.displayPrefs) this.displayPrefs = { ...this.displayPrefs, ...saved.displayPrefs };
+      // setDoubleMode() 等のセッターは canStart() ゲートや randomizeFromCatalog() 等の副作用を
+      // 持つため、初期化はフィールドへの直接代入にする
+      if (saved.doubleMode !== undefined) this.round.doubleMode = saved.doubleMode;
+      if (saved.repeatMode !== undefined) this.round.repeatMode = saved.repeatMode;
+      if (saved.demoMode !== undefined) this.round.demoMode = saved.demoMode;
+    }
+
     this.slots.on('change', () => {
       this.emitStatus();
       this.maybeAutoStartDemo();
     });
     this.slots.on('manual_client_created', (mc: ManualClient) => this.emit('manual_client_created', mc));
+  }
+
+  /** persistSettings が有効なときだけ、表示・BGM/SE・対戦ルールの現在値をディスクに書く */
+  private persistIfEnabled(): void {
+    if (!this.persistSettings) return;
+    saveLocalSettings(this.localSettingsPath, {
+      darkMode:     this.darkMode,
+      displayPrefs: this.displayPrefs,
+      doubleMode:   this.round.doubleMode,
+      repeatMode:   this.round.repeatMode,
+      demoMode:     this.round.demoMode,
+    });
   }
 
   // ── Public commands ────────────────────────────────────────────────────────
@@ -100,12 +134,14 @@ export class ServerManager extends EventEmitter {
   setDoubleMode(enabled: boolean): void {
     if (!this.round.canStart()) return; // setup フェーズ以外は変更不可
     this.round.setDoubleMode(enabled);
+    this.persistIfEnabled();
     this.emitStatus();
   }
 
   setRepeatMode(enabled: boolean): void {
     if (!this.round.canStart()) return; // setup フェーズ以外は変更不可
     this.round.setRepeatMode(enabled);
+    this.persistIfEnabled();
     this.emitStatus();
   }
 
@@ -114,6 +150,7 @@ export class ServerManager extends EventEmitter {
     this.round.setDemoMode(enabled);
     if (!enabled) this.clearDemoTimer();
     if (enabled) void this.randomizeFromCatalog(); // ライブラリから両スロットへランダムに割り当てる
+    this.persistIfEnabled();
     this.emitStatus();
   }
 
@@ -124,12 +161,14 @@ export class ServerManager extends EventEmitter {
 
   setDarkMode(enabled: boolean): void {
     this.darkMode = enabled;
+    this.persistIfEnabled();
     this.emitStatus();
   }
 
   /** 観戦画面の表示・音声設定。コントロールパネルが決め、全観戦画面に配信される */
   setDisplayPrefs(patch: Partial<DisplayPrefs>): void {
     this.displayPrefs = { ...this.displayPrefs, ...patch };
+    this.persistIfEnabled();
     this.emitStatus();
   }
 

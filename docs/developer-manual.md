@@ -471,6 +471,11 @@ shutdown(): void
 `U15_MODE=local` のときのみ有効になる。Web モードではリモートのクライアントがサーバー上の
 任意パスへの書き込みや任意コマンドの実行経路に触れないよう、常に無視される。
 
+ローカルモードの唯一の room だけ `persistSettings` を true で作られ
+(`RoomManager.createRoom` の第3引数)、表示・BGM/SE・対戦ルールの現在値を
+`localSettingsStore.ts` 経由で `server/local-settings.json` に保存し、起動時に読み込む。
+Web モードの room は対戦のたびに作られては消えるため対象外。
+
 **WsServer** — ルーム対応の WebSocket サーバー
 
 ソケット⇔ルームの紐付け (`socketToRoom` / `roomSockets`) とブロードキャストを WsServer 自身が保持し、実際のメッセージ処理は2つのクラスに委譲する薄いコーディネーター。

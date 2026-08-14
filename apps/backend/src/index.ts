@@ -28,7 +28,7 @@ async function main() {
   ws.setRoomManager(rm);
 
   if (U15_MODE === 'local') {
-    const room = rm.createRoom('local', LOCAL_PORTS);
+    const room = rm.createRoom('local', LOCAL_PORTS, true);
     if (!room) throw new Error('ローカルルームの作成に失敗しました');
     console.log('CHaser Server starting... (ローカルモード)');
     console.log(`  ─────────────────────────────────────────`);

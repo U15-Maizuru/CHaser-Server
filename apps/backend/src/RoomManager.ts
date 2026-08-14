@@ -34,7 +34,7 @@ export class RoomManager {
     this.sweepTimer = setInterval(() => this.sweepExpired(), SWEEP_INTERVAL_MS);
   }
 
-  createRoom(id?: string, fixedPorts?: [number, number]): Room | null {
+  createRoom(id?: string, fixedPorts?: [number, number], persistSettings = false): Room | null {
     let ports: [number, number];
     let fromPool: boolean;
 
@@ -56,7 +56,7 @@ export class RoomManager {
     }
 
     const roomId  = id ?? randomUUID();
-    const manager = new ServerManager(ports);
+    const manager = new ServerManager(ports, undefined, undefined, undefined, { persistSettings });
     manager.setRoomId(roomId);
     const room: Room = {
       id:         roomId,

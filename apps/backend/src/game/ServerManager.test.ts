@@ -381,4 +381,65 @@ describe('ServerManager', () => {
       expect(sm.getStatus().clients[0].error).toBeUndefined();
     });
   });
+
+  describe('persistSettings (表示・BGM/SE・対戦ルールのローカル永続化)', () => {
+    let settingsPath: string;
+
+    beforeEach(() => {
+      settingsPath = path.join(TEST_LOG_DIR, `local-settings-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+    });
+
+    it('無効時 (デフォルト) は setDisplayPrefs 等を呼んでもファイルを作らない', () => {
+      sm = makeServerManager([39450, 39451], 0);
+      sm.setDarkMode(true);
+      sm.setDisplayPrefs({ theme: 'RPG' });
+      sm.setDoubleMode(true);
+      expect(fs.existsSync(settingsPath)).toBe(false);
+    });
+
+    it('有効時、設定変更のたびに現在値をファイルへ書く', () => {
+      sm = new ServerManager([39452, 39453], 0, undefined, true, { persistSettings: true, localSettingsPath: settingsPath });
+      sm.setDarkMode(true);
+      sm.setDisplayPrefs({ theme: 'RPG', displayTitle: 'テスト大会' });
+      sm.setDoubleMode(true);
+      sm.setRepeatMode(true);
+
+      const saved = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+      expect(saved.darkMode).toBe(true);
+      expect(saved.displayPrefs).toMatchObject({ theme: 'RPG', displayTitle: 'テスト大会' });
+      expect(saved.doubleMode).toBe(true);
+      expect(saved.repeatMode).toBe(true);
+    });
+
+    it('新しい ServerManager が同じファイルから前回の設定を読み込む (demoMode 含め、副作用なしで)', async () => {
+      sm = new ServerManager([39454, 39455], 0, undefined, true, { persistSettings: true, localSettingsPath: settingsPath });
+      sm.setDarkMode(true);
+      sm.setDisplayPrefs({ theme: 'Heavy' });
+      sm.setDoubleMode(true);
+      sm.setRepeatMode(true);
+      sm.setDemoMode(true); // カタログが空なので割り当ては起きないが、demoMode 自体は true になる
+      await sleep(50);
+      sm.shutdown();
+
+      const randomizeSpy = vi.spyOn(
+        ServerManager.prototype as unknown as { randomizeFromCatalog(): Promise<void> },
+        'randomizeFromCatalog',
+      );
+      const sm2 = new ServerManager([39456, 39457], 0, undefined, true, { persistSettings: true, localSettingsPath: settingsPath });
+      try {
+        const status = sm2.getStatus();
+        expect(status.darkMode).toBe(true);
+        expect(status.displayPrefs.theme).toBe('Heavy');
+        expect(status.doubleMode).toBe(true);
+        expect(status.repeatMode).toBe(true);
+        expect(status.demoMode).toBe(true);
+        // 読み込みはフィールドへの直接代入で行われ、setDemoMode() のような副作用 (カタログからの
+        // ランダム割当) は起きない
+        expect(randomizeSpy).not.toHaveBeenCalled();
+      } finally {
+        sm2.shutdown();
+        randomizeSpy.mockRestore();
+      }
+    });
+  });
 });
