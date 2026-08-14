@@ -111,14 +111,29 @@ export function handleTournamentRequest(
   }
 
   // POST /api/tournament/upload → .zip / .json のファイルアップロード
+  //
+  // import ルートと同じく、運営中 (bind 済み) の大会IDへの上書きは拒否する。ここは
+  // handleUpload の仕組み上レスポンスが常に200固定 (httpUtil.ts) なので、409ではなく
+  // 他の取り込みエラーと同じく { error } で返す。
   if (req.method === 'POST' && url.pathname === '/api/tournament/upload') {
     const staging = fs.mkdtempSync(path.join(os.tmpdir(), 'u15-tup-'));
+    const rejectIfBound = (id: string): void => {
+      if (deps.boundRoomOf(id)) {
+        throw new DefinitionError('運営中の大会は上書きできません。先に運営を終了してください');
+      }
+    };
     handleUpload(req, res, staging, ['.zip', '.json'], 20 * 1024 * 1024, (outPath, originalName) => {
       try {
         const base = path.basename(originalName).replace(/\.(zip|json)$/i, '');
-        const result = path.extname(outPath).toLowerCase() === '.zip'
-          ? importFromZip(fs.readFileSync(outPath), base)
-          : importFromJson(JSON.parse(fs.readFileSync(outPath, 'utf-8')), base);
+        let result;
+        if (path.extname(outPath).toLowerCase() === '.zip') {
+          result = importFromZip(fs.readFileSync(outPath), base, rejectIfBound);
+        } else {
+          const raw = JSON.parse(fs.readFileSync(outPath, 'utf-8')) as unknown;
+          const id = (raw as { id?: unknown }).id;
+          if (typeof id === 'string') rejectIfBound(id);
+          result = importFromJson(raw, base);
+        }
         return { ...result };
       } catch (e) {
         const message = e instanceof DefinitionError || e instanceof ZipError

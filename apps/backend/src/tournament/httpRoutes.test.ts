@@ -404,6 +404,35 @@ describe('/api/tournament', () => {
     });
   });
 
+  describe('POST /api/tournament/upload', () => {
+    it('運営中の大会は .json のアップロードで上書きできない', async () => {
+      writeTournament('cup-a', DEF);
+      bound = 'cup-a';
+
+      const fd = new FormData();
+      fd.append('file', new Blob([JSON.stringify({ ...DEF, id: 'cup-a', name: '差し替え後' })]), 'cup-a.json');
+      const res  = await fetch(`${baseUrl}/api/tournament/upload`, { method: 'POST', body: fd });
+      const body = await res.json() as { error?: string };
+
+      expect(body.error).toContain('運営中の大会は上書きできません');
+      expect(loadTournament('cup-a')!.def.name).toBe('HTTPテスト杯');
+    });
+
+    it('運営中の大会は .zip のアップロードで上書きできない', async () => {
+      writeTournament('cup-a', DEF);
+      const zip = await (await fetch(`${baseUrl}/api/tournament/cup-a/export?format=bundle.zip`)).arrayBuffer();
+      bound = 'cup-a';
+
+      const fd = new FormData();
+      fd.append('file', new Blob([zip]), 'HTTPテスト杯_大会データ.zip');
+      const res  = await fetch(`${baseUrl}/api/tournament/upload`, { method: 'POST', body: fd });
+      const body = await res.json() as { error?: string };
+
+      expect(body.error).toContain('運営中の大会は上書きできません');
+      expect(loadTournament('cup-a')!.def.name).toBe('HTTPテスト杯');
+    });
+  });
+
   it('一覧には運営中の部屋が反映される', async () => {
     writeTournament('cup-a', DEF);
     bound = 'cup-a';

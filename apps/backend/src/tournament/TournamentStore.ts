@@ -567,7 +567,11 @@ export function importFromJson(raw: unknown, suggestedId?: string): ImportResult
  * アーカイブのルート直下でも、フォルダを1階層かぶせた形でも受け付ける
  * (Windows のエクスプローラーで「送る > 圧縮」するとフォルダごと入るため)。
  */
-export function importFromZip(buf: Buffer, suggestedId?: string): ImportResult {
+export function importFromZip(
+  buf: Buffer,
+  suggestedId?: string,
+  guard?: (id: string) => void,
+): ImportResult {
   const staging = fs.mkdtempSync(path.join(os.tmpdir(), 'u15-tz-'));
   try {
     extractZip(buf, staging, { allowedExtensions: ['.json', '.py', '.txt', '.md'] });
@@ -588,6 +592,7 @@ export function importFromZip(buf: Buffer, suggestedId?: string): ImportResult {
     if (!isSafeId(def.id)) {
       throw new DefinitionError(`id "${def.id}" にはフォルダ名に使えない文字が含まれています`);
     }
+    guard?.(def.id);
 
     // 検証を通ってから初めて本番の場所へ置く (壊れたデータを残さない)
     const dest = dirOf(def.id);
