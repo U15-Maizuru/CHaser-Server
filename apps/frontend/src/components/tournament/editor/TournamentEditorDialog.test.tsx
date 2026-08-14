@@ -415,6 +415,20 @@ describe('TournamentEditorDialog — 新規作成', () => {
     await waitFor(() => expect(calls.some(c => c.url.includes('/import'))).toBe(true));
     expect(sentDefinition().stage.map.catalogId).toBe('map-1');
   });
+
+  it('BOT対戦予選 + 決勝トーナメントを作れる', async () => {
+    renderNew();
+    fireEvent.change(screen.getByLabelText('大会名'), { target: { value: 'BOT杯' } });
+    addParticipants(['A', 'B', 'C', 'D']);
+    fireEvent.click(screen.getByText('BOT対戦予選 + 決勝トーナメント'));
+    await waitFor(() => expect(screen.getByLabelText('固定マップ')).toHaveTextContent('公式マップ'));
+    fireEvent.change(screen.getByLabelText('固定マップ'), { target: { value: 'map-1' } });
+
+    fireEvent.click(screen.getByText('この内容で作成'));
+    await waitFor(() => expect(calls.some(c => c.url.includes('/import'))).toBe(true));
+
+    expect(sentDefinition().stage.format).toBe('bot-then-bracket');
+  });
 });
 
 describe('TournamentEditorDialog — 組み合わせの手動指定', () => {
@@ -638,5 +652,28 @@ describe('TournamentEditorDialog — 編集', () => {
       <TournamentEditorDialog httpBase={HTTP} editId="cup-a" onClose={() => {}} onSaved={vi.fn()} />,
     );
     expect(await screen.findByTestId('editor-error')).toHaveTextContent('not found');
+  });
+
+  it('既存のBOT対戦予選をそのまま上書き保存しても形式が保たれる', async () => {
+    const BOT_DEF: TournamentDefinition = {
+      formatVersion: 1,
+      id:    'cup-a',
+      name:  'BOT杯',
+      match: { doubleMode: true },
+      stage: stageRulesFor('bot-then-bracket'),
+      participants: [
+        { id: 'x1', name: '舞鶴A', seed: 1, program: { kind: 'builtin', builtin: 'cpu' } },
+        { id: 'x2', name: '舞鶴B', seed: 2, program: { kind: 'builtin', builtin: 'cpu' } },
+        { id: 'x3', name: '舞鶴C', seed: 3, program: { kind: 'builtin', builtin: 'cpu' } },
+        { id: 'x4', name: '舞鶴D', seed: 4, program: { kind: 'builtin', builtin: 'cpu' } },
+      ],
+    };
+    renderEdit(BOT_DEF);
+    await screen.findByDisplayValue('BOT杯');
+
+    fireEvent.click(screen.getByText('上書き保存'));
+    await waitFor(() => expect(calls.some(c => c.url.includes('/import'))).toBe(true));
+
+    expect(sentDefinition().stage.format).toBe('bot-then-bracket');
   });
 });

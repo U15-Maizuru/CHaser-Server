@@ -41,6 +41,11 @@ describe('parseTournamentDefinition', () => {
     expect(def.stage).not.toHaveProperty('league');
   });
 
+  it('トップレベルに format が無くても stage.format を拾う (エディタ UI が送る形)', () => {
+    const def = parse({ ...OK, stage: { format: 'league', league: { doubleRoundRobin: true } } });
+    expect(def.stage.format).toBe('league');
+  });
+
   describe('stage.map.bracketStages (回戦ごとのマップ)', () => {
     const withStages = (bracketStages: unknown) =>
       parse({ ...OK, stage: { map: { bracketStages } } }).stage.map.bracketStages;
@@ -248,6 +253,15 @@ describe('BOT対戦予選 + 決勝トーナメント', () => {
     const s = botStage();
     expect(s.bot.map).toBe('map-1');
     expect(s.advanceCount).toBe(4);
+  });
+
+  it('トップレベルに format が無く stage.format にしか無くても読める (エディタ UI が送る形)', () => {
+    const def = parseTournamentDefinition({
+      name: 'BOT予選大会',
+      stage: { format: 'bot-then-bracket', bot: { map: 'map-1' }, advanceCount: 4 },
+      participants: BOT_OK.participants,
+    }, { fallbackId: 'cup' });
+    expect(def.stage.format).toBe('bot-then-bracket');
   });
 
   it('bot.program を参加者と同じ書式で読む', () => {

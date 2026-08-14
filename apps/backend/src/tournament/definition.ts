@@ -30,6 +30,20 @@ function asRecord(v: unknown, where: string): Record<string, unknown> {
   return v as Record<string, unknown>;
 }
 
+/**
+ * format はトップレベルに書く運用 (手書きの tournament.json、docs/user-manual.md の例) と
+ * stage.format にしか無い運用 (`StageRules` が判別共用体なので、型どおりに組み立てる
+ * 大会作成 UI はここにしか書かない) の両方を受け付ける。トップレベルを優先し、
+ * 無ければ stage.format を見る。
+ */
+function readFormat(o: Record<string, unknown>): unknown {
+  const stage = o['stage'];
+  const nested = typeof stage === 'object' && stage !== null && !Array.isArray(stage)
+    ? (stage as Record<string, unknown>)['format']
+    : undefined;
+  return o['format'] ?? nested;
+}
+
 function asString(v: unknown, where: string): string {
   if (typeof v !== 'string' || v.trim() === '') {
     throw new DefinitionError(`${where} は空でない文字列である必要があります`);
@@ -294,7 +308,7 @@ export interface ParseOptions {
 export function parseTournamentDefinition(raw: unknown, opts: ParseOptions = {}): TournamentDefinition {
   const o = asRecord(raw, 'tournament.json');
 
-  const format = o['format'] === undefined ? 'single-elimination' : o['format'];
+  const format = readFormat(o) ?? 'single-elimination';
   if (typeof format !== 'string' || !FORMATS.includes(format as TournamentFormat)) {
     throw new DefinitionError(
       `format は ${FORMATS.map(f => `"${f}"`).join(' か ')} を指定してください (実際の値: ${String(format)})`,
