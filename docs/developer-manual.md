@@ -234,7 +234,8 @@ U15-server-maizuru/
 │   │
 │   └── electron/
 │       ├── assets/
-│       │   └── icon.ico   アプリのアイコン (ウィンドウ・タスクバー・インストーラー・exe で共用)
+│       │   ├── icon.ico    Windows 版アイコン (ウィンドウ・タスクバー・インストーラー・exe で共用)
+│       │   └── icon.icns   macOS 版アイコン (icon.ico から sips/iconutil で生成)
 │       └── src/
 │           └── main.ts   バックエンド起動 → /api/default-room から roomId を取得 → 対戦表示/コントロール
 │                          ウィンドウを開く。手動操作ウィンドウは manual:openWindow IPC で必要時に開く
@@ -317,7 +318,11 @@ Windows には POSIX のプロセスグループが無く、`child.kill()` は�
 
 - **`killTree()` (`apps/electron/src/killTree.ts`) で木ごと落とす。** Ctrl+C・コントロール
   画面を閉じた場合・E2E の後始末のすべてがこれを通る (`dev.js` / `main.ts` の `stopBackend` /
-  `test-e2e.mjs`)。Windows は `taskkill /T /F`、POSIX はプロセスグループへのシグナル。
+  `test-e2e.mjs`)。Windows は `taskkill /T /F`、POSIX はプロセスグループへのシグナル
+  (`process.kill(-pid, ...)`)。POSIX でこれが届くのは、backend を起動する
+  `spawn()` (`main.ts`) に `detached: true` を渡してプロセスグループ長にしているため
+  (対戦プログラム側の `spawn()` (`ProcessClient.ts`) は detached にせず backend と同じ
+  グループに留めることで、backend を kill すると一緒に落ちるようにしている)。
 - **起動前にポートを点検する。** 5173 / 8765 が既に使われていたら、黙って壊れた状態で
   立ち上がらず、掃除のコマンドを表示して止まる (`dev.js` の `preflight`)。
 
@@ -981,21 +986,32 @@ NODE_ENV=production U15_MODE=web PORT=8765 node apps/backend/dist/index.js
                      →  @u15/electron
 ```
 
-### Windows インストーラー (ローカルモード)
+### インストーラーのビルド (ローカルモード)
 
 ```bash
-pnpm --filter @u15/electron build:win
-# → apps/electron/release/ に NSIS インストーラー (win-unpacked も同時生成)
+pnpm --filter @u15/electron build:win   # → release/ に NSIS インストーラー (win-unpacked も同時生成)
+pnpm --filter @u15/electron build:mac   # → release/ に dmg (Apple Silicon のみ)
 ```
 
-`build:win` は内部で以下を順に行い、**Node/pnpm も Python も入っていない端末でそのまま動く**単一インストーラーを作る。
+`build:win` / `build:mac` は内部で以下を順に行い、**Node/pnpm も Python も入っていない端末でそのまま動く**単一インストーラーを作る。
 
 1. `@u15/backend` を `esbuild` で `dist/index.js` 単一ファイルにバンドル（`ws`/`busboy`/`@u15/ws-types` を inline 化。node_modules 同梱・pnpm シンボリックリンク解決は不要）
 2. `@u15/frontend` を `vite build`
-3. `apps/electron/scripts/fetch-python.mjs` が Python embeddable package (Windows x64) を `apps/electron/vendor/python/` に取得（初回のみダウンロード、以降はキャッシュ）
-4. `electron-builder` が上記 backend/frontend/python を `extraResources` として同梱し NSIS インストーラーを生成
+3. `apps/electron/scripts/fetch-python.mjs` が同梱用 Python を取得する。取得元・展開先は `process.platform` で分岐:
+   - Windows: python.org の embeddable package (x64) → `apps/electron/vendor/python/`
+   - macOS: [python-build-standalone](https://github.com/astral-sh/python-build-standalone) の
+     install_only ビルド (aarch64-apple-darwin) → `apps/electron/vendor/python-mac/`
+   どちらも初回のみダウンロードし、以降は既存ディレクトリをそのまま使う (キャッシュ)。
+4. `electron-builder` が backend/frontend を共通の `extraResources`、python を `build.win.extraResources` /
+   `build.mac.extraResources` (`apps/electron/package.json`) でそれぞれ platform 別に同梱してパッケージを作る。
+   electron-builder はこの2つを**マージ**する (どちらか一方を採用するのではない) ため、python の
+   エントリだけは root ではなく必ず platform 別ブロックに置く必要がある — root に置くと
+   Windows 用/mac 用の両方が両プラットフォームのビルドに混入してしまう。
 
-配布版アプリでは、対戦プログラム（Python, 単体 `.py` のみ対応）は同梱の Python で実行されるため、エンドユーザー側で Python をインストールする必要はない（`apps/backend/src/clients/ProcessClient.ts` が `U15_PYTHON_EXE` 環境変数を優先利用。未設定時は開発環境と同じく PATH 上の `python` にフォールバックする）。アップロードされたプログラム/マップの保存先も `app.getPath('userData')`（インストール先ディレクトリに依存しない、OS 標準のユーザーデータフォルダ）に固定される。
+配布版アプリでは、対戦プログラム（Python, 単体 `.py` のみ対応）は同梱の Python で実行されるため、エンドユーザー側で Python をインストールする必要はない（`apps/backend/src/clients/ProcessClient.ts` が `U15_PYTHON_EXE` 環境変数を優先利用。未設定時は開発環境と同じく PATH 上の `python` にフォールバックする）。同梱 Python の実行ファイルパスは `main.ts` が `process.platform` で出し分けてこの環境変数にセットする (Windows: `python/python.exe`、macOS: `python/bin/python3`)。アップロードされたプログラム/マップの保存先も `app.getPath('userData')`（インストール先ディレクトリに依存しない、OS 標準のユーザーデータフォルダ）に固定される。
+
+macOS 版は Apple Developer 証明書での署名・notarization を行っていない。配布先の Mac では
+初回起動時に Gatekeeper が確認を求めるため、README の案内 (右クリック→開く) が必要になる。
 
 ---
 
@@ -1119,7 +1135,7 @@ pnpm test:e2e
 node apps/electron/test-e2e.mjs
 ```
 
-前提: `apps/electron/node_modules/electron/dist/electron.exe` と `apps/electron/dist/`
+前提: `apps/electron/node_modules/electron/dist/` の実行ファイル (Windows: `electron.exe`、macOS: `Electron.app`) と `apps/electron/dist/`
 (`killTree` を読み込むためビルド済みであること)。ポート 5173 を他プロセスが使用していると
 Vite dev サーバーの起動検知がタイムアウトするため、事前に空けておくこと。
 後始末は `killTree` で木ごと行うため、Vite やバックエンドの残骸は出ない

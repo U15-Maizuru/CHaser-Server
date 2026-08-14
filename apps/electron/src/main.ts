@@ -38,7 +38,9 @@ function getBackendLaunchConfig(appPath: string): {
       ...process.env,
       ELECTRON_RUN_AS_NODE: '1',
       U15_MODE: 'local',
-      U15_PYTHON_EXE: path.join(process.resourcesPath, 'python', 'python.exe'),
+      U15_PYTHON_EXE: process.platform === 'win32'
+        ? path.join(process.resourcesPath, 'python', 'python.exe')
+        : path.join(process.resourcesPath, 'python', 'bin', 'python3'),
     },
     // インストール済みアプリはショートカット起動時の CWD が不定なため、
     // ユーザーデータ保存先を明示的に固定する
@@ -54,6 +56,10 @@ function startBackend(appPath: string): void {
     stdio: ['ignore', 'pipe', 'pipe'],
     env,
     cwd,
+    // Windows には POSIX のプロセスグループが無く killTree() は taskkill /T で
+    // 木ごと片付けるが、POSIX では killTree() が `process.kill(-pid, ...)` で
+    // プロセスグループごと落とす前提のため、ここでグループ長にしておく必要がある
+    detached: process.platform !== 'win32',
   });
   backendProcess.stdout?.on('data', (d: Buffer) =>
     console.log('[backend]', d.toString().trimEnd()),
@@ -84,8 +90,12 @@ const WEB_PREFS = {
 
 // ウィンドウとタスクバーのアイコン。dist/main.js から見た相対位置なので、
 // dev (apps/electron/dist) でもパッケージ版 (app.asar 内) でも同じ式で解決できる。
-// electron-builder には package.json の build.win.icon で同じファイルを渡している。
-const ICON_PATH = path.join(__dirname, '../assets/icon.ico');
+// electron-builder には package.json の build.win.icon / build.mac.icon で
+// 同じファイルを渡している (mac はアプリバンドルの .icns、dock/タスクバーは OS 側が使う)。
+const ICON_PATH = path.join(
+  __dirname,
+  process.platform === 'darwin' ? '../assets/icon.icns' : '../assets/icon.ico',
+);
 
 function loadUrl(win: BrowserWindow, search: string): void {
   if (isDev) {
@@ -255,7 +265,8 @@ app.whenReady().then(async () => {
     const result = await dialog.showOpenDialog({
       filters: [
         { name: 'Python scripts', extensions: ['py'] },
-        { name: 'Executables', extensions: ['exe'] },
+        // .exe は Windows にしかない概念なので mac では出さない
+        ...(process.platform === 'win32' ? [{ name: 'Executables', extensions: ['exe'] }] : []),
         { name: 'All files', extensions: ['*'] },
       ],
       properties: ['openFile'],
@@ -272,10 +283,12 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('dialog:openPythonExe', async () => {
     const result = await dialog.showOpenDialog({
-      filters: [
-        { name: 'Python 実行ファイル', extensions: ['exe'] },
-        { name: 'All files', extensions: ['*'] },
-      ],
+      filters: process.platform === 'win32'
+        ? [
+            { name: 'Python 実行ファイル', extensions: ['exe'] },
+            { name: 'All files', extensions: ['*'] },
+          ]
+        : [{ name: 'All files', extensions: ['*'] }],
       properties: ['openFile'],
     });
     return result.canceled ? null : result.filePaths[0] ?? null;

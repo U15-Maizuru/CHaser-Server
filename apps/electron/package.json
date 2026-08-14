@@ -7,6 +7,7 @@
     "dev": "tsc && node dev.js",
     "build": "tsc",
     "build:win": "pnpm build && pnpm build:backend && pnpm build:frontend && node scripts/fetch-python.mjs && electron-builder --win",
+    "build:mac": "pnpm build && pnpm build:backend && pnpm build:frontend && node scripts/fetch-python.mjs && electron-builder --mac",
     "build:backend": "pnpm --filter @u15/backend build",
     "build:frontend": "pnpm --filter @u15/frontend build"
   },
@@ -27,7 +28,29 @@
     },
     "win": {
       "target": "nsis",
-      "icon": "assets/icon.ico"
+      "icon": "assets/icon.ico",
+      "extraResources": [
+        {
+          "from": "vendor/python",
+          "to": "python"
+        }
+      ]
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["arm64"]
+        }
+      ],
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.education",
+      "extraResources": [
+        {
+          "from": "vendor/python-mac",
+          "to": "python"
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
@@ -36,7 +59,8 @@
     "files": [
       "dist/**",
       "!dist/**/*.map",
-      "assets/icon.ico"
+      "assets/icon.ico",
+      "assets/icon.icns"
     ],
     "extraResources": [
       {
@@ -50,10 +74,6 @@
       {
         "from": "../frontend/dist",
         "to": "frontend/dist"
-      },
-      {
-        "from": "vendor/python",
-        "to": "python"
       }
     ]
   }

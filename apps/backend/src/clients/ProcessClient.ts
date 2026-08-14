@@ -31,6 +31,9 @@ export class ProcessClient extends TcpClient {
 
     const env = buildEnv(libPath);
     const [command, args] = buildCommand(programType, programPath, runtimeCommand, port, pythonExeOverride);
+    // detached は付けない: このプロセスは電子側の backend spawn (main.ts) が
+    // 作ったプロセスグループに属したままにしておくことで、backend を木ごと kill
+    // したときに一緒に落ちる (ここを detached にすると別グループの孤児になり killTree が届かなくなる)
     const proc = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], env });
     this.proc = proc;
     proc.stdout?.on('data', (d: Buffer) =>

@@ -91,7 +91,7 @@ Electron アプリとして1台のPCで動かす**ローカルモード**に加�
 
 | 項目 | 要件 |
 |---|---|
-| OS | Windows 10/11 |
+| OS | Windows 10/11、または macOS (Apple Silicon) |
 | Node.js | v20 以上（開発時） |
 | pnpm | v8 以上（開発時） |
 | Python | 3.8 以上（開発環境で対戦プログラムを実行する場合。配布インストーラー版は Python を同梱するため不要） |
@@ -181,7 +181,15 @@ pnpm --filter @u15/frontend build
 
 # Windows インストーラー (Python 同梱、apps/electron/release/ に生成)
 pnpm --filter @u15/electron build:win
+
+# macOS インストーラー (Python 同梱、apps/electron/release/ に生成。Apple Silicon のみ)
+pnpm --filter @u15/electron build:mac
 ```
+
+> macOS 版は Apple Developer 証明書での署名・notarization を行っていません。
+> 初回起動時に Gatekeeper が「開発元を確認できません」と表示してブロックするため、
+> Finder でアプリを右クリック→「開く」を選ぶか、
+> システム設定→プライバシーとセキュリティ の下部にある「このまま開く」から起動してください。
 
 ---
 
