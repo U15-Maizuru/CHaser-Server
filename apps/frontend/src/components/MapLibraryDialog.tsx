@@ -4,6 +4,7 @@ import { FileDropZone } from './FileDropZone';
 import { LibraryBrowser, LibraryRow } from './LibraryBrowser';
 import { BG_CARD, BORDER_COLOR, Button, Callout, Dialog, RADIUS_PILL, TEXT_SECONDARY } from '../ui';
 import { deleteMap, fetchMaps } from '../lib/api';
+import { confirmDialog } from '../lib/nativeDialog';
 
 interface Props {
   httpBase: string;
@@ -20,7 +21,7 @@ export function MapLibraryDialog({ httpBase, onClose }: Props) {
   useEffect(fetchEntries, [httpBase]);
 
   const handleDelete = (entry: MapCatalogEntry) => {
-    const ok = window.confirm(
+    const ok = confirmDialog(
       `「${entry.displayName}」をライブラリから削除します。\n`
       + 'このマップを選択中のルームでは、リセット後にマップが読み込めなくなります。よろしいですか？',
     );

@@ -12,4 +12,6 @@ export interface ElectronAPI {
   toggleDisplayFullscreen: () => Promise<boolean>;
   openManualWindow:        (slot: 0 | 1) => Promise<void>;
   openTournamentWindow:    () => Promise<void>;
+  /** window.confirm/alert を閉じたあと、そのウィンドウのキーボード入力を復帰させる */
+  refocusWindow:           () => Promise<void>;
 }

@@ -1,4 +1,5 @@
 import type { ServerStatusPayload } from '@u15/ws-types';
+import { confirmDialog } from '../lib/nativeDialog';
 import {
   BG_CARD, BORDER_COLOR, RADIUS_PILL, TEXT_MUTED,
   Button, BUTTON_BAR_HEIGHT,
@@ -53,7 +54,7 @@ export function BottomBar({
       ? '対戦を中断してセットアップに戻ります。よろしいですか？'
       : '対戦の設定をリセットしてセットアップに戻ります。よろしいですか？';
     // 進行中、または途中結果がある (2ゲーム制の試合放棄) 場合のみ確認する
-    if ((phase === 'playing' || roundResults.length > 0) && !window.confirm(message)) return;
+    if ((phase === 'playing' || roundResults.length > 0) && !confirmDialog(message)) return;
     onReset();
   };
 

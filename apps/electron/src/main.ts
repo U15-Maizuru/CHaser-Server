@@ -294,6 +294,22 @@ app.whenReady().then(async () => {
     return result.canceled ? null : result.filePaths[0] ?? null;
   });
 
+  // window.confirm/alert (ネイティブダイアログ) を閉じたあと、Windows ではそのウィンドウが
+  // 「フォーカスは持っている (isFocused() === true) のにキーボード入力だけ届かない」状態に
+  // 残ることがある。win.focus() は既にフォーカス済みのウィンドウには何もしない (no-op) ため、
+  // blur してから focus し直すことで本物の blur→focus サイクルを起こす。
+  ipcMain.handle('window:refocus', (event) => {
+    // このワークアラウンドは Windows 固有のバグ (window.confirm/alert を閉じた直後、
+    // フォーカスは持っている判定なのにキーボード入力だけ届かない) への対処であり、
+    // macOS では起きない。macOS で無条件に実行すると、blur→focus のサイクル自体が
+    // ウィンドウを一瞬非最前面にしてから戻す動きになり、「ウィンドウが一旦消えて
+    // 再表示される」ように見える副作用があるため、Windows でだけ実行する。
+    if (process.platform !== 'win32') return;
+    const win = BrowserWindow.fromWebContents(event.sender);
+    win?.blur();
+    win?.focus();
+  });
+
   ipcMain.handle('display:toggleFullscreen', () => {
     const displayWindow = getWindow('display');
     if (!displayWindow) return false;

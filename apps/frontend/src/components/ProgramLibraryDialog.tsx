@@ -4,6 +4,7 @@ import { FileDropZone } from './FileDropZone';
 import { LibraryBrowser, LibraryRow } from './LibraryBrowser';
 import { Button, Callout, Checkbox, Dialog, TEXT_SECONDARY } from '../ui';
 import { deleteProgram, fetchPrograms, setProgramDemoEnabled } from '../lib/api';
+import { confirmDialog } from '../lib/nativeDialog';
 
 interface Props {
   httpBase: string;
@@ -26,7 +27,7 @@ export function ProgramLibraryDialog({ httpBase, onClose }: Props) {
   };
 
   const handleDelete = (entry: CatalogEntry) => {
-    const ok = window.confirm(
+    const ok = confirmDialog(
       `「${entry.displayName}」をライブラリから削除しますか？\n`
       + '他のルーム・対戦スロットで使用中の場合、次回の対戦開始時にエラーになります。',
     );

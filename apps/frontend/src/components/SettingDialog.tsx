@@ -11,6 +11,7 @@ import {
   type TabDef,
 } from '../ui';
 import { fetchMusicFiles, fetchSoundFiles } from '../lib/api';
+import { alertDialog, confirmDialog } from '../lib/nativeDialog';
 
 interface Props {
   displayPrefs:        DisplayPrefs;
@@ -110,7 +111,7 @@ export function SettingDialog({
   const handleDemoToggle = (enabled: boolean) => {
     // ON にするとサーバーが両スロットのプログラムをライブラリから選び直す。
     // 取り返しはつくが驚きが大きいので確認する
-    if (enabled && !window.confirm(
+    if (enabled && !confirmDialog(
       'デモモードを ON にすると、両プレイヤーのプログラムがライブラリ（デモ対象）から'
       + 'ランダムに選び直されます。現在の選択は失われます。よろしいですか？',
     )) return;
@@ -314,7 +315,7 @@ export function SettingDialog({
                     const file = e.target.files?.[0];
                     if (!file) return;
                     const error = await onUploadMusic(file);
-                    if (error) window.alert(`BGM のアップロードに失敗しました:\n${error}`);
+                    if (error) alertDialog(`BGM のアップロードに失敗しました:\n${error}`);
                     setMusicFiles(await fetchMusicFiles(httpBase));
                     e.target.value = '';
                   }}
@@ -362,7 +363,7 @@ export function SettingDialog({
                             const uploaded = e.target.files?.[0];
                             if (!uploaded) return;
                             const error = await onUploadSound(key, uploaded);
-                            if (error) window.alert(`SE のアップロードに失敗しました:\n${error}`);
+                            if (error) alertDialog(`SE のアップロードに失敗しました:\n${error}`);
                             setSoundFiles(await fetchSoundFiles(httpBase));
                             e.target.value = '';
                           }}

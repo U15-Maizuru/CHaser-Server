@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { TournamentFormat, TournamentStatePayload, TournamentSummary } from '@u15/ws-types';
 import type { TournamentCommands } from '../../../hooks/useGameState';
-import { confirmDialog } from '../../../lib/nativeDialog';
+import { alertDialog, confirmDialog } from '../../../lib/nativeDialog';
 import { deleteTournament } from '../../../lib/api';
 import { TournamentEditorDialog } from '../editor/TournamentEditorDialog';
 import {
@@ -41,7 +41,7 @@ export function LibraryTab({
     try {
       const res  = await fetch(`${httpBase}/api/tournament/upload`, { method: 'POST', body: fd });
       const body = await res.json() as { error?: string };
-      if (body.error) window.alert(`取り込みに失敗しました:\n${body.error}`);
+      if (body.error) alertDialog(`取り込みに失敗しました:\n${body.error}`);
       commands.rescan();
       await refresh();
     } finally {
@@ -63,7 +63,7 @@ export function LibraryTab({
       );
       if (!res.ok) {
         const body = await res.json().catch(() => ({})) as { error?: string };
-        window.alert(`書き出しに失敗しました:\n${body.error ?? res.statusText}`);
+        alertDialog(`書き出しに失敗しました:\n${body.error ?? res.statusText}`);
         return;
       }
 
@@ -77,10 +77,10 @@ export function LibraryTab({
       const raw     = res.headers.get('X-Bundle-Skipped');
       const skipped = raw ? JSON.parse(decodeURIComponent(raw)) as string[] : [];
       if (skipped.length > 0) {
-        window.alert(`一部のプログラムは同梱できませんでした:\n${skipped.join('\n')}`);
+        alertDialog(`一部のプログラムは同梱できませんでした:\n${skipped.join('\n')}`);
       }
     } catch (e) {
-      window.alert(`書き出しに失敗しました:\n${(e as Error).message}`);
+      alertDialog(`書き出しに失敗しました:\n${(e as Error).message}`);
     } finally {
       setBusy(false);
     }
@@ -88,7 +88,7 @@ export function LibraryTab({
 
   const startEdit = (t: TournamentSummary) => {
     // 上書き保存すると進行状態を作り直すので、実施済みの試合があれば断りを入れる
-    if (t.progress[0] > 0 && !window.confirm(
+    if (t.progress[0] > 0 && !confirmDialog(
       `「${t.name}」は ${t.progress[0]} 試合が確定済みです。\n`
       + '編集して上書き保存すると、進行状態は最初からやり直しになります。続けますか？')) {
       return;

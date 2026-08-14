@@ -1,6 +1,7 @@
 import type { TournamentMatch, TournamentStatePayload } from '@u15/ws-types';
 import { compareByPlayOrder, hasQualifying } from '@u15/ws-types';
 import type { TournamentCommands } from '../../../hooks/useGameState';
+import { confirmDialog } from '../../../lib/nativeDialog';
 import { BotQualifierSection } from '../qualifier/BotQualifierSection';
 import { QualifierSection } from '../qualifier/QualifierSection';
 import { MatchCard } from '../board/MatchCard';
@@ -77,7 +78,7 @@ function MatchRow({ state, match, commands }: {
   const canReopen = match.status === 'done' && !(match.byeA || match.byeB);
 
   const reopen = () => {
-    if (!window.confirm(
+    if (!confirmDialog(
       `「${match.label}」の結果を取り消します。\n`
       + 'この試合より後の結果も一緒に取り消されます。よろしいですか？')) return;
     commands.reopen(match.id, true);

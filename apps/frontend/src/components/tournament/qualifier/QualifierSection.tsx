@@ -1,5 +1,6 @@
 import type { QualifierSlot, TournamentStatePayload } from '@u15/ws-types';
 import { groupLabel, hasBotStage } from '@u15/ws-types';
+import { confirmDialog } from '../../../lib/nativeDialog';
 import {
   BG_CARD, BORDER_COLOR, FONT_UI, GOLD_BASE, RADIUS_SM,
   TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE,
@@ -76,7 +77,7 @@ export function QualifierPicker({
   const change = (value: string) => {
     const pid = value === '' ? null : value;
     if (locked) {
-      const ok = window.confirm(
+      const ok = confirmDialog(
         `「${locked.label}」は実施済みです。\n変更するとその結果は取り消されます。続けますか？`,
       );
       if (!ok) return;

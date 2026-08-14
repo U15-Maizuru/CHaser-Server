@@ -1,5 +1,6 @@
 import type { TournamentStatePayload } from '@u15/ws-types';
 import { advancePerGroupOf } from '@u15/ws-types';
+import { confirmDialog } from '../../../lib/nativeDialog';
 import {
   BG_CARD, BG_ROOT, BORDER_COLOR, FONT_NUM, FONT_UI, GOLD_BASE, HOT_COLOR, RADIUS_SM,
   TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE,
@@ -43,7 +44,7 @@ export function BotQualifierSection({ state, onExclude, onConfirm }: BotQualifie
 
   const toggle = (participantId: string, excluded: boolean) => {
     if (locked) {
-      const ok = window.confirm(
+      const ok = confirmDialog(
         `「${locked.label}」は実施済み・準備中です。\n変更するとその結果は取り消されます。続けますか？`,
       );
       if (!ok) return;
