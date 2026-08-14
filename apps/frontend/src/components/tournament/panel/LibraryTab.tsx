@@ -42,6 +42,7 @@ export function LibraryTab({
       const res  = await fetch(`${httpBase}/api/tournament/upload`, { method: 'POST', body: fd });
       const body = await res.json() as { error?: string };
       if (body.error) window.alert(`取り込みに失敗しました:\n${body.error}`);
+      commands.rescan();
       await refresh();
     } finally {
       setBusy(false);
