@@ -129,6 +129,12 @@ export async function downloadMapFile(
   URL.revokeObjectURL(url);
 }
 
+// ── 大会ライブラリ ─────────────────────────────────────────────────────────
+
+export function deleteTournament(httpBase: string, id: string): Promise<void> {
+  return send(`${httpBase}/api/tournament/${id}`, 'DELETE');
+}
+
 // ── ルーム内のカスタムライブラリ (.py) ─────────────────────────────────────
 
 export function libUploadUrl(httpBase: string, roomId: string, slot: 0 | 1): string {

@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { TournamentFormat, TournamentStatePayload, TournamentSummary } from '@u15/ws-types';
 import type { TournamentCommands } from '../../../hooks/useGameState';
+import { confirmDialog } from '../../../lib/nativeDialog';
+import { deleteTournament } from '../../../lib/api';
 import { TournamentEditorDialog } from '../editor/TournamentEditorDialog';
 import {
   BG_ROOT, RADIUS_SM, TEXT_SECONDARY, WIN_BASE,
@@ -93,6 +95,15 @@ export function LibraryTab({
     setEditing(t.id);
   };
 
+  const handleDelete = (t: TournamentSummary) => {
+    const ok = confirmDialog(
+      `「${t.name}」をライブラリから削除します。\n`
+      + '進行状態・参加プログラムを含めて完全に削除され、元に戻せません。よろしいですか？',
+    );
+    if (!ok) return;
+    void deleteTournament(httpBase, t.id).then(refresh);
+  };
+
   return (
     <>
       <Section
@@ -147,6 +158,13 @@ export function LibraryTab({
                 onClick={() => startEdit(t)}
               >
                 編集
+              </Button>
+              <Button
+                size="sm" variant="danger" noShrink disabled={!!t.boundRoomId}
+                title={t.boundRoomId ? '運営中の大会は削除できません' : '大会データを削除する'}
+                onClick={() => handleDelete(t)}
+              >
+                削除
               </Button>
               {active
                 ? <Button size="sm" variant="danger" noShrink onClick={commands.unbind}>運営を終了</Button>
