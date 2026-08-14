@@ -129,7 +129,12 @@ export class TournamentOrchestrator {
     const b = this.byRoom.get(roomId);
     if (!b) return;
     this.detach(b);
-    this.deps.rm.getRoom(roomId)?.manager.off('status', b.listener);
+    const manager = this.deps.rm.getRoom(roomId)?.manager;
+    manager?.off('status', b.listener);
+    // 大会運営中はスロット割り当て・フェーズを大会側が握っている。運営を終える
+    // (途中で中断する場合も含む) ときにリセットしておかないと、コントロール窓が
+    // 大会最後の対戦のフェーズに固まったまま手動操作に戻れなくなる
+    manager?.requestReset().catch(e => console.error('大会運営終了時のリセットに失敗しました:', e));
     this.publish(roomId);
   }
 

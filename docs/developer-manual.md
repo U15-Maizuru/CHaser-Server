@@ -1267,6 +1267,9 @@ server/tournament/<大会id>/
   状態なので、`bind()` のたびに `ready` へ戻す (中断した運営を再開してもカードが詰まらない)。
 - **`addCatalogEntry` は渡したファイルを rename する**: 大会フォルダの原本を直接渡さず、
   一時ファイルへコピーしてから渡すこと。登録直後に `setDemoEnabled(id, false)` でデモ抽選から外す。
+- **`unbind()` は `ServerManager.requestReset()` を伴う**: 運営中はスロット割り当て・フェーズを
+  大会側が握っているため、外さずに運営を終えるとコントロール窓が最後の対戦のフェーズに
+  固まったまま手動操作へ戻れない。
 - **マップの解決順**: `match.rematchMapCatalogId` → `state.decisions.stageMaps[stage]` (運営中の差し替え)
   → `def.stage.map.bracketStages[stage - 予選の節数]` (回戦ごとの指定) → `def.stage.map.catalogId` (大会全体)。
   **`stage` は予選と決勝を通した通し番号 (combined) で統一する。** 運営中の差し替えも

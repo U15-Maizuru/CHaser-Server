@@ -142,6 +142,20 @@ describe('TournamentOrchestrator', () => {
       expect(orch.boundRoomOf(CUP)).toBeNull();
     });
 
+    it('unbind するとコントロール窓が手動操作できるようリセットする', async () => {
+      writeCup(cupDef());
+      orch.bind(ROOM, CUP);
+      const manager = rm.getRoom(ROOM)!.manager;
+      const spy = vi.spyOn(manager, 'requestReset');
+
+      await orch.armMatch(ROOM, 'SF1');
+      // 準備済み (armed) のまま運営を終了しても、対戦のコントロールが
+      // 大会側に握られたまま戻ってこなくなってはいけない
+      orch.unbind(ROOM);
+
+      expect(spy).toHaveBeenCalled();
+    });
+
     it('存在しない大会の bind はエラー', () => {
       expect(() => orch.bind(ROOM, 'nope')).toThrow(/大会が見つかりません/);
     });
