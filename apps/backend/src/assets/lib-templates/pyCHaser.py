@@ -173,6 +173,9 @@ class Client:
             if not gr_flag:
                 self.__str_send("#\r\n")
 
+            if not responce:
+                raise OSError("Connection closed")
+
             if responce[0] == "1":
                 return [int(x) for x in responce[1:10]]
             elif responce[0] == "0":
