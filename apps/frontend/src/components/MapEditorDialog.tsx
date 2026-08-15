@@ -28,7 +28,7 @@ interface Props {
   onClose:         () => void;
 }
 
-type Tool = 'nothing' | 'block' | 'item' | 'start';
+type Tool = 'nothing' | 'block' | 'item' | 'startCool' | 'startHot';
 
 const CELL = 28;
 
@@ -88,9 +88,12 @@ export function MapEditorDialog({ initialMap, theme, httpBase, onApply, onSaveTo
         field: prev.field.map(r => [...r]),
         teamFirstPoint: [{ ...prev.teamFirstPoint[0] }, { ...prev.teamFirstPoint[1] }] as [Point, Point],
       };
-      if (tool === 'start') {
-        next.teamFirstPoint[0] = { x: col, y: row };
-        next.teamFirstPoint[1] = mirrorPoint({ x: col, y: row }, next.size);
+      if (tool === 'startCool' || tool === 'startHot') {
+        const idx = tool === 'startCool' ? 0 : 1;
+        next.teamFirstPoint[idx] = { x: col, y: row };
+        if (symmetry) {
+          next.teamFirstPoint[1 - idx] = mirrorPoint({ x: col, y: row }, next.size);
+        }
       } else {
         const obj =
           tool === 'block'   ? MapObject.BLOCK :
@@ -191,7 +194,7 @@ export function MapEditorDialog({ initialMap, theme, httpBase, onApply, onSaveTo
         <Divider />
 
         <Label>ツール</Label>
-        {(['nothing', 'block', 'item', 'start'] as Tool[]).map(t => (
+        {(['nothing', 'block', 'item', 'startCool', 'startHot'] as Tool[]).map(t => (
           <ToolBtn key={t} active={tool === t} onClick={() => setTool(t)}>
             {TOOL_LABELS[t]}
           </ToolBtn>
@@ -246,10 +249,11 @@ export function MapEditorDialog({ initialMap, theme, httpBase, onApply, onSaveTo
 }
 
 const TOOL_LABELS: Record<Tool, string> = {
-  nothing: '消しゴム',
-  block:   'ブロック',
-  item:    'アイテム',
-  start:   '開始位置',
+  nothing:   '消しゴム',
+  block:     'ブロック',
+  item:      'アイテム',
+  startCool: '開始位置 (COOL)',
+  startHot:  '開始位置 (HOT)',
 };
 
 function Label({ children }: { children: React.ReactNode }) {
@@ -268,7 +272,9 @@ function ToolBtn({ active, onClick, children }: { active: boolean; onClick: () =
 }
 
 const s: Record<string, React.CSSProperties> = {
-  content: { display: 'flex', gap: 12, padding: 12, background: BG_ROOT },
+  // alignItems 省略時の既定値 stretch だと、サイドバーの方が丈が高いとき canvas の CSS 上の
+  // 高さが描画バッファ (width/height 属性) より伸びてしまい、クリック位置の割り出しが縦方向にずれる。
+  content: { display: 'flex', alignItems: 'flex-start', gap: 12, padding: 12, background: BG_ROOT },
   canvas: {
     display: 'block', cursor: 'crosshair', imageRendering: 'pixelated',
     border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM,
