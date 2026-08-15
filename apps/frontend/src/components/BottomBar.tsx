@@ -77,9 +77,6 @@ export function BottomBar({
             <Button variant="primary" size="lg" disabled={!allReady} onClick={onStart}>
               ゲームスタート
             </Button>
-            {!allReady && (
-              <span style={s.hint}>両プレイヤーが「準備完了」になるとスタートできます</span>
-            )}
           </>
         )}
         {showNextRound && (
