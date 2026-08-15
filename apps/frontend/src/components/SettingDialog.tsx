@@ -28,6 +28,7 @@ interface Props {
   onSetDemoMode:       (enabled: boolean) => void;
   onChangeMatchConfig: (patch: Partial<MatchConfig>) => void;
   onCommitMatchConfig: () => void;
+  onSetPorts:          (ports: [number, number]) => void;
   onUploadMusic:       (file: File) => Promise<string | null>;
   onDeleteMusic:       (filename: string) => Promise<void>;
   onUploadSound:       (key: SoundKey, file: File) => Promise<string | null>;
@@ -65,13 +66,18 @@ export function SettingDialog({
   displayPrefs, envConfig, status, matchConfig, darkMode, httpBase,
   onSetDisplayPrefs, onSaveEnv, onSetDarkMode,
   onSetDoubleMode, onSetRepeatMode, onSetDemoMode,
-  onChangeMatchConfig, onCommitMatchConfig,
+  onChangeMatchConfig, onCommitMatchConfig, onSetPorts,
   onUploadMusic, onDeleteMusic, onUploadSound, onDeleteSound, onClose,
 }: Props) {
   const [tab, setTab]               = useState<SettingTab>('display');
   const [draftEnv, setDraftEnv]     = useState<EnvConfig>({ ...envConfig });
   const [musicFiles, setMusicFiles] = useState<string[]>([]);
   const [soundFiles, setSoundFiles] = useState<string[]>([]);
+  // ポートは ServerStatusPayload が真実を持つが、キー入力のたびに listen をやり直すと
+  // 接続中のクライアントを巻き添えにするため、ダイアログを開いた時点の値を下書きにして
+  // blur で確定させる (draftEnv と同じ「開いた時点でスナップショット」方式)
+  const [portsDraft, setPortsDraft] = useState<[number, number]>(
+    [status.clients[0].port, status.clients[1].port]);
 
   useEffect(() => {
     let cancelled = false;
@@ -107,6 +113,15 @@ export function SettingDialog({
   const rulesLockNote = status.phase !== 'setup'
     ? '対戦中は対戦ルールを変更できません。セットアップ画面に戻ると変更できます。'
     : '試合の途中（第2ゲーム待ち）は対戦ルールを変更できません（同じ試合の2ゲームで同じルールを使うため）。';
+
+  // 未確定 (NaN・範囲外) なら送らずに黙って捨てる。値が現在と同じなら listen をやり直さない
+  // (SlotManager.setPorts 側も同じ理由で変化のないスロットは触らない)
+  const commitPorts = () => {
+    const [cool, hot] = portsDraft;
+    if (![cool, hot].every(p => Number.isInteger(p) && p >= 1 && p <= 65535)) return;
+    if (cool === status.clients[0].port && hot === status.clients[1].port) return;
+    onSetPorts(portsDraft);
+  };
 
   const handleDemoToggle = (enabled: boolean) => {
     // ON にするとサーバーが両スロットのプログラムをライブラリから選び直す。
@@ -220,6 +235,37 @@ export function SettingDialog({
                   準備完了で自動開始します。止めるには画面下部の「リセット」を押してください。
                 </span>
               )}
+            </section>
+
+            <section style={s.section}>
+              <div style={s.sectionLabel}>接続ポート (TCP)</div>
+              {!canEditRules && <Callout>{rulesLockNote}</Callout>}
+              <div style={s.numRow}>
+                <label style={s.numLabel}>
+                  COOL
+                  <NumberInput
+                    min={1} max={65535} step={1}
+                    disabled={!canEditRules}
+                    value={portsDraft[0]}
+                    onChange={e => setPortsDraft([Number(e.target.value), portsDraft[1]])}
+                    onBlur={commitPorts}
+                  />
+                </label>
+                <label style={s.numLabel}>
+                  HOT
+                  <NumberInput
+                    min={1} max={65535} step={1}
+                    disabled={!canEditRules}
+                    value={portsDraft[1]}
+                    onChange={e => setPortsDraft([portsDraft[0], Number(e.target.value)])}
+                    onBlur={commitPorts}
+                  />
+                </label>
+              </div>
+              <span style={s.hint}>
+                「TCP接続」で待ち受けるポート番号です。変更すると接続をやり直すため、
+                接続済みの相手は切断されます。
+              </span>
             </section>
 
             {/* 進行パラメータは requestStart 時に値渡しで消費されるため、対戦中でも安全に編集できる */}

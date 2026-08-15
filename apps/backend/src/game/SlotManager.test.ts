@@ -183,3 +183,61 @@ describe('SlotManager のスロット状態', () => {
     expect(sm.allReady()).toBe(true);
   });
 });
+
+describe('SlotManager.setPorts', () => {
+  let sm: SlotManager | undefined;
+  let nextPort = 39700;
+
+  afterEach(() => {
+    sm?.shutdown();
+    sm = undefined;
+  });
+
+  function makeSlotManager(): [SlotManager, number] {
+    const port = nextPort;
+    nextPort += 4; // setPorts で新しいポートへ動かす分の余裕を持たせる
+    return [new SlotManager([port, port + 1]), port];
+  }
+
+  it('変わったスロットだけポートが更新され、変わらないスロットの型・状態はそのまま', async () => {
+    const [instance, port] = makeSlotManager();
+    sm = instance;
+    await sm.setClientType(1, 'cpu'); // slot1 は接続不要な型にしておき、再listenで壊れていないか確認しやすくする
+
+    await sm.setPorts([port + 2, port + 1]); // slot0 だけ変える (slot1 は元のまま)
+
+    const statuses = sm.getStatuses();
+    expect(statuses[0].port).toBe(port + 2);
+    expect(statuses[1].port).toBe(port + 1);
+    // 変わらなかった slot1 は再listenを経ずそのまま ready を保つ
+    expect(statuses[1].type).toBe('cpu');
+    expect(statuses[1].state).toBe('ready');
+  });
+
+  it('両方変えると両方のポートが更新される', async () => {
+    const [instance, port] = makeSlotManager();
+    sm = instance;
+
+    await sm.setPorts([port + 2, port + 3]);
+
+    const statuses = sm.getStatuses();
+    expect(statuses[0].port).toBe(port + 2);
+    expect(statuses[1].port).toBe(port + 3);
+  });
+
+  it('同じポートを渡しても何も起きない (待受のやり直しをしない)', async () => {
+    const [instance, port] = makeSlotManager();
+    sm = instance;
+    await sm.setClientType(0, 'cpu');
+    await sm.setClientType(1, 'cpu');
+
+    await sm.setPorts([port, port + 1]); // 現在と同じ
+
+    const statuses = sm.getStatuses();
+    expect(statuses[0].port).toBe(port);
+    expect(statuses[1].port).toBe(port + 1);
+    // 再listenが走っていれば cpu の ready 状態が崩れていないことで間接的に確認できる
+    expect(statuses[0].state).toBe('ready');
+    expect(statuses[1].state).toBe('ready');
+  });
+});

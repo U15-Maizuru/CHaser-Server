@@ -72,6 +72,7 @@ export interface GameStateHook {
   setDisplayPrefs:  (patch: Partial<DisplayPrefs>) => void;
   setTurnDelay:     (ms: number) => void;
   setTcpTimeout:    (ms: number) => void;
+  setPorts:         (ports: [number, number]) => void;
   setLogDir:        (dir: string) => void;
   setPythonCommand: (command: string) => void;
   sendManualAction: (slot: 0 | 1, action: number, rote: number) => void;
@@ -195,6 +196,7 @@ export function useGameState(wsUrl: string, roomId: string): GameStateHook {
     setDisplayPrefs:  (patch)                      => send({ type: 'set_display_prefs', payload: patch }),
     setTurnDelay:     (ms)                         => send({ type: 'set_turn_delay',    payload: { ms } }),
     setTcpTimeout:    (ms)                         => send({ type: 'set_tcp_timeout',   payload: { ms } }),
+    setPorts:         (ports)                      => send({ type: 'set_ports',         payload: { ports } }),
     setLogDir:        (dir)                        => send({ type: 'set_log_dir',       payload: { dir } }),
     setPythonCommand: (command)                    => send({ type: 'set_python_command', payload: { command } }),
     sendManualAction: (slot, action, rote)         => send({ type: 'manual_action',     payload: { slot, action, rote } }),

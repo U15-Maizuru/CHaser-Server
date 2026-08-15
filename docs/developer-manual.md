@@ -452,7 +452,7 @@ class RoomManager {
 
 | クラス | 責務 |
 |---|---|
-| `SlotManager` | スロットごとのクライアント接続 (Process/Tcp/Manual/Com) のライフサイクル管理。`setClientType` / `deleteProgram` / `startListening` など |
+| `SlotManager` | スロットごとのクライアント接続 (Process/Tcp/Manual/Com) のライフサイクル管理。`setClientType` / `deleteProgram` / `startListening` / `setPorts` など |
 | `MapManager` | マップ状態と**選択中のソース** (`random` / `catalog` / `editor`) の保持。`loadFromCatalog` / `setMapParams` / `loadInlineData` / `refreshForNewGame` / `getCurrentMapData` |
 | `RoundController` | フェーズ (`setup`/`playing`/`finished`)・2ゲーム制のゲーム進行・デモ/リピートモード・ターン表示待機時間 |
 
@@ -470,6 +470,11 @@ shutdown(): void
 ログ保存先 (`setLogDir`) と Python 実行コマンド (`setPythonCommand`) の上書きは、
 `U15_MODE=local` のときのみ有効になる。Web モードではリモートのクライアントがサーバー上の
 任意パスへの書き込みや任意コマンドの実行経路に触れないよう、常に無視される。
+
+ポート変更 (`setPorts`) も同じ理由で `U15_MODE=local` 限定 (Web モードは `RoomManager` の
+`PortPool` が部屋ごとにポートを管理しており、任意ポートへの変更が他部屋との衝突を招く)。
+`SlotManager.setPorts` は実際に値が変わったスロットだけを切断・再 listen するため、
+未変更のスロットや変化のない値を渡した呼び出しは接続中のクライアントに影響しない。
 
 ローカルモードの唯一の room だけ `persistSettings` を true で作られ
 (`RoomManager.createRoom` の第3引数)、表示・BGM/SE・対戦ルールの現在値を
@@ -557,6 +562,7 @@ ws.onopen = () => {
 | `set_dark_mode` | `{enabled}` | 対戦表示のダークモード ON/OFF |
 | `set_turn_delay` | `{ms}` | ターン表示待機時間 |
 | `set_tcp_timeout` | `{ms}` | TCP クライアントの応答タイムアウト |
+| `set_ports` | `{ports: [number, number]}` | COOL/HOT の待ち受けポート変更 (ローカルモードかつ setup フェーズのみ有効、それ以外は無視) |
 | `set_log_dir` | `{dir}` | ログ保存先 (ローカルモードのみ有効) |
 | `set_python_command` | `{command}` | Python 実行コマンドの上書き (ローカルモードのみ有効) |
 | `request_next_round` | — | 2ゲーム制: 次ゲームの準備 (先後を入れ替えて再接続待ちにする) |
@@ -714,10 +720,12 @@ LOOK は 3 マスずつが同じ距離の帯になる (`cells[0..2]` が距離1�
 
 | モード | COOL ポート | HOT ポート |
 |---|---|---|
-| ローカル | 2009 (固定) | 2010 (固定) |
+| ローカル | 2009 (既定値。設定ダイアログ「対戦」タブで変更可) | 2010 (既定値。設定ダイアログ「対戦」タブで変更可) |
 | Web サービス | 動的 (13000〜14999) | 動的 (13000〜14999) |
 
-Web サービスモードではロビーまたはコントロール画面に表示された値を使います。
+Web サービスモードではロビーまたはコントロール画面に表示された値を使います。ローカルモードの
+ポート変更は `ServerManager.setPorts()` (`set_ports` メッセージ) で行い、setup フェーズかつ
+`U15_MODE=local` のときだけ有効。
 
 ### Python プログラム例
 
@@ -891,6 +899,7 @@ App.tsx (ErrorBoundary でラップ)
 |---|---|---|---|
 | A. 観戦画面の表示・音設定 | `muted` `bgmMuted` `bgmTrack{0,1,Wait,Result,Award}` `theme` `displayTitle` `veilAlpha` | **`ServerStatusPayload.displayPrefs`**。`darkMode` と同じくクライアントにキャッシュを持たない (SE/BGM ミュートだけはブラウザ観戦者が `useMuteOverride` でローカルに上書きできる) | `SettingDialog` (全フェーズ) |
 | B. 対戦設定・サーバー既読返し | `doubleMode` `repeatMode` `demoMode` `darkMode` | **`ServerStatusPayload`**。クライアントにキャッシュを持たない | `SettingDialog`「対戦」タブ (`darkMode` のみ「表示」タブ) |
+| B″. 接続ポート (ローカル限定) | `ports` (COOL/HOT) | **`ServerStatusPayload.clients[].port`**。クライアントに永続キャッシュは持たないが、ダイアログを開いた時点の値を下書きにする (下記) | `SettingDialog`「対戦」タブ |
 | C. 対戦設定・サーバー未返却 | `timeout` `turnDelay` | クライアントのキャッシュのみ (`useMatchConfig`) | `SettingDialog`「対戦」タブ |
 | B'. マップの選択状態 | `mapSource` (`random` / `catalog` / `editor`) | **`ServerStatusPayload.mapSource`**。`MapManager` が保持する | `StartupDialog` マップ列の `MapSourceSection` |
 | C'. マップ生成パラメータ | `sizeIdx` `blockNum` `itemNum` `turnNum` `mirror` | クライアントのキャッシュ (`useMapGenParams`) + **サーバーも `MapManager.params` として保持** | `MapSourceSection`「ランダム」タブ・`MapEditorDialog` |
@@ -900,6 +909,14 @@ App.tsx (ErrorBoundary でラップ)
 サーバーが真実を持つ値で、会場のプロジェクタに投影しながら見え方や音を確かめて決めるため、
 保存を挟むと調整にならない。`veilAlpha` の範囲 (`VEIL_ALPHA_MIN`/`MAX`) と既定値は
 `@u15/ws-types` (`protocol.ts`) が持ち、`GameBoardCanvas` 側でも同じ範囲にクランプする。
+
+**分類 B″ だけは B と違ってダイアログを開いた時点のスナップショットを下書きにし、blur で
+確定する。** B のチップ/チェックボックスは1クリックで確定するので即時反映で問題ないが、
+ポートはテキスト入力のため B と同じように毎キー入力で送ると、1文字打つたびに listen を
+やり直して接続中の相手を巻き添えにする。`SettingDialog` はダイアログを開いた瞬間の
+`status.clients[].port` を `useState` の初期値にするだけで、以降は props の変化を追わない
+(`draftEnv` と同じ「開いた時点でスナップショット」方式)。バックエンド側も `SlotManager.setPorts`
+で値の変わったスロットだけを再 listen することで、変化のない値を送っても無害にしてある。
 
 **分類 C' は接続後に一度 push すること。** `MapManager` は自分の `params` を使って
 起動時・`requestReset`・`requestRepeat` でマップを再生成する。クライアントが `set_map_params` を
@@ -1027,7 +1044,7 @@ macOS 版は Apple Developer 証明書での署名・notarization を行って�
 | 用途 | ポート範囲 |
 |---|---|
 | HTTP / WebSocket | 8765 (固定) |
-| ローカルモード AI | 2009, 2010 (固定) |
+| ローカルモード AI | 2009, 2010 (既定値。設定ダイアログ「対戦」タブで変更可) |
 | Web モード AI | 13000〜14999 (動的、最大500ルーム) |
 
 PortPool は `Set<number>` ベースで O(1) alloc/release。Node.js はシングルスレッドのためロック不要。
@@ -1181,7 +1198,7 @@ Electron を Playwright から起動する際は、`app.process()` の stdout/st
 
 ### DisplayMode のカスタマイズ
 
-`apps/frontend/src/components/DisplayMode.tsx` の `SetupWaiting` コンポーネントを編集。待機画面（大会名・ロゴ・背景色）をカスタマイズできます。TCP ポートは `clients[0].port` / `clients[1].port` で動的に表示されます。
+`apps/frontend/src/components/DisplayMode.tsx` の `SetupWaiting` コンポーネントを編集。待機画面（大会名・ロゴ・背景色）をカスタマイズできます。TCP ポートは運営向け情報のためここでは表示せず、コントロール画面 (`TeamSetupPanel.tsx`) の各プレイヤーパネルにのみ `clients[0].port` / `clients[1].port` で表示しています。
 
 ### ポートプール範囲の変更
 

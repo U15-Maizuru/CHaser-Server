@@ -216,6 +216,7 @@ function ControlApp({ roomId }: { roomId: string }) {
           onSetDemoMode={state.setDemoMode}
           onChangeMatchConfig={updateMatchConfig}
           onCommitMatchConfig={commitMatchConfig}
+          onSetPorts={state.setPorts}
           onUploadMusic={handleUploadMusic}
           onDeleteMusic={handleDeleteMusic}
           onUploadSound={handleUploadSound}

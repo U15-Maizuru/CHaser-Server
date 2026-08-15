@@ -180,6 +180,40 @@ describe('ServerManager', () => {
     });
   });
 
+  describe('setPorts', () => {
+    it('ローカルモードの setup 中は指定したポートに変わる', async () => {
+      sm = makeServerManager([39460, 39461], 0);
+      await sm.setPorts([39462, 39463]);
+      const status = sm.getStatus();
+      expect(status.clients[0].port).toBe(39462);
+      expect(status.clients[1].port).toBe(39463);
+    });
+
+    it('web モード (localMode=false) では無視される', async () => {
+      sm = makeServerManager([39464, 39465], 0, undefined, false);
+      await sm.setPorts([39466, 39467]);
+      const status = sm.getStatus();
+      expect(status.clients[0].port).toBe(39464);
+      expect(status.clients[1].port).toBe(39465);
+    });
+
+    it('setup フェーズ以外では無視される (対戦中ガード)', async () => {
+      sm = makeServerManager([39468, 39469], 0);
+      sm.setTurnDelay(0);
+      await sm.setClientType(0, 'cpu');
+      await sm.setClientType(1, 'cpu');
+
+      const startPromise = sm.requestStart();
+      expect(sm.getStatus().phase).toBe('playing');
+
+      await sm.setPorts([39470, 39471]); // ガードにより無視されるはず
+      expect(sm.getStatus().clients[0].port).toBe(39468);
+      expect(sm.getStatus().clients[1].port).toBe(39469);
+
+      await startPromise;
+    });
+  });
+
   describe('マップ設定変更のガード (2ゲーム制で第1ゲーム・第2ゲームのマップが変わらないようにする)', () => {
     it('通常の初回セットアップ中 (setup, roundResults=[]) は setMapParams が反映される', () => {
       sm = makeServerManager([39440, 39441], 0);

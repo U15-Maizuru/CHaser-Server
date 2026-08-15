@@ -31,6 +31,7 @@ export type FrontendMessage =
   | { type: 'set_demo_mode';     payload: { enabled: boolean } }
   | { type: 'set_turn_delay';    payload: { ms: number } }
   | { type: 'set_tcp_timeout';   payload: { ms: number } }
+  | { type: 'set_ports';         payload: { ports: [number, number] } }
   | { type: 'set_log_dir';       payload: { dir: string } }
   | { type: 'set_python_command'; payload: { command: string } }
   | { type: 'request_next_round' }

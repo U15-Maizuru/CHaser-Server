@@ -107,14 +107,6 @@ export function TeamSetupPanel({ slot, label, color, bgColor, darkColor, info, h
           </div>
         )}
 
-        {/* TCP 接続: 待ち受けポートを見せる */}
-        {info.type === 'tcp' && (
-          <div style={s.tcpInfo}>
-            <span style={s.portLabel}>ポート</span>
-            <span style={s.portValue}>{info.port}</span>
-          </div>
-        )}
-
         {/* 接続状態 */}
         <div style={s.statusRow}>
           <span style={{ ...s.badge, background: stateColor }}>
@@ -129,6 +121,8 @@ export function TeamSetupPanel({ slot, label, color, bgColor, darkColor, info, h
             </button>
           )}
         </div>
+        {/* TCP 接続: 待ち受けポートを見せる (他の接続方法と同じく接続状態の下に表示) */}
+        {info.type === 'tcp' && <div style={s.ipSmall}>ポート {info.port}</div>}
         {info.ip && <div style={s.ipSmall}>{info.ip}</div>}
         {info.error && showError && (
           <pre style={s.errorDetail}>{info.error}</pre>
@@ -197,9 +191,6 @@ const s: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     alignSelf: 'flex-start',
   },
-  tcpInfo: { display: 'flex', alignItems: 'center', gap: 8 },
-  portLabel: { fontSize: 11, color: TEXT_MUTED },
-  portValue: { fontSize: 14, fontFamily: FONT_NUM, color: TEXT_PRIMARY },
   statusRow: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 },
   badge: {
     fontSize: 10,

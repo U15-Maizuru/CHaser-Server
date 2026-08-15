@@ -181,6 +181,17 @@ export class ServerManager extends EventEmitter {
   }
 
   /**
+   * COOL/HOT の待ち受けポートを変更する。ローカルモード限定 (web モードは RoomManager の
+   * PortPool が部屋ごとにポートを払い出しており、任意のポートへの変更は他の部屋との
+   * 衝突・二重割り当てを招くため isLocalMode() と同じ理由で弾く)。
+   */
+  async setPorts(ports: [number, number]): Promise<void> {
+    if (!this.isLocalMode()) return;
+    if (!this.round.canStart()) return; // setup フェーズ以外は変更不可
+    await this.slots.setPorts(ports);
+  }
+
+  /**
    * ログ保存先・Pythonコマンドの上書きはローカルの Electron アプリからのみ許可する。
    * U15_MODE=web (ブラウザから誰でもルームを作成できる公開モード) では、リモートの
    * クライアントがサーバー上の任意パスへの書き込み・任意コマンドの実行経路に触れる

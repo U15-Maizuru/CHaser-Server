@@ -106,6 +106,24 @@ export class SlotManager extends EventEmitter {
     this.pythonCommandOverride = command;
   }
 
+  /**
+   * 待ち受けポートを変更し、変わったスロットだけ listen をやり直す。
+   * 変化のないスロットは接続済みのソケットをそのまま保つ。
+   */
+  async setPorts(ports: [number, number]): Promise<void> {
+    const changedSlots: (0 | 1)[] = [];
+    for (const slot of [0, 1] as const) {
+      if (this.slots[slot].port === ports[slot]) continue;
+      disconnect(this.slots[slot]);
+      this.slots[slot].port = ports[slot];
+      changedSlots.push(slot);
+    }
+    if (changedSlots.length === 0) return;
+
+    this.emitChange();
+    for (const slot of changedSlots) await this.startListening(slot);
+  }
+
   /** 実行中の接続にも即座に反映する。次に生成するクライアントの既定値としても使う。 */
   setTcpTimeout(ms: number): void {
     this.timeoutMs = ms;

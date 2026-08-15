@@ -74,6 +74,9 @@ export class GameMessageDispatch {
       case 'set_tcp_timeout':
         manager.setTcpTimeout(msg.payload.ms);
         break;
+      case 'set_ports':
+        void manager.setPorts(msg.payload.ports);
+        break;
       case 'set_log_dir':
         manager.setLogDir(msg.payload.dir);
         break;
