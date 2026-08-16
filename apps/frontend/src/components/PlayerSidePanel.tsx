@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type {
   GameStateSnapshot,
   RoundResult,
@@ -35,7 +35,9 @@ export function PlayerSidePanel({ side, snapshot, serverStatus, width, maxHeight
   const roundResults = serverStatus?.roundResults ?? [];
   const doubleMode   = serverStatus?.doubleMode   ?? false;
 
-  const cardRef = useRef<HTMLDivElement>(null);
+  // 探索専用の非表示コピーの ref。実測はこちらで行い、画面に見えているカードは
+  // 探索の途中経過に触れさせない (詳細は下のコメント)。
+  const probeRef = useRef<HTMLDivElement>(null);
 
   // 探索の上限。2ゲーム制は行数が多いぶん先に高さが埋まるが、明細行は1行1項目で縦に詰まって
   // いるため、幅基準の等倍 (correction=1) では縦に余ることがある。1ゲーム制は行が「明細3行」と
@@ -45,24 +47,45 @@ export function PlayerSidePanel({ side, snapshot, serverStatus, width, maxHeight
 
   // 中身がカードの実高さに収まる最大の拡大率を実測で求める (詳細は useFitCorrection)
   const key = `${Math.round(width / 5)}|${Math.round(maxHeight / 5)}|${doubleMode}|${roundResults.length}`;
-  const correction = useFitCorrection(cardRef, { key, maxHeight, maxCorrection });
+  const { correction, settled } = useFitCorrection(probeRef, { key, maxHeight, maxCorrection });
 
-  const dim = buildDim(width, correction);
+  // 画面に見せる値は「収束した値」だけ。探索中は correction が 1 → 収まる値へ複数フレーム
+  // かけて動くが、それをそのまま画面に出すと数フレーム揺れて見える。
+  // 初回 (まだ一度も収束していない) だけは表示するものが無いので隠して待つが、2回目以降の
+  // 再探索 (ラウンド決着で「総合」欄が増えるときなど) では、探索が終わるまで**前回の表示を
+  // そのまま出し続け**、新しい値が決まった瞬間に一度だけ切り替える。対戦中の画面が探索の
+  // たびに暗転するのを避けるため。
+  const [displayCorrection, setDisplayCorrection] = useState<number | null>(null);
+  useEffect(() => {
+    if (settled) setDisplayCorrection(correction);
+  }, [settled, correction]);
+
+  const probeDim   = buildDim(width, correction);
+  const displayDim = buildDim(width, displayCorrection ?? 1);
+
+  const renderContent = (dim: PanelDim) => doubleMode ? (
+    <DoubleModeContent
+      side={side}
+      snapshot={snapshot}
+      serverStatus={serverStatus}
+      roundResults={roundResults}
+      dim={dim}
+    />
+  ) : (
+    <SingleModeContent side={side} snapshot={snapshot} roundResults={roundResults} dim={dim} />
+  );
 
   return (
-    <div ref={cardRef} style={{ ...s.card, width: dim.cardW }}>
-      {doubleMode ? (
-        <DoubleModeContent
-          side={side}
-          snapshot={snapshot}
-          serverStatus={serverStatus}
-          roundResults={roundResults}
-          dim={dim}
-        />
-      ) : (
-        <SingleModeContent side={side} snapshot={snapshot} roundResults={roundResults} dim={dim} />
-      )}
-    </div>
+    <>
+      <div style={{ ...s.card, width: displayDim.cardW, opacity: displayCorrection === null ? 0 : 1 }}>
+        {renderContent(displayDim)}
+      </div>
+      {/* 測定専用の非表示コピー。画面には出さないが、探索中も実際にレイアウトされている
+          必要があるので display:none ではなく画面外配置 + visibility:hidden にする */}
+      <div ref={probeRef} style={{ ...s.card, ...s.probe, width: probeDim.cardW }} aria-hidden="true">
+        {renderContent(probeDim)}
+      </div>
+    </>
   );
 }
 
@@ -347,6 +370,13 @@ const s: Record<string, React.CSSProperties> = {
     // 縦方向は auto (必要なら軽くスクロール) にする。横方向は cardW を超えないよう hidden のまま。
     overflowX: 'hidden', overflowY: 'auto', fontFamily: FONT_UI,
     alignSelf: 'stretch',  // 親の高さに合わせて縦に伸びる
+    // 初回表示だけ、収まる値が決まるまで隠してからふわっと現れる (2回目以降の再探索では
+    // 前回表示をそのまま出し続けるので opacity は動かない。PlayerSidePanel 側を参照)
+    transition: 'opacity 0.18s ease',
+  },
+  // 探索専用の非表示コピー。画面外に固定配置し、レイアウトフローと見た目の両方から外す
+  probe: {
+    position: 'fixed', top: 0, left: -9999, visibility: 'hidden', pointerEvents: 'none',
   },
   teamBox: {
     display: 'flex', flexDirection: 'column',

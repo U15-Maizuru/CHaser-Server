@@ -49,9 +49,14 @@ function rgb(hex: string): string {
   return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
 }
 
-/** 「一撃」などのラベルに対応する値セル (直後の兄弟要素) を取り出す */
+/**
+ * 「一撃」などのラベルに対応する値セル (直後の兄弟要素) を取り出す。
+ * PlayerSidePanel は表示用カードと、拡大率の探索専用の非表示コピー (aria-hidden) を
+ * 両方レンダーするため、探索コピー側は除外する。
+ */
 function rowsOf(container: HTMLElement): { label: string; value: string; color: string }[] {
   return [...container.querySelectorAll('span')]
+    .filter(sp => !sp.closest('[aria-hidden="true"]'))
     .filter(sp => ['アイテム', '一撃', '総取り', '小計', '合計'].includes(sp.textContent ?? ''))
     .map(sp => {
       const v = sp.nextElementSibling as HTMLElement | null;

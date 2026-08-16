@@ -34,6 +34,15 @@ export interface BoardLayout {
  * ただし mainRef の**高さ**は子要素以外からは影響を受ける。main は縦並びの列の中で flex:1 なので、
  * 同じ列の兄弟であるスコアバーが厚くなるとその分だけ低くなる。そのため
  * 「main の高さから決めた値」でスコアバーの寸法を決めてはいけない (下の budgetH を参照)。
+ *
+ * mainRef と scorePadRef は budgetH (= mainSize.height + scorePadH、下記) が「合計は不変」
+ * であることを前提にしている。この前提は、両方の値を**同じタイミングで**読み取って初めて
+ * 成り立つ。かつては別々の ResizeObserver で非同期に setState していたため、一方だけ更新
+ * された瞬間に budgetH が一時的に不整合な値になり、それがまた scoreDim → 実 DOM 高さの
+ * 変化 → ResizeObserver 発火という連鎖を誘発しうる状態だった。ウィンドウの最大化アニメー
+ * ション中 (macOS の live-resize ネストランループなど) のように短時間に resize イベントが
+ * 連続すると、この連鎖が収束せず "Maximum update depth exceeded" に至ることがあったため、
+ * 1つの ResizeObserver で両方をまとめて読み取り、rAF で 1 フレーム 1 回に間引くようにした。
  */
 export function useBoardLayout(
   snapshot: GameStateSnapshot | null,
@@ -41,16 +50,6 @@ export function useBoardLayout(
 ): BoardLayout {
   const mainRef = useRef<HTMLDivElement>(null);
   const [mainSize, setMainSize] = useState({ width: 0, height: 0 });
-
-  useLayoutEffect(() => {
-    if (!mainRef.current) return;
-    const obs = new ResizeObserver((entries) => {
-      const { width, height } = entries[0]!.contentRect;
-      setMainSize({ width, height });
-    });
-    obs.observe(mainRef.current);
-    return () => obs.disconnect();
-  }, []);
 
   // スコアバーは main と同じ縦並びの**兄弟**なので、その高さは main の高さから差し引かれる。
   // そのためスコアバーの大きさを cellSize (= main の高さ由来) から決めると
@@ -61,14 +60,60 @@ export function useBoardLayout(
   const [scorePadH, setScorePadH] = useState(0);
 
   useLayoutEffect(() => {
-    const el = scorePadRef.current;
-    if (!el) { setScorePadH(0); return; }
-    // 高さは main から差し引かれる分 = 外形 (padding 込み) なので offsetHeight で読む
-    const read = () => setScorePadH(el.offsetHeight);
-    const obs = new ResizeObserver(read);
-    obs.observe(el);
-    read();
-    return () => obs.disconnect();
+    const mainEl = mainRef.current;
+    if (!mainEl) return;
+    const scoreEl = scorePadRef.current;
+    if (!scoreEl) setScorePadH(0);
+
+    let rafId = 0;
+    let latestMain: { width: number; height: number } | null = null;
+    let latestScoreH: number | null = null;
+
+    const commit = () => {
+      rafId = 0;
+      if (latestMain) {
+        const m = latestMain;
+        setMainSize((prev) => (prev.width === m.width && prev.height === m.height ? prev : m));
+      }
+      if (latestScoreH !== null) {
+        const h = latestScoreH;
+        setScorePadH((prev) => (prev === h ? prev : h));
+      }
+    };
+    // ResizeObserver の通知は同期的に何度も発火しうる (macOS のウィンドウ最大化アニメーション中
+    // など) ため、rAF で 1 フレーム 1 回にまとめて mainSize/scorePadH を同時に commit する。
+    const schedule = () => {
+      if (rafId) return;
+      rafId = requestAnimationFrame(commit);
+    };
+
+    const obs = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.target === mainEl) {
+          const { width, height } = entry.contentRect;
+          latestMain = { width, height };
+        } else {
+          // 高さは main から差し引かれる分 = 外形 (padding 込み) なので border-box で読む。
+          // offsetHeight (整数丸め) だと mainSize.height 側 (contentRect, 小数精度) との
+          // 端数のズレが budgetH の「合計は不変」の前提を崩し、DPI 拡大率によっては
+          // nominalCell の floor() 境界を毎フレーム行き来してヘッダーのスコア表示が
+          // 揺れ続ける (両者を同じ小数精度で揃えることで止まる)。
+          latestScoreH = entry.borderBoxSize?.[0]?.blockSize ?? (entry.target as HTMLElement).offsetHeight;
+        }
+      }
+      schedule();
+    });
+    obs.observe(mainEl);
+    if (scoreEl) {
+      obs.observe(scoreEl);
+      latestScoreH = scoreEl.offsetHeight;
+      commit(); // 初期値は rAF を待たず即時反映
+    }
+
+    return () => {
+      obs.disconnect();
+      if (rafId) cancelAnimationFrame(rafId);
+    };
   }, [!!snapshot]);
 
   // サイドパネルの可読性のための固定最小幅 (盤面サイズに連動させない)。2ゲーム制は明細行の
