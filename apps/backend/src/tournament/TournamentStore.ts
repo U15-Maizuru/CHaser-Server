@@ -20,7 +20,8 @@ import type {
 } from '@u15/ws-types';
 import {
   BOT_PARTICIPANT_ID, DEFAULT_LEAGUE_POINTS, NO_OPERATOR_DECISIONS,
-  advancePerGroupOf, groupStageCount, hasQualifying, isGroupStageDone, leagueRulesOf, stageLabel,
+  advancePerGroupOf, groupLabel, groupStageCount, hasQualifying, isGroupStageDone, leagueRulesOf,
+  stageLabel,
 } from '@u15/ws-types';
 import { addCatalogEntry, getCatalogEntry, setDemoEnabled } from '../programCatalog.js';
 import { buildBracket } from './bracket.js';
@@ -79,20 +80,28 @@ function sha256(file: string): string {
 
 export function buildMatches(def: TournamentDefinition): TournamentMatch[] {
   const stage = def.stage;
+  // 決勝トーナメントの先攻/後攻は、1ゲーム制のときだけ大会ごとに決定的なコイントスで決める
+  // (2ゲーム制は今まで通り無変更。第2ゲームで自動的に先後が入れ替わるため元々問題にならない)
+  const bracketSideSeed = def.match.doubleMode ? undefined : def.id;
+
   switch (stage.format) {
     case 'league': {
       const opts: Parameters<typeof buildLeague>[1] = {
         doubleRoundRobin: stage.league.doubleRoundRobin,
+        balanceSides:     !def.match.doubleMode,
       };
       if (def.schedule?.pairs) opts.pairs = def.schedule.pairs;
       return resolveMatches(buildLeague(def.participants, opts));
     }
     case 'group-then-bracket': {
       const built = buildGroupStage(def.participants, {
-        groupCount:       stage.groupCount,
-        advancePerGroup:  stage.advancePerGroup,
-        doubleRoundRobin: stage.league.doubleRoundRobin,
-        thirdPlaceMatch:  stage.thirdPlaceMatch,
+        groupCount:        stage.groupCount,
+        advancePerGroup:   stage.advancePerGroup,
+        doubleRoundRobin:  stage.league.doubleRoundRobin,
+        thirdPlaceMatch:   stage.thirdPlaceMatch,
+        balanceGroupSides: !stage.qualifyingDoubleMode,
+        bracketSideSeed,
+        groupScheduleMode: stage.groupScheduleMode,
       });
       return resolveMatches(built, Date.now(), contextOf(def, {}));
     }
@@ -101,11 +110,14 @@ export function buildMatches(def: TournamentDefinition): TournamentMatch[] {
         advanceCount:    stage.advanceCount,
         participantSide: stage.bot.participantSide,
         thirdPlaceMatch: stage.thirdPlaceMatch,
+        bracketSideSeed,
       });
       return resolveMatches(built, Date.now(), contextOf(def, {}));
     }
     case 'single-elimination': {
-      const opts: Parameters<typeof buildBracket>[1] = { thirdPlaceMatch: stage.thirdPlaceMatch };
+      const opts: Parameters<typeof buildBracket>[1] = {
+        thirdPlaceMatch: stage.thirdPlaceMatch, sideSeed: bracketSideSeed,
+      };
       if (def.bracket?.slots) opts.slots = def.bracket.slots;
       return resolveMatches(buildBracket(def.participants, opts));
     }
@@ -238,7 +250,8 @@ export function resolveStageMaps(loaded: LoadedTournament): (string | null)[] {
  */
 export function stageLabelsOf(loaded: LoadedTournament): string[] {
   const { matches } = loaded.state;
-  const format = loaded.def.stage.format;
+  const stageRules = loaded.def.stage;
+  const format = stageRules.format;
   const count  = stageCountOf(matches);
 
   // リーグは勝ち上がりが無いので、stage は回戦ではなく節
@@ -249,11 +262,25 @@ export function stageLabelsOf(loaded: LoadedTournament): string[] {
   const offset = groupStageCount(matches);
   const bracketStages = count - offset;
 
+  // 予選リーグの「順次進行」では、stage 番号がリーグごとに連結されている
+  // (groupStage.ts) ので「予選 第N節」の通し番号だとリーグ2つめ以降がズレて見える。
+  // その stage を持つ試合から所属リーグを引き、リーグ内の相対節番号を出す
+  const qualifyingLabel = (stage: number): string => {
+    if (format === 'bot-then-bracket') return 'BOT対戦予選';
+    if (format === 'group-then-bracket' && stageRules.groupScheduleMode === 'sequential') {
+      const group = matches.find(m => m.stage === stage && m.group !== undefined)?.group;
+      if (group !== undefined) {
+        const groupStart = matches
+          .filter(m => m.group === group)
+          .reduce((min, m) => Math.min(min, m.stage), Number.POSITIVE_INFINITY);
+        return `${groupLabel(group)}リーグ 第${stage - groupStart + 1}節`;
+      }
+    }
+    return `予選 第${stage + 1}節`;
+  };
+
   return Array.from({ length: count }, (_, stage) => (
-    stage >= offset                    ? stageLabel(stage - offset, bracketStages)
-    // BOT対戦予選は1段だけなので「第N節」と数える意味が無い
-    : format === 'bot-then-bracket'    ? 'BOT対戦予選'
-    :                                    `予選 第${stage + 1}節`
+    stage >= offset ? stageLabel(stage - offset, bracketStages) : qualifyingLabel(stage)
   ));
 }
 
@@ -278,9 +305,21 @@ function slotKey(ref: TournamentMatch['slotA']): string {
   }
 }
 
+/**
+ * slotA/slotB は**順不同の集合**として比較する。
+ *
+ * 運営が先攻・後攻を入れ替えても (swapSides)、定義 (tournament.json) には書き戻らず
+ * state.json 側だけが変わる。それを「定義が変わった」と誤判定すると
+ * stateMatchesDefinition が false を返し、再スキャン/再起動のたびに進行状態が消える。
+ * 2つの参照を順序込みで比較すると誤判定するので、集合として突き合わせる
+ * (どちらが slotA/slotB になっても同じ組み合わせなら一致とみなす)。
+ */
 function fingerprint(matches: TournamentMatch[]): string {
   return matches
-    .map(m => [m.id, m.stage, m.order, m.group ?? '-', slotKey(m.slotA), slotKey(m.slotB)].join('|'))
+    .map(m => [
+      m.id, m.stage, m.order, m.group ?? '-',
+      [slotKey(m.slotA), slotKey(m.slotB)].sort().join(','),
+    ].join('|'))
     .sort()
     .join('\n');
 }

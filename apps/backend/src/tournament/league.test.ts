@@ -24,6 +24,20 @@ describe('buildLeague', () => {
     }
   });
 
+  it('第1節は必ず「1番目 vs 2番目」の対戦になる (以降は総当たりの制約どおり)', () => {
+    for (const n of [2, 3, 4, 5, 6, 7, 8, 9]) {
+      const ms = buildLeague(people(n), SINGLE);
+      const firstStage = pairsOf(ms.filter(m => m.stage === 0));
+      const top2 = firstStage.some(([a, b]) => new Set([a, b]).size === 2
+        && new Set([a, b]).has('p1') && new Set([a, b]).has('p2'));
+      expect(top2).toBe(true);
+
+      // 総当たりの制約 (全組み合わせが1回ずつ、節に重複なし) は崩れていない
+      const seen = new Set(pairsOf(ms).map(([a, b]) => [a, b].sort().join('-')));
+      expect(seen.size).toBe((n * (n - 1)) / 2);
+    }
+  });
+
   it('全ての組み合わせがちょうど1回ずつ現れる', () => {
     const ms = buildLeague(people(5), SINGLE);
     const seen = new Set(pairsOf(ms).map(([a, b]) => [a, b].sort().join('-')));
@@ -95,5 +109,35 @@ describe('buildLeague', () => {
   it('1人以下では試合が成立しない', () => {
     expect(buildLeague(people(1), SINGLE)).toEqual([]);
     expect(buildLeague([], SINGLE)).toEqual([]);
+  });
+});
+
+describe('buildLeague — balanceSides (1ゲーム制の先攻/後攻バランス)', () => {
+  it('先攻(side0)回数の参加者間の差が2以内に収まる (無バランスだと人数-1まで開きうる)', () => {
+    for (const n of [3, 4, 5, 6, 7, 8, 9, 10, 11]) {
+      const ms = buildLeague(people(n), { doubleRoundRobin: false, balanceSides: true });
+      const count = new Map<string, number>();
+      for (const m of ms) {
+        if (m.slotA.kind === 'participant') {
+          count.set(m.slotA.participantId, (count.get(m.slotA.participantId) ?? 0) + 1);
+        }
+      }
+      const values = people(n).map(p => count.get(p.id) ?? 0);
+      expect(Math.max(...values) - Math.min(...values)).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it('組み合わせ自体 (誰と誰が対戦するか) はバランス処理で変わらない', () => {
+    const withBalance = buildLeague(people(5), { doubleRoundRobin: false, balanceSides: true });
+    const without      = buildLeague(people(5), { doubleRoundRobin: false });
+    const asSet = (ms: ReturnType<typeof buildLeague>) =>
+      new Set(pairsOf(ms).map(([a, b]) => [a, b].sort().join('-')));
+    expect(asSet(withBalance)).toEqual(asSet(without));
+  });
+
+  it('明示 pairs には適用しない (運営が書いた順序として尊重する)', () => {
+    const pairs: [string, string][] = [['p2', 'p1'], ['p1', 'p3']];
+    const ms = buildLeague(people(3), { doubleRoundRobin: false, balanceSides: true, pairs });
+    expect(pairsOf(ms)).toEqual(pairs);
   });
 });

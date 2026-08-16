@@ -189,6 +189,29 @@ describe('予選リーグ + 決勝トーナメント', () => {
     expect(stage).toMatchObject({ groupCount: 2, advancePerGroup: 2 });
   });
 
+  it('qualifyingDoubleMode を省略すると match.doubleMode に揃う', () => {
+    expect(parseGroup({}).stage).toMatchObject({ qualifyingDoubleMode: true });
+    expect(parseGroup({ match: { doubleMode: false } }).stage)
+      .toMatchObject({ qualifyingDoubleMode: false });
+  });
+
+  it('qualifyingDoubleMode は match.doubleMode と別に指定できる', () => {
+    const def = parseGroup({
+      match: { doubleMode: true }, stage: { qualifyingDoubleMode: false },
+    });
+    expect(def.match.doubleMode).toBe(true);
+    expect(def.stage).toMatchObject({ qualifyingDoubleMode: false });
+  });
+
+  it('groupScheduleMode は省略すると parallel、明示すれば sequential にできる', () => {
+    expect(parseGroup({}).stage).toMatchObject({ groupScheduleMode: 'parallel' });
+    expect(parseGroup({ stage: { groupScheduleMode: 'sequential' } }).stage)
+      .toMatchObject({ groupScheduleMode: 'sequential' });
+    // 未知の値は parallel に倒す
+    expect(parseGroup({ stage: { groupScheduleMode: 'bogus' } }).stage)
+      .toMatchObject({ groupScheduleMode: 'parallel' });
+  });
+
   it('participants[].group を読む', () => {
     const def = parseGroup({
       participants: GROUP_OK.participants.map((p, i) => (i === 0 ? { ...p, group: 1 } : p)),
@@ -253,6 +276,11 @@ describe('BOT対戦予選 + 決勝トーナメント', () => {
     const s = botStage();
     expect(s.bot.map).toBe('map-1');
     expect(s.advanceCount).toBe(4);
+  });
+
+  it('qualifyingDoubleMode は match.doubleMode と別に指定できる', () => {
+    expect(botStage()).toMatchObject({ qualifyingDoubleMode: true }); // match.doubleMode の既定 true に揃う
+    expect(botStage({ qualifyingDoubleMode: false })).toMatchObject({ qualifyingDoubleMode: false });
   });
 
   it('トップレベルに format が無く stage.format にしか無くても読める (エディタ UI が送る形)', () => {

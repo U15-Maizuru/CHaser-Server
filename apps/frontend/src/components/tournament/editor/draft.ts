@@ -4,7 +4,7 @@ import type {
 } from '@u15/ws-types';
 import {
   DEFAULT_LEAGUE_POINTS, autoGroupAssign, botRulesOf, bracketSizeFor, groupLabel,
-  hasThirdPlaceMatch, leagueRulesOf, stageCountFor,
+  hasQualifying, hasThirdPlaceMatch, leagueRulesOf, stageCountFor,
 } from '@u15/ws-types';
 import { matchCountOf } from '../../../lib/bracketSlots';
 
@@ -62,6 +62,8 @@ export interface TournamentDraft {
   format: TournamentFormat;
 
   doubleMode:       boolean;
+  /** 予選専用の doubleMode (group-then-bracket / bot-then-bracket のみ意味を持つ) */
+  qualifyingDoubleMode: boolean;
   thirdPlaceMatch:  boolean;
   doubleRoundRobin: boolean;
   leaguePoints:     LeaguePoints;
@@ -76,6 +78,8 @@ export interface TournamentDraft {
    * group-then-bracket … 各リーグから / bot-then-bracket … 全体で
    */
   advanceCount: number;
+  /** 複数予選リーグの進行順序 (group-then-bracket のみ意味を持つ) */
+  groupScheduleMode: 'parallel' | 'sequential';
 
   bot: DraftBot;
 
@@ -117,10 +121,10 @@ export function newParticipant(taken: Set<string>, name: string): DraftParticipa
 export function emptyDraft(id = defaultId()): TournamentDraft {
   return {
     id, name: '', format: 'single-elimination',
-    doubleMode: true, thirdPlaceMatch: false, doubleRoundRobin: false,
+    doubleMode: true, qualifyingDoubleMode: true, thirdPlaceMatch: false, doubleRoundRobin: false,
     leaguePoints: DEFAULT_LEAGUE_POINTS,
     mapCatalogId: '', stageMaps: [],
-    groupCount: 2, advanceCount: 2,
+    groupCount: 2, advanceCount: 2, groupScheduleMode: 'parallel',
     bot: { program: '', name: '', map: '', participantSide: 0 },
     participants: [], manualBracket: false, slots: [],
   };
@@ -164,6 +168,10 @@ export function draftFromDefinition(
     format: stage.format,
 
     doubleMode:       def.match.doubleMode,
+    qualifyingDoubleMode:
+      stage.format === 'group-then-bracket' || stage.format === 'bot-then-bracket'
+        ? stage.qualifyingDoubleMode
+        : d.qualifyingDoubleMode,
     thirdPlaceMatch:  hasThirdPlaceMatch(stage),
     doubleRoundRobin: league?.doubleRoundRobin ?? d.doubleRoundRobin,
     leaguePoints:     league?.points ?? d.leaguePoints,
@@ -175,6 +183,8 @@ export function draftFromDefinition(
         stage.format === 'group-then-bracket' ? stage.advancePerGroup
       : stage.format === 'bot-then-bracket'   ? stage.advanceCount
       : d.advanceCount,
+    groupScheduleMode:
+      stage.format === 'group-then-bracket' ? stage.groupScheduleMode : d.groupScheduleMode,
 
     bot: {
       ...toChoice(bot?.program ?? null, assigned.get('__bot__')),
@@ -261,11 +271,14 @@ function stageRulesFromDraft(d: TournamentDraft, map: MapPlan): StageRules {
       return {
         format: d.format, map, thirdPlaceMatch: d.thirdPlaceMatch, league,
         groupCount: d.groupCount, advancePerGroup: d.advanceCount,
+        qualifyingDoubleMode: d.qualifyingDoubleMode,
+        groupScheduleMode: d.groupScheduleMode,
       };
     case 'bot-then-bracket':
       return {
         format: d.format, map, thirdPlaceMatch: d.thirdPlaceMatch,
         advanceCount: d.advanceCount,
+        qualifyingDoubleMode: d.qualifyingDoubleMode,
         bot: {
           // ライブラリ割り当て (lib:) は配布物に書かず、/assign で state.json 側へ保存する
           program:         toProgram(d.bot.program, d.bot.file),
@@ -344,6 +357,15 @@ export function previewMatchCount(d: TournamentDraft): number {
 function bracketMatches(entrants: number, thirdPlaceMatch: boolean): number {
   const size = bracketSizeFor(entrants);
   return (size < 2 ? 0 : size - 1) + (thirdPlaceMatch && size >= 4 ? 1 : 0);
+}
+
+/** エディタ下部プレビューの「何ゲーム制か」の文言。予選・決勝で違うときは内訳を出す */
+export function doubleModeSummary(d: TournamentDraft): string {
+  const g = (v: boolean) => (v ? '2' : '1');
+  if (hasQualifying(d.format) && d.qualifyingDoubleMode !== d.doubleMode) {
+    return `（予選${g(d.qualifyingDoubleMode)}ゲーム・決勝${g(d.doubleMode)}ゲーム）`;
+  }
+  return d.doubleMode ? '（各2ゲーム）' : '';
 }
 
 // ── 検証 ──────────────────────────────────────────────────────────────────────

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { MatchSlotRef, ParticipantDef, TournamentMatch } from '@u15/ws-types';
 import { bracketSizeFor, seedOrder, stageLabel } from '@u15/ws-types';
 
@@ -55,6 +56,25 @@ function slotRef(participantId: string | null): MatchSlotRef {
   return participantId === null ? { kind: 'bye' } : { kind: 'participant', participantId };
 }
 
+/**
+ * 文字列から決定的に真偽値を1つ決める (1ゲーム制の決勝トーナメントで先攻・後攻を
+ * 「ランダムに見えるが再現性のある」形で割り当てるため)。
+ *
+ * **`Math.random()` を使わないこと。** `buildBracket` は `TournamentStore.buildMatches` から
+ * 何度も呼ばれ (`stateMatchesDefinition` が再スキャン/再起動のたびに再構築して突き合わせる)、
+ * 真の乱数だと呼ぶたびに結果が変わって「定義が変わった」と誤判定され、進行状態が消える。
+ */
+export function sideCoin(seed: string): boolean {
+  return (createHash('sha256').update(seed).digest()[0]! & 1) === 1;
+}
+
+/** sideSeed が指定されていれば、その試合の id を鍵にしたコイントスで slotA/slotB を入れ替える */
+function maybeSwapSides(
+  sideSeed: string | undefined, id: string, a: MatchSlotRef, b: MatchSlotRef,
+): [MatchSlotRef, MatchSlotRef] {
+  return sideSeed !== undefined && sideCoin(`${sideSeed}:${id}`) ? [b, a] : [a, b];
+}
+
 export interface BuildBracketOptions {
   thirdPlaceMatch: boolean;
   /** 明示的な1回戦の並び。長さは2の冪、null は bye */
@@ -71,6 +91,12 @@ export interface BuildBracketOptions {
    * ゲタを混ぜると matchId が 'SF1' ではなく 'R3M1' になってしまう。
    */
   stageOffset?: number;
+  /**
+   * 指定すると、各試合の slotA/slotB を `sideCoin` で決定的にシャッフルする
+   * (1ゲーム制の決勝トーナメント用)。省略時は今まで通り slotA が常に若い方の参照になる。
+   * 大会ごとに割り当てを変えたいので、呼び出し側は `def.id` などを渡すこと。
+   */
+  sideSeed?: string;
 }
 
 /**
@@ -125,8 +151,11 @@ export function buildBracket(
     firstIds.push(id);
     matches.push(emptyMatch(
       id, 0 + offset, i, matchLabel(0, i, firstCount, totalStages),
-      firstRound[i * 2] ?? { kind: 'bye' },
-      firstRound[i * 2 + 1] ?? { kind: 'bye' },
+      ...maybeSwapSides(
+        opts.sideSeed, id,
+        firstRound[i * 2] ?? { kind: 'bye' },
+        firstRound[i * 2 + 1] ?? { kind: 'bye' },
+      ),
     ));
   }
 
@@ -140,8 +169,11 @@ export function buildBracket(
       ids.push(id);
       matches.push(emptyMatch(
         id, stage + offset, i, matchLabel(stage, i, count, totalStages),
-        { kind: 'winner-of', matchId: prevIds[i * 2]! },
-        { kind: 'winner-of', matchId: prevIds[i * 2 + 1]! },
+        ...maybeSwapSides(
+          opts.sideSeed, id,
+          { kind: 'winner-of', matchId: prevIds[i * 2]! },
+          { kind: 'winner-of', matchId: prevIds[i * 2 + 1]! },
+        ),
       ));
     }
     prevIds = ids;
@@ -154,8 +186,11 @@ export function buildBracket(
     if (semis.length === 2) {
       matches.push(emptyMatch(
         'THIRD', totalStages - 1 + offset, 1, '3位決定戦',
-        { kind: 'loser-of', matchId: semis[0]!.id },
-        { kind: 'loser-of', matchId: semis[1]!.id },
+        ...maybeSwapSides(
+          opts.sideSeed, 'THIRD',
+          { kind: 'loser-of', matchId: semis[0]!.id },
+          { kind: 'loser-of', matchId: semis[1]!.id },
+        ),
       ));
     }
   }

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { ParticipantDef } from '@u15/ws-types';
 import { bracketSizeFor, seedOrder } from '@u15/ws-types';
-import { buildBracket, orderBySeed } from './bracket.js';
+import { buildBracket, orderBySeed, sideCoin } from './bracket.js';
 import { captureResult, confirmResult, resolveMatches } from './progress.js';
 
 function people(n: number): ParticipantDef[] {
@@ -44,6 +44,22 @@ describe('orderBySeed', () => {
       { id: 'b', name: 'B', seed: 5, program: null },   // 飛び番でも順序関係だけ使う
     ];
     expect(orderBySeed(ps).map(p => p.id)).toEqual(['a', 'b', 'c', 'd']);
+  });
+});
+
+describe('sideCoin', () => {
+  it('同じ種なら何度呼んでも同じ結果 (Math.random ではなく決定的)', () => {
+    const a = sideCoin('cup-1:SF1');
+    expect(sideCoin('cup-1:SF1')).toBe(a);
+    expect(sideCoin('cup-1:SF1')).toBe(a);
+  });
+
+  it('種が違えば結果が変わりうる (大会・試合ごとに独立して決まる)', () => {
+    const results = new Set([
+      sideCoin('cup-1:SF1'), sideCoin('cup-1:SF2'), sideCoin('cup-2:SF1'), sideCoin('cup-3:FINAL'),
+    ]);
+    // 4通り全部が同じ値になる (=定数関数) ことはない、というだけの緩い確認
+    expect(results.size).toBeGreaterThan(1);
   });
 });
 
@@ -108,6 +124,23 @@ describe('buildBracket', () => {
   it('2人では3位決定戦を作らない (準決勝が存在しない)', () => {
     const ms = buildBracket(people(2), { thirdPlaceMatch: true });
     expect(ms.find(m => m.id === 'THIRD')).toBeUndefined();
+  });
+
+  it('sideSeed を省略すると今まで通り slotA が常に若いシード側になる', () => {
+    const ms = buildBracket(people(2), OPTS);
+    expect(ms[0]!.slotA).toEqual({ kind: 'participant', participantId: 'p01' });
+    expect(ms[0]!.slotB).toEqual({ kind: 'participant', participantId: 'p02' });
+  });
+
+  it('sideSeed を渡すと試合ごとのコイントスで slotA/slotB が入れ替わりうる', () => {
+    // sideCoin('cup-b:FINAL') は false (入れ替えなし)、sideCoin('cup-a:FINAL') は true (入れ替え)
+    const noSwap = buildBracket(people(2), { ...OPTS, sideSeed: 'cup-b' })[0]!;
+    expect(noSwap.slotA).toEqual({ kind: 'participant', participantId: 'p01' });
+    expect(noSwap.slotB).toEqual({ kind: 'participant', participantId: 'p02' });
+
+    const swapped = buildBracket(people(2), { ...OPTS, sideSeed: 'cup-a' })[0]!;
+    expect(swapped.slotA).toEqual({ kind: 'participant', participantId: 'p02' });
+    expect(swapped.slotB).toEqual({ kind: 'participant', participantId: 'p01' });
   });
 
   it('明示 slots を尊重する', () => {

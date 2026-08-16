@@ -40,29 +40,49 @@ export interface BuildGroupStageOptions {
   advancePerGroup:  number;
   doubleRoundRobin: boolean;
   thirdPlaceMatch:  boolean;
+  /** 予選を先攻/後攻バランスするか (1ゲーム制のリーグ戦用)。buildLeague へそのまま転送する */
+  balanceGroupSides?: boolean;
+  /** 決勝トーナメントの先攻/後攻をランダム化する種。buildBracket へそのまま転送する */
+  bracketSideSeed?: string;
+  /**
+   * 複数リーグの進行順序。既定 `'parallel'` (全リーグが節ごとに横並びで進む=今までの挙動)。
+   * `'sequential'` は1リーグずつ最後まで終わらせてから次のリーグへ進む
+   */
+  groupScheduleMode?: 'parallel' | 'sequential';
 }
 
 export function buildGroupStage(
   participants: ParticipantDef[],
   opts: BuildGroupStageOptions,
 ): TournamentMatch[] {
-  const groups = assignGroups(participants, opts.groupCount);
+  const groups     = assignGroups(participants, opts.groupCount);
+  const sequential = opts.groupScheduleMode === 'sequential';
 
   // ── 予選 ──
+  //
+  // parallel (既定): 全リーグが stage 番号 0..k-1 を共有し、order でリーグ間の衝突を避ける。
+  // sequential: リーグごとに stage 番号を連結する (Aリーグ 0..k0-1, Bリーグ k0..k0+k1-1, …)。
+  // stage が重ならないので order はリーグ内の元の値のままでよい。
   const groupMatches: TournamentMatch[] = [];
+  let stageOffsetForGroup = 0;
   groups.forEach((members, group) => {
-    const built = buildLeague(members, { doubleRoundRobin: opts.doubleRoundRobin });
+    const built = buildLeague(members, {
+      doubleRoundRobin: opts.doubleRoundRobin,
+      balanceSides:     opts.balanceGroupSides,
+    });
+    const roundsInGroup = built.reduce((max, m) => Math.max(max, m.stage + 1), 0);
     for (const m of built) {
       groupMatches.push({
         ...m,
         id:    `G${group + 1}-D${m.stage + 1}M${m.order + 1}`,
         label: `${groupLabel(group)}リーグ 第${m.stage + 1}節 第${m.order + 1}試合`,
-        // 同じ stage にリーグの数だけ試合が並ぶので、order がリーグ間で衝突しないようずらす。
+        stage: sequential ? stageOffsetForGroup + m.stage : m.stage,
         // 衝突したままだと compareByPlayOrder が同値を返し、次に実施する試合が不定になる
-        order: m.order * opts.groupCount + group,
+        order: sequential ? m.order : m.order * opts.groupCount + group,
         group,
       });
     }
+    if (sequential) stageOffsetForGroup += roundsInGroup;
   });
 
   const groupStages = groupMatches.reduce((max, m) => Math.max(max, m.stage + 1), 0);
@@ -87,6 +107,7 @@ export function buildGroupStage(
     thirdPlaceMatch: opts.thirdPlaceMatch,
     firstRoundRefs:  first,
     stageOffset:     groupStages,
+    sideSeed:        opts.bracketSideSeed,
   });
 
   return [...groupMatches, ...bracket];

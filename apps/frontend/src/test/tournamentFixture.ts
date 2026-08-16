@@ -29,12 +29,14 @@ function build(format: TournamentFormat): StageRules {
     case 'group-then-bracket':
       return {
         format, map: MAP, thirdPlaceMatch: false, league: LEAGUE,
-        groupCount: 2, advancePerGroup: 2,
+        groupCount: 2, advancePerGroup: 2, qualifyingDoubleMode: true,
+        groupScheduleMode: 'parallel',
       };
     case 'bot-then-bracket':
       return {
         format, map: MAP, thirdPlaceMatch: false, advanceCount: 4,
         bot: { program: null, name: null, map: 'map-1', participantSide: 0 },
+        qualifyingDoubleMode: true,
       };
   }
 }

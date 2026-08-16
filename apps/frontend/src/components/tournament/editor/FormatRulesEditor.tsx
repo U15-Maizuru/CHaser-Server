@@ -1,5 +1,5 @@
 import type { CatalogEntry, MapCatalogEntry } from '@u15/ws-types';
-import { stageLabel } from '@u15/ws-types';
+import { hasQualifying, stageLabel } from '@u15/ws-types';
 import {
   Button, Checkbox, ChipRow, Field, Hint, NumberInput, Section, Select, TextInput,
 } from '../../../ui';
@@ -23,17 +23,42 @@ export function FormatRulesEditor({ draft, programs, maps, patch }: FormatRulesE
 
   return (
     <Section title="ルール">
-      <label style={s.check}>
-        <Checkbox
-          checked={draft.doubleMode}
-          onChange={e => patch({ doubleMode: e.target.checked })}
-        />
-        <span>2ゲーム制（先攻・後攻を入れ替えて2ゲームで1試合）</span>
-      </label>
-      <Hint>公式ルールの試合形式です。外すと1ゲームで決着します（練習用）。</Hint>
+      {hasQualifying(format) ? (
+        <>
+          <label style={s.check}>
+            <Checkbox
+              checked={draft.qualifyingDoubleMode}
+              onChange={e => patch({ qualifyingDoubleMode: e.target.checked })}
+            />
+            <span>予選を2ゲーム制にする（先攻・後攻を入れ替えて2ゲームで1試合）</span>
+          </label>
+          <label style={s.check}>
+            <Checkbox
+              checked={draft.doubleMode}
+              onChange={e => patch({ doubleMode: e.target.checked })}
+            />
+            <span>決勝トーナメントを2ゲーム制にする</span>
+          </label>
+          <Hint>
+            公式ルールの試合形式です。外すと1ゲームで決着します。
+            予選と決勝トーナメントで別々に選べます。
+          </Hint>
+        </>
+      ) : (
+        <>
+          <label style={s.check}>
+            <Checkbox
+              checked={draft.doubleMode}
+              onChange={e => patch({ doubleMode: e.target.checked })}
+            />
+            <span>2ゲーム制（先攻・後攻を入れ替えて2ゲームで1試合）</span>
+          </label>
+          <Hint>公式ルールの試合形式です。外すと1ゲームで決着します。</Hint>
+        </>
+      )}
 
-      {/* 手番は1ゲーム制のときだけ意味を持つ。2ゲーム制は先後が入れ替わる */}
-      {format === 'bot-then-bracket' && !draft.doubleMode && (
+      {/* 手番は予選が1ゲーム制のときだけ意味を持つ。2ゲーム制は先後が入れ替わる */}
+      {format === 'bot-then-bracket' && !draft.qualifyingDoubleMode && (
         <>
           <Field label="参加者の手番">
             <ChipRow>
@@ -84,6 +109,23 @@ export function FormatRulesEditor({ draft, programs, maps, patch }: FormatRulesE
             予選は各リーグの総当たり。上位 {draft.advanceCount} 名ずつ、
             合計 {draft.groupCount * draft.advanceCount} 名が決勝トーナメントへ進みます。
             同点で順位が決まらないときは、運営画面で進出者を選び直せます。
+          </Hint>
+
+          <Field label="複数リーグの進行順序">
+            <Select
+              aria-label="複数リーグの進行順序" value={draft.groupScheduleMode}
+              onChange={e => patch({
+                groupScheduleMode: e.target.value === 'sequential' ? 'sequential' : 'parallel',
+              })}
+              style={{ flex: 1, minWidth: 0 }}
+            >
+              <option value="parallel">並行進行 (全リーグが節ごとに横並びで進む)</option>
+              <option value="sequential">順次進行 (1リーグずつ終わらせてから次へ)</option>
+            </Select>
+          </Field>
+          <Hint>
+            並行進行なら特定のリーグの参加者だけが先に試合をこなす偏りが起きません。
+            順次進行は1つのリーグを先に運営したいときに使います。
           </Hint>
         </>
       )}

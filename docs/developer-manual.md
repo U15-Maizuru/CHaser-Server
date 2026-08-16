@@ -1275,10 +1275,15 @@ server/tournament/<大会id>/
 ### 13-3. 押さえておくべき不変条件
 
 - **`side 0 = slotA`**: `armMatch` は必ず `slotA → スロット0 (COOL)` で第1ゲームを始める。
-  公式ルール「1回目のゲームでは選手番号の小さい選手を先攻」に対応する。第2ゲームは既存の
-  `swapSlotConfigs()` が入れ替えるので、`idxForSide(side, round)` により
-  `computeSetResult()` の `[0]/[1]` が `slotA/slotB` に一致する。
+  2ゲーム制は公式ルール「1回目のゲームでは選手番号の小さい選手を先攻」どおり `slotA` が
+  決定論的に決まる。第2ゲームは既存の `swapSlotConfigs()` が入れ替えるので、
+  `idxForSide(side, round)` により `computeSetResult()` の `[0]/[1]` が `slotA/slotB` に一致する。
   なお `RoundResult.playerNames` は入替**後**の順なので、表示には `resolvedA/resolvedB` を使う。
+  **1ゲーム制は先後の非対称性を打ち消せないので、`slotA` の決め方自体が違う**:
+  リーグ・予選リーグは `league.ts` の `balanceSideCounts` (先攻回数をなるべく均等に)、
+  決勝トーナメントは `bracket.ts` の `sideCoin` (試合ごとの決定的コイントス、`Math.random`
+  ではなく `${def.id}:${matchId}` のハッシュ — 理由は次の指紋比較の項)。運営は
+  `matchCommands.swapSides` で `status==='ready'` の間だけ手動で入れ替えられる。
 - **`armMatch` の順序**: `requestReset()` → `setDoubleMode()` → `setClientType()` ×2。
   `requestReset` が `resetAllToDefault()` で `processConfig` を消すため、逆順にすると割り当てが失われる。
   また `roundResults` を空にすることで `canEditMap()` / `canStart()` の両ゲートが通る。
@@ -1388,10 +1393,15 @@ server/tournament/<大会id>/
 
 `POST /api/tournament/import` は `?reset=1` で取り込み後に進行状態を作り直す。
 `loadTournament` の噛み合わせ判定 (`stateMatchesDefinition`) は、定義から組み直した試合グラフと
-**骨組みの指紋** (`id | stage | order | group | slotA種別 | slotB種別`) を突き合わせる。
+**骨組みの指紋** (`id | stage | order | group | slotA種別+slotB種別の集合`) を突き合わせる。
 participant id だけを見ていた頃は「参加者を変えずにルールだけ変えた上書き」も
 「予選のリーグ分けの入れ替え」も素通りしていたが、指紋比較ならその全部が引っかかる。
 それでも上書き保存では `?reset=1` を付けること (意図が明示される)。
+
+**`slotA`/`slotB` は順序を無視し、2つの参照の集合として比較する。** 運営が `swapSides` で
+先攻・後攻を手動入れ替えしても、`state.matches` はその場で変わるだけで `tournament.json`
+には書き戻らない。順序込みで比較すると、`bind`/`rescan` のたびに毎回 `buildMatches(def)`
+と食い違って「定義が変わった」と誤判定され、進行状態がまるごと消える。
 
 運営中 (bind 中) の大会に対する `import` / `upload` の上書きと `assign` は拒否する
 (`import` は 409、`upload` は `handleUpload` の仕組み上レスポンスが常に200固定なので

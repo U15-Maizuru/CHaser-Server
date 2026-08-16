@@ -52,6 +52,8 @@ export type FrontendMessage =
   | { type: 'tournament_reopen_match';    payload: { matchId: string; cascade?: boolean } }
   | { type: 'tournament_set_walkover';    payload: { matchId: string; winnerSide: 0 | 1 | null } }
   | { type: 'tournament_assign_program';  payload: { participantId: string; catalogId: string | null } }
+  /** 先攻・後攻の入れ替え。ready の試合だけに効く (armMatch 前まで) */
+  | { type: 'tournament_swap_sides';      payload: { matchId: string } }
   /** 回戦 (stage) ごとのマップ差し替え。null は「大会の設定に従う」 */
   | { type: 'tournament_set_stage_map';   payload: { stage: number; mapCatalogId: string | null } }
   /** 決勝進出者の手動差し替え。participantId: null は「自動判定に戻す」 */

@@ -25,6 +25,11 @@ export interface BuildBotStageOptions {
   /** 参加者が第1ゲームでどちら側に座るか (0 = 先攻 / 1 = 後攻) */
   participantSide: 0 | 1;
   thirdPlaceMatch: boolean;
+  /**
+   * 決勝トーナメントの先攻/後攻をランダム化する種。buildBracket へそのまま転送する。
+   * **予選 (BOT対戦) には適用しない** — 全参加者が同一条件で測られるのがこの形式の根拠
+   */
+  bracketSideSeed?: string;
 }
 
 export function buildBotStage(
@@ -75,6 +80,7 @@ export function buildBotStage(
     firstRoundRefs:  first,
     // 予選は stage 0 の1段だけ
     stageOffset:     1,
+    sideSeed:        opts.bracketSideSeed,
   });
 
   return [...qualifying, ...bracket];

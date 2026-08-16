@@ -7,8 +7,9 @@ import { FormatRulesEditor } from './FormatRulesEditor';
 import { ParticipantEditor } from './ParticipantEditor';
 import { PairingEditor } from './PairingEditor';
 import {
-  FORMATS, FORMAT_LABEL, defaultId, definitionFromDraft, draftFromDefinition, emptyDraft,
-  libraryAssignments, previewMatchCount, suggestCopyId, validateDraft, type TournamentDraft,
+  FORMATS, FORMAT_LABEL, defaultId, definitionFromDraft, doubleModeSummary, draftFromDefinition,
+  emptyDraft, libraryAssignments, previewMatchCount, suggestCopyId, validateDraft,
+  type TournamentDraft,
 } from './draft';
 import {
   TEXT_SECONDARY, Button, Callout, ChipRow, Dialog, EmptyState, Field, Hint, Section, TextInput,
@@ -163,7 +164,7 @@ export function TournamentEditorDialog({
         <>
           <span style={s.preview} data-testid="editor-preview">
             {FORMAT_LABEL[draft.format]} ・ {draft.participants.length}人 ・
-            {' '}全 {previewMatchCount(draft)} 試合{draft.doubleMode ? '（各2ゲーム）' : ''}
+            {' '}全 {previewMatchCount(draft)} 試合{doubleModeSummary(draft)}
           </span>
           <Button variant="ghost" onClick={onClose}>キャンセル</Button>
           {editId !== null && (

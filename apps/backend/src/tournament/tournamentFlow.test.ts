@@ -156,12 +156,14 @@ function stageOf(format: TournamentFormat): StageRules {
     return {
       format, map, thirdPlaceMatch: false, groupCount: 2, advancePerGroup: 1,
       league: { points: DEFAULT_LEAGUE_POINTS, doubleRoundRobin: false },
+      qualifyingDoubleMode: false, groupScheduleMode: 'parallel',
     };
   }
   if (format === 'bot-then-bracket') {
     return {
       format, map, thirdPlaceMatch: false, advanceCount: 2,
       bot: { program: null, name: null, map: 'm', participantSide: 0 },
+      qualifyingDoubleMode: false,
     };
   }
   return { format, map, thirdPlaceMatch: false };

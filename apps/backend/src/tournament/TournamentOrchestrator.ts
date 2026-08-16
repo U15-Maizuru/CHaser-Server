@@ -12,6 +12,7 @@ import {
 } from './binding.js';
 import {
   armMatch, cancelArm, confirmResult, discardResult, reopenMatch, setStageMap, setWalkover,
+  swapSides,
 } from './matchCommands.js';
 import { confirmQualifiers, setQualifier, setQualifierExclusion } from './qualifierCommands.js';
 import { applyServerStatus } from './statusBridge.js';
@@ -185,6 +186,10 @@ export class TournamentOrchestrator {
 
   setStageMap(roomId: string, stage: number, mapCatalogId: string | null): void {
     setStageMap(this.env, this.require(roomId), stage, mapCatalogId);
+  }
+
+  swapSides(roomId: string, matchId: string): void {
+    swapSides(this.env, this.require(roomId), matchId);
   }
 
   setQualifier(

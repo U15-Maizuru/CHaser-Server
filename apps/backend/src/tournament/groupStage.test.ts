@@ -172,6 +172,61 @@ describe('buildGroupStage', () => {
   });
 });
 
+describe('buildGroupStage — groupScheduleMode: sequential', () => {
+  // people(8) + groupCount:2 → 各リーグ4人 (3節×2試合)
+  it('並行進行 (既定) は全リーグの第1節が同じ stage を共有する', () => {
+    const ms = buildGroupStage(people(8), OPTS);
+    expect(ms.filter(m => m.group !== undefined && m.stage === 0).map(m => m.group).sort())
+      .toEqual([0, 0, 1, 1]);
+    expect(groupStageCount(ms)).toBe(3);   // 全リーグで節を共有するので、節数の多い方 (=3) のまま
+  });
+
+  it('順次進行はリーグごとに stage 番号を連結する (重ならない)', () => {
+    const ms = buildGroupStage(people(8), { ...OPTS, groupScheduleMode: 'sequential' });
+    const aStages = new Set(ms.filter(m => m.group === 0).map(m => m.stage));
+    const bStages = new Set(ms.filter(m => m.group === 1).map(m => m.stage));
+    expect(Math.max(...aStages)).toBeLessThan(Math.min(...bStages));
+    expect([...aStages].some(s => bStages.has(s))).toBe(false);
+    // 節を共有しないので、合計節数は各リーグの節数の合計になる (並行進行の「多い方」ではない)
+    expect(groupStageCount(ms)).toBe(6);
+  });
+
+  it('順次進行でも決勝トーナメントは正しいゲタの先に置かれる (id は決勝T内の相対のまま)', () => {
+    const sequential = buildGroupStage(people(8), { ...OPTS, groupScheduleMode: 'sequential' });
+    expect(find(sequential, 'FINAL').stage).toBe(groupStageCount(sequential) + 1);
+    expect(find(sequential, 'SF1').stage).toBe(groupStageCount(sequential));
+  });
+
+  it('順次進行では同じ stage 内で order がリーグをまたいで衝突しない (共有しないので単純な値でよい)', () => {
+    const ms = buildGroupStage(people(8), { ...OPTS, groupScheduleMode: 'sequential' });
+    for (let stage = 0; stage < groupStageCount(ms); stage++) {
+      const orders = ms.filter(m => m.group !== undefined && m.stage === stage).map(m => m.order);
+      expect(new Set(orders).size).toBe(orders.length);
+    }
+  });
+});
+
+describe('buildGroupStage — 1ゲーム制のオプション転送', () => {
+  const pairSetOf = (ms: TournamentMatch[], group: number) => new Set(
+    ms.filter(m => m.group === group).map(m => [m.slotA, m.slotB]
+      .map(r => (r.kind === 'participant' ? r.participantId : r.kind)).sort().join('-')),
+  );
+
+  it('balanceGroupSides はリーグごとに先攻/後攻をバランスする (誰と誰が対戦するかは変わらない)', () => {
+    const balanced = buildGroupStage(people(8), { ...OPTS, balanceGroupSides: true });
+    const plain    = buildGroupStage(people(8), OPTS);
+    expect(pairSetOf(balanced, 0)).toEqual(pairSetOf(plain, 0));
+    expect(pairSetOf(balanced, 1)).toEqual(pairSetOf(plain, 1));
+  });
+
+  it('bracketSideSeed を渡すと決勝トーナメントの先攻/後攻がコイントスで決まる', () => {
+    const withSeed    = buildGroupStage(people(8), { ...OPTS, bracketSideSeed: 'cup-a' });
+    const withoutSeed = buildGroupStage(people(8), OPTS);
+    // sideCoin('cup-a:FINAL') は true (入れ替え) — bracket.test.ts の sideCoin テストと対応
+    expect(find(withSeed, 'FINAL').slotA).not.toEqual(find(withoutSeed, 'FINAL').slotA);
+  });
+});
+
 describe('groupStageCountOf', () => {
   it('予選を持たない試合グラフでは 0 (= ゲタ無し)', () => {
     expect(groupStageCount([])).toBe(0);

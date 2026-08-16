@@ -1,5 +1,6 @@
 import type {
-  ResolvedParticipant, TournamentFormat, TournamentMatch, TournamentStatePayload,
+  MatchRules, ResolvedParticipant, StageRules, TournamentFormat, TournamentMatch,
+  TournamentStatePayload,
 } from './tournament.js';
 import { compareByPlayOrder, hasBracket, hasQualifying } from './tournament.js';
 
@@ -23,6 +24,23 @@ export function nextReadyMatch(matches: TournamentMatch[]): TournamentMatch | nu
  */
 export function isKnockoutMatch(format: TournamentFormat, m: TournamentMatch): boolean {
   return hasBracket(format) && m.group === undefined;
+}
+
+/**
+ * その試合を先後入替の2ゲームで行うか。
+ *
+ * 予選のある形式は予選・決勝で別々に選べる (StageRules.qualifyingDoubleMode)。
+ * 対象が予選の試合かどうかは isKnockoutMatch と同じ基準 (group の有無) で判定する。
+ */
+export function doubleModeFor(
+  def: { stage: StageRules; match: MatchRules }, m: TournamentMatch,
+): boolean {
+  const { stage } = def;
+  if ((stage.format === 'group-then-bracket' || stage.format === 'bot-then-bracket')
+      && !isKnockoutMatch(stage.format, m)) {
+    return stage.qualifyingDoubleMode;
+  }
+  return def.match.doubleMode;
 }
 
 /** 予選の節の数 (= 決勝トーナメントの stage に当たるゲタ)。予選が無ければ 0 */

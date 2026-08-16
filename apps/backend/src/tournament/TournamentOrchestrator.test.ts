@@ -208,7 +208,9 @@ describe('TournamentOrchestrator', () => {
     });
 
     it('side0 = slotA の不変条件 (第1シードが COOL 側)', async () => {
-      writeCup(cupDef());
+      // 2ゲーム制なら先攻/後攻はランダム化されないので、決定論的な既定の並びを確認できる
+      // (1ゲーム制はこの並びをコイントスでランダム化する — 別テストで確認する)
+      writeCup(cupDef({ match: { doubleMode: true } }));
       orch.bind(ROOM, CUP);
 
       const manager = rm.getRoom(ROOM)!.manager;
@@ -223,6 +225,22 @@ describe('TournamentOrchestrator', () => {
       expect(matchOf('SF1').resolvedB).toBe('p4');
       expect(assigned.map(a => a[0])).toEqual([0, 1]);
       vi.restoreAllMocks();
+    });
+
+    it('swapSides で先攻・後攻を入れ替えられる (ready の間だけ)', async () => {
+      writeCup(cupDef({ match: { doubleMode: true } }));
+      orch.bind(ROOM, CUP);
+
+      const before = matchOf('SF1');
+      orch.swapSides(ROOM, 'SF1');
+      const after = matchOf('SF1');
+      expect(after.resolvedA).toBe(before.resolvedB);
+      expect(after.resolvedB).toBe(before.resolvedA);
+      expect(after.slotA).toEqual(before.slotB);
+      expect(after.slotB).toEqual(before.slotA);
+
+      await orch.armMatch(ROOM, 'SF1');
+      expect(() => orch.swapSides(ROOM, 'SF1')).toThrow(TournamentError);
     });
 
     it('相手が未確定の試合は arm できない', async () => {
@@ -368,7 +386,9 @@ describe('TournamentOrchestrator', () => {
       orch.confirmResult(ROOM, 'SF1', winner);
       expect(matchOf('SF1').status).toBe('done');
       const expected = winner === 0 ? 'p1' : 'p4';
-      expect(matchOf('FINAL').resolvedA).toBe(expected);
+      // 先攻/後攻は1ゲーム制ではランダムなので、どちらの枠に入るかは問わず勝者が
+      // 決勝に進んだことだけを見る
+      expect([matchOf('FINAL').resolvedA, matchOf('FINAL').resolvedB]).toContain(expected);
     }, 20_000);
 
     it('確定待ち中にリセットされても結果は失われない', async () => {
@@ -420,7 +440,7 @@ describe('TournamentOrchestrator', () => {
       expect(m.result!.winnerSide).toBe(1);
       expect(m.result!.decidedBy).toBe('manual');
       expect(m.result!.note).toBe('抽選');
-      expect(matchOf('FINAL').resolvedA).toBe('p4');
+      expect([matchOf('FINAL').resolvedA, matchOf('FINAL').resolvedB]).toContain('p4');
     });
 
     it('リーグでは引き分けをそのまま確定できる', () => {
@@ -708,9 +728,9 @@ describe('TournamentOrchestrator', () => {
       const qs = lastState()!.qualifiers!;
       expect(qs.every(q => !q.pending)).toBe(true);
       expect(qs.map(q => q.participantId)).toEqual(['p1', 'p4', 'p2', 'p3']);
-      // A1 vs B2 / B1 vs A2
-      expect([matchOf('SF1').resolvedA, matchOf('SF1').resolvedB]).toEqual(['p1', 'p3']);
-      expect([matchOf('SF2').resolvedA, matchOf('SF2').resolvedB]).toEqual(['p2', 'p4']);
+      // A1 vs B2 / B1 vs A2 (先攻/後攻は1ゲーム制ではランダムなのでどちらの枠かは問わない)
+      expect([matchOf('SF1').resolvedA, matchOf('SF1').resolvedB].sort()).toEqual(['p1', 'p3']);
+      expect([matchOf('SF2').resolvedA, matchOf('SF2').resolvedB].sort()).toEqual(['p2', 'p4']);
       expect(matchOf('SF1').status).toBe('ready');
     });
 
@@ -730,15 +750,18 @@ describe('TournamentOrchestrator', () => {
       writeCup(groupCup());
       orch.bind(ROOM, CUP);
       finishGroups();
-      expect(matchOf('SF1').resolvedA).toBe('p1');
+      const slotOf1 = (): [string | null, string | null] =>
+        [matchOf('SF1').resolvedA, matchOf('SF1').resolvedB];
+      expect(slotOf1()).toContain('p1');
 
       orch.setQualifier(ROOM, 0, 1, 'p5');
-      expect(matchOf('SF1').resolvedA).toBe('p5');
+      expect(slotOf1()).toContain('p5');
+      expect(slotOf1()).not.toContain('p1');
       expect(lastState()!.qualifiers![0]!.manualParticipantId).toBe('p5');
       expect(lastState()!.qualifiers![0]!.autoParticipantId).toBe('p1');
 
       orch.setQualifier(ROOM, 0, 1, null);
-      expect(matchOf('SF1').resolvedA).toBe('p1');
+      expect(slotOf1()).toContain('p1');
     });
 
     it('そのリーグの所属でない人は指定できない', () => {
@@ -777,7 +800,7 @@ describe('TournamentOrchestrator', () => {
       // cascade を付ければ結果ごと巻き戻して差し替わる
       orch.setQualifier(ROOM, 0, 1, 'p5', true);
       expect(matchOf('SF1').result).toBeUndefined();
-      expect(matchOf('SF1').resolvedA).toBe('p5');
+      expect([matchOf('SF1').resolvedA, matchOf('SF1').resolvedB]).toContain('p5');
     });
 
     it('予選をやり直すと決勝トーナメントも巻き戻る', () => {
@@ -888,12 +911,30 @@ describe('TournamentOrchestrator', () => {
       const bracketStage = lastState()!.stageLabels.findIndex(l => l === '準決勝');
       expect(() => orch.setStageMap(ROOM, bracketStage, null)).not.toThrow();
     });
+
+    it('予選と決勝で別々の doubleMode を選べる', async () => {
+      writeCup(groupCup({
+        match: { doubleMode: true },
+        stage: { groupCount: 2, advancePerGroup: 2, qualifyingDoubleMode: false },
+      }));
+      orch.bind(ROOM, CUP);
+
+      await orch.armMatch(ROOM, 'G1-D1M1');
+      expect(rm.getRoom(ROOM)!.manager.getStatus().doubleMode).toBe(false);
+
+      finishGroups();
+      orch.confirmQualifiers(ROOM, true);
+      await orch.armMatch(ROOM, 'SF1');
+      expect(rm.getRoom(ROOM)!.manager.getStatus().doubleMode).toBe(true);
+    });
   });
 
   // ── BOT対戦予選 + 決勝トーナメント ──────────────────────────────────────
   describe('BOT対戦予選 + 決勝トーナメント', () => {
     /** 6人が同じ BOT と1試合ずつ。上位4名が決勝トーナメントへ */
-    const botCup = ({ bot, ...overrides }: Record<string, unknown> = {}) => cupDef({
+    const botCup = (
+      { bot, qualifyingDoubleMode, ...overrides }: Record<string, unknown> = {},
+    ) => cupDef({
       format: 'bot-then-bracket',
       participants: Array.from({ length: 6 }, (_, i) => ({
         id: `p${i + 1}`, name: `T${i + 1}`, seed: i + 1, program: { builtin: 'cpu' },
@@ -901,6 +942,7 @@ describe('TournamentOrchestrator', () => {
       ...overrides,
       stage: {
         advanceCount: 4,
+        ...(qualifyingDoubleMode !== undefined ? { qualifyingDoubleMode } : {}),
         bot: {
           program: { builtin: 'cpu' }, name: '運営BOT', map: 'fixed-map',
           ...(bot as object ?? {}),
@@ -942,6 +984,13 @@ describe('TournamentOrchestrator', () => {
       expect(st.groups![0]!.participantIds).toHaveLength(6);
     });
 
+    it('BOT対戦予選の予選試合は先攻・後攻を入れ替えられない (全員同一条件が根拠)', () => {
+      writeCup(botCup());
+      orch.bind(ROOM, CUP);
+      const qualifying = lastState()!.matches.find(m => m.group !== undefined)!;
+      expect(() => orch.swapSides(ROOM, qualifying.id)).toThrow(TournamentError);
+    });
+
     it('参加者後攻の設定なら BOT が slotA になる', () => {
       writeCup(botCup({ bot: { participantSide: 1 } }));
       orch.bind(ROOM, CUP);
@@ -959,12 +1008,27 @@ describe('TournamentOrchestrator', () => {
         .toEqual(['p1', 'p2', 'p3', 'p4', 'p5', 'p6']);
       expect(st.qualifiers!.map(q => q.participantId)).toEqual(['p1', 'p2', 'p3', 'p4']);
       // 4人進出 → seedOrder(4) = [1,4,2,3] なので 1位-4位 / 2位-3位
-      expect([matchOf('SF1').resolvedA, matchOf('SF1').resolvedB]).toEqual(['p1', 'p4']);
-      expect([matchOf('SF2').resolvedA, matchOf('SF2').resolvedB]).toEqual(['p2', 'p3']);
+      // (先攻/後攻は1ゲーム制ではランダムなのでどちらの枠かは問わない)
+      expect([matchOf('SF1').resolvedA, matchOf('SF1').resolvedB].sort()).toEqual(['p1', 'p4']);
+      expect([matchOf('SF2').resolvedA, matchOf('SF2').resolvedB].sort()).toEqual(['p2', 'p3']);
 
       await expect(orch.armMatch(ROOM, 'SF1')).rejects.toThrow(TournamentError);
       orch.confirmQualifiers(ROOM, true);
       await expect(orch.armMatch(ROOM, 'SF1')).resolves.toBeUndefined();
+    });
+
+    it('予選 (BOT対戦) と決勝で別々の doubleMode を選べる', async () => {
+      writeCup(botCup({ match: { doubleMode: true }, qualifyingDoubleMode: false }));
+      orch.bind(ROOM, CUP);
+
+      const qualifying = lastState()!.matches.find(m => m.group !== undefined)!;
+      await orch.armMatch(ROOM, qualifying.id);
+      expect(rm.getRoom(ROOM)!.manager.getStatus().doubleMode).toBe(false);
+
+      finishQualifying();
+      orch.confirmQualifiers(ROOM, true);
+      await orch.armMatch(ROOM, 'SF1');
+      expect(rm.getRoom(ROOM)!.manager.getStatus().doubleMode).toBe(true);
     });
 
     it('ボーダーが同点なら確認リストが定員より多く並ぶ', () => {
@@ -1009,7 +1073,7 @@ describe('TournamentOrchestrator', () => {
 
       orch.setQualifierExclusion(ROOM, 'p2', true, true);
       expect(matchOf('SF1').result).toBeUndefined();
-      expect(matchOf('SF2').resolvedA).toBe('p3');
+      expect([matchOf('SF2').resolvedA, matchOf('SF2').resolvedB]).toContain('p3');
     });
 
     it('予選のマップは差し替えられるが、実施済みがあれば拒否する', () => {

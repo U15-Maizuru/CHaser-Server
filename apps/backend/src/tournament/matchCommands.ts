@@ -1,5 +1,7 @@
 import type { ClientType, ProcessConfig, ResolvedParticipant } from '@u15/ws-types';
-import { blockedByQualifiers, groupStageCount, hasBracket, isKnockoutMatch } from '@u15/ws-types';
+import {
+  blockedByQualifiers, doubleModeFor, groupStageCount, hasBracket, isKnockoutMatch,
+} from '@u15/ws-types';
 import { buildProcessConfig } from '../game/processConfig.js';
 import { getCatalogEntry } from '../programCatalog.js';
 import {
@@ -60,7 +62,7 @@ export async function armMatch(env: CommandEnv, b: Binding, matchId: string): Pr
   manager.setRepeatMode(false);
 
   await manager.requestReset();
-  manager.setDoubleMode(b.loaded.def.match.doubleMode);
+  manager.setDoubleMode(doubleModeFor(b.loaded.def, match));
 
   // 再試合の指定 → 回戦ごとのマップ → 大会全体の固定マップ の順に効かせる
   const mapId = mapForMatch(b.loaded, match);
@@ -80,6 +82,35 @@ export function cancelArm(env: CommandEnv, b: Binding): void {
   if (!b.armedMatchId) return;
   updateMatch(b, b.armedMatchId, m => ({ ...m, status: 'ready' }));
   b.armedMatchId = null;
+  env.publish(b.roomId);
+}
+
+/**
+ * 先攻・後攻を入れ替える。`ready` の試合だけに効く (armMatch を押す前まで)。
+ *
+ * slotA/slotB は試合グラフの構造 (winner-of/group-rank/participant への参照) ごと
+ * 入れ替える。`updateMatch` は resolveMatches を呼び直さないので、resolvedA/B・byeA/B も
+ * 同時に手で入れ替える必要がある — でないと表示と実際の割り当てがズレる。
+ *
+ * BOT対戦予選の予選試合は対象外 (全参加者が同一条件で測られるのがこの形式の根拠なので、
+ * 参加者ごとに手番を変える余地は持たせない)。
+ */
+export function swapSides(env: CommandEnv, b: Binding, matchId: string): void {
+  const match = requireMatch(b, matchId);
+  if (match.status !== 'ready') {
+    throw new TournamentError(`この試合は今は先攻・後攻を入れ替えられません (${match.status})`);
+  }
+  if (b.loaded.def.stage.format === 'bot-then-bracket' && match.group !== undefined) {
+    throw new TournamentError(
+      'BOT対戦予選は全参加者が同じ条件で戦うため、先攻・後攻を入れ替えられません',
+    );
+  }
+  updateMatch(b, matchId, m => ({
+    ...m,
+    slotA: m.slotB, slotB: m.slotA,
+    resolvedA: m.resolvedB, resolvedB: m.resolvedA,
+    byeA: m.byeB, byeB: m.byeA,
+  }));
   env.publish(b.roomId);
 }
 

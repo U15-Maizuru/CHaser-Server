@@ -369,6 +369,41 @@ describe('TournamentEditorDialog — 新規作成', () => {
     expect(def.participants.map(p => p.group)).toEqual([0, 1, 1, 0, 0, 1]);
   });
 
+  it('予選と決勝トーナメントの2ゲーム制は別々に設定できる (qualifyingDoubleMode)', async () => {
+    renderNew();
+    fireEvent.change(screen.getByLabelText('大会名'), { target: { value: '予選あり杯' } });
+    addParticipants(['A', 'B', 'C', 'D', 'E', 'F']);
+    fireEvent.click(screen.getByText('予選リーグ + 決勝トーナメント'));
+
+    // 既定は両方2ゲーム制。決勝側だけ外し、予選側はそのままにする
+    fireEvent.click(screen.getByText('決勝トーナメントを2ゲーム制にする'));
+    fireEvent.click(screen.getByText('この内容で作成'));
+    await waitFor(() => expect(calls.some(c => c.url.includes('/import'))).toBe(true));
+
+    // doubleMode (決勝トーナメント側) は stage ではなく match に乗る (SKILL.md 参照)
+    const def = sentDefinition();
+    expect(def.stage).toMatchObject({ qualifyingDoubleMode: true });
+    expect(def.match.doubleMode).toBe(false);
+  });
+
+  it('複数リーグの進行順序を「順次進行」にすると groupScheduleMode が sequential になる', async () => {
+    renderNew();
+    fireEvent.change(screen.getByLabelText('大会名'), { target: { value: '予選あり杯' } });
+    addParticipants(['A', 'B', 'C', 'D', 'E', 'F']);
+    fireEvent.click(screen.getByText('予選リーグ + 決勝トーナメント'));
+
+    // 既定は並行進行
+    expect(screen.getByLabelText('複数リーグの進行順序')).toHaveValue('parallel');
+
+    fireEvent.change(screen.getByLabelText('複数リーグの進行順序'), {
+      target: { value: 'sequential' },
+    });
+    fireEvent.click(screen.getByText('この内容で作成'));
+    await waitFor(() => expect(calls.some(c => c.url.includes('/import'))).toBe(true));
+
+    expect(sentDefinition().stage).toMatchObject({ groupScheduleMode: 'sequential' });
+  });
+
   it('参加者のリーグを個別に変えられる', async () => {
     renderNew();
     fireEvent.change(screen.getByLabelText('大会名'), { target: { value: '予選あり杯' } });

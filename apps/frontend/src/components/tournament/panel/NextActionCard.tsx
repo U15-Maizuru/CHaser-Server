@@ -1,10 +1,10 @@
 import type { CatalogEntry, TournamentStatePayload } from '@u15/ws-types';
-import { nextOperatorAction, type OperatorAction } from '@u15/ws-types';
+import { doubleModeFor, nextOperatorAction, type OperatorAction } from '@u15/ws-types';
 import type { TournamentCommands } from '../../../hooks/useGameState';
 import { MatchCard } from '../board/MatchCard';
 import {
   BG_HEADER, BORDER_COLOR, RADIUS_MD, SHADOW_MD, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
-  Button, EmptyState, Select,
+  Button, EmptyState, Hint, Select,
 } from '../../../ui';
 
 // 運営パネルの最上部に固定される「今やること」1枚。
@@ -98,15 +98,31 @@ function Body({ state, action, commands, programs }: {
         </>
       );
 
-    case 'arm':
+    case 'arm': {
+      // 1ゲーム制の試合だけ先攻・後攻を入れ替えられる (2ゲーム制は第2ゲームで自動的に
+      // 入れ替わるため対象外)。BOT対戦予選は全参加者が同一条件で測られるのが根拠なので除外
+      const swappable = !doubleModeFor(state, action.match)
+        && !(state.stage.format === 'bot-then-bracket' && action.match.group !== undefined);
       return (
         <>
           {card(action.match)}
+          {swappable && (
+            <>
+              <Button size="sm" onClick={() => commands.swapSides(action.match.id)}>
+                先攻・後攻を入れ替える
+              </Button>
+              <Hint>
+                1ゲーム制なので、先攻・後攻はこの試合ごとにランダムに決まっています。
+                必要ならここで入れ替えられます。
+              </Hint>
+            </>
+          )}
           <Button variant="primary" onClick={() => commands.arm(action.match.id)}>
             この試合を準備 ▶
           </Button>
         </>
       );
+    }
 
     case 'assign-programs':
       return (

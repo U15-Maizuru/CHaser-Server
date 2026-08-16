@@ -151,8 +151,14 @@ function parseBotRules(v: unknown): BotStageRules {
   };
 }
 
-/** 形式ごとに意味を持つ設定だけを読む。他の形式の項目が書いてあっても黙って捨てる */
-function parseStageRules(format: TournamentFormat, v: unknown): StageRules {
+/**
+ * 形式ごとに意味を持つ設定だけを読む。他の形式の項目が書いてあっても黙って捨てる。
+ *
+ * `matchDoubleMode` は予選専用の qualifyingDoubleMode を省略したときの既定値に使う。
+ * 大会全体の doubleMode に揃えることで、この項目が無い (= 旧仕様の) tournament.json は
+ * 予選も決勝も同じゲーム数のまま読める。
+ */
+function parseStageRules(format: TournamentFormat, v: unknown, matchDoubleMode: boolean): StageRules {
   const o   = v === undefined || v === null ? {} : asRecord(v, 'stage');
   const map = parseMapPlan(o['map']);
 
@@ -166,18 +172,21 @@ function parseStageRules(format: TournamentFormat, v: unknown): StageRules {
     case 'group-then-bracket':
       return {
         format, map,
-        thirdPlaceMatch: asBool(o['thirdPlaceMatch'], false),
-        league:          parseLeagueRules(o['league']),
-        groupCount:      asNumber(o['groupCount'],      DEFAULT_GROUP_COUNT),
-        advancePerGroup: asNumber(o['advancePerGroup'], DEFAULT_ADVANCE_PER_GROUP),
+        thirdPlaceMatch:      asBool(o['thirdPlaceMatch'], false),
+        league:               parseLeagueRules(o['league']),
+        groupCount:           asNumber(o['groupCount'],      DEFAULT_GROUP_COUNT),
+        advancePerGroup:      asNumber(o['advancePerGroup'], DEFAULT_ADVANCE_PER_GROUP),
+        qualifyingDoubleMode: asBool(o['qualifyingDoubleMode'], matchDoubleMode),
+        groupScheduleMode:    o['groupScheduleMode'] === 'sequential' ? 'sequential' : 'parallel',
       };
 
     case 'bot-then-bracket':
       return {
         format, map,
-        thirdPlaceMatch: asBool(o['thirdPlaceMatch'], false),
-        bot:             parseBotRules(o['bot']),
-        advanceCount:    asNumber(o['advanceCount'], DEFAULT_ADVANCE_PER_GROUP),
+        thirdPlaceMatch:      asBool(o['thirdPlaceMatch'], false),
+        bot:                  parseBotRules(o['bot']),
+        advanceCount:         asNumber(o['advanceCount'], DEFAULT_ADVANCE_PER_GROUP),
+        qualifyingDoubleMode: asBool(o['qualifyingDoubleMode'], matchDoubleMode),
       };
   }
 }
@@ -324,8 +333,8 @@ export function parseTournamentDefinition(raw: unknown, opts: ParseOptions = {})
 
   const name         = asString(o['name'] ?? id, 'name');
   const participants = parseParticipants(o['participants']);
-  const stage        = parseStageRules(format as TournamentFormat, o['stage']);
   const match        = { doubleMode: asBool(asRecord(o['match'] ?? {}, 'match')['doubleMode'], true) };
+  const stage        = parseStageRules(format as TournamentFormat, o['stage'], match.doubleMode);
   const ids          = new Set(participants.map(p => p.id));
 
   const def: TournamentDefinition = {

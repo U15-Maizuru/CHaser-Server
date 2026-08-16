@@ -55,7 +55,7 @@ export const BOT_PARTICIPANT_ID = '__bot__';
 
 /** 全形式に共通する対戦の条件 */
 export interface MatchRules {
-  /** 1試合を先後入替の2ゲームで行うか (公式ルールの既定。false は練習・リハーサル用) */
+  /** 1試合を先後入替の2ゲームで行うか (公式ルールの既定。false なら1ゲームで決着する) */
   doubleMode: boolean;
 }
 
@@ -104,7 +104,7 @@ export interface BotStageRules {
    * 参加者が第1ゲームでどちら側に座るか (0 = 先攻 / 1 = 後攻)。
    *
    * 参加者ごとではなく**大会全体で1つ** — 全員が同一条件で戦うのがこの形式の要点。
-   * 2ゲーム制では先後が入れ替わるため意味を持たない。
+   * 予選が2ゲーム制 (qualifyingDoubleMode) のときは先後が入れ替わるため意味を持たない。
    */
   participantSide: 0 | 1;
 }
@@ -135,6 +135,21 @@ export type StageRules =
       groupCount:      number;
       /** 各リーグから決勝トーナメントへ上がる人数 (合計 groupCount × これ) */
       advancePerGroup: number;
+      /**
+       * 予選を先後入替の2ゲームで行うか。決勝トーナメントは MatchRules.doubleMode に従う。
+       * 予選と決勝で負荷や所要時間の事情が違う (予選は数をこなす・決勝は1本ずつ丁寧に) ため、
+       * 別々に選べるようにしてある。
+       */
+      qualifyingDoubleMode: boolean;
+      /**
+       * 複数の予選リーグをどう進行させるか。
+       *
+       * `parallel` (既定) は今までの挙動 — 全リーグが節ごとに横並びで進む
+       * (全リーグの第1節 → 全リーグの第2節 → …)。`sequential` は1リーグずつ
+       * 最後まで終わらせてから次のリーグへ進む。特定のリーグの参加者だけが
+       * 先に試合をこなせてしまう偏りを避けたいときは既定の `parallel` を使う。
+       */
+      groupScheduleMode: 'parallel' | 'sequential';
     }
   | {
       format:          'bot-then-bracket';
@@ -143,6 +158,8 @@ export type StageRules =
       bot:             BotStageRules;
       /** 決勝トーナメントの出場人数 (予選が1グループなのでこれがそのまま総数) */
       advanceCount:    number;
+      /** 予選 (BOT対戦) を先後入替の2ゲームで行うか。決勝トーナメントは MatchRules.doubleMode に従う */
+      qualifyingDoubleMode: boolean;
     };
 
 /** 3位決定戦を行うか。リーグは勝ち上がりが無いので常に false */

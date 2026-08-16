@@ -6,6 +6,7 @@ import { catalogDir, ensureCatalogDir, getCatalogEntry, listCatalogEntries } fro
 import { buildZip } from '../test/buildZip.js';
 import {
   assignProgram,
+  buildMatches,
   buildStatePayload,
   deleteTournament,
   ensureTournamentDir,
@@ -18,6 +19,7 @@ import {
   scanTournaments,
   tournamentRootDir,
 } from './TournamentStore.js';
+import { parseTournamentDefinition } from './definition.js';
 import { captureResult, confirmResult } from './progress.js';
 
 const ID = 'test-cup';
@@ -123,6 +125,45 @@ describe('TournamentStore', () => {
     const again = loadTournament(ID)!;
     expect(again.state.matches.find(m => m.id === 'SF1')!.status).toBe('done');
     expect(again.state.matches.find(m => m.id === 'FINAL')!.resolvedA).toBe('p1');
+  });
+
+  it('先攻・後攻を手動で入れ替えても、再読み込みで進行状態が消えない', () => {
+    // fingerprint が slotA/slotB を順序込みで比較すると、運営の入れ替えが「定義変更」と
+    // 誤判定され、再読み込み (再スキャン相当) のたびに試合グラフが作り直されて
+    // 進行状態が消えてしまう。swapSides と同じやり方 (4フィールドをまとめて入れ替え) で
+    // 再現し、それが起きないことを確認する
+    writeTournament(DEF_4, { 'a.py': 'print(1)' });
+    const loaded = loadTournament(ID)!;
+
+    const sf1 = loaded.state.matches.find(m => m.id === 'SF1')!;
+    const swapped = loaded.state.matches.map(m => (m.id === 'SF1' ? {
+      ...m,
+      slotA: m.slotB, slotB: m.slotA,
+      resolvedA: m.resolvedB, resolvedB: m.resolvedA,
+      byeA: m.byeB, byeB: m.byeA,
+    } : m));
+    saveState({ ...loaded.state, matches: swapped });
+
+    const again = loadTournament(ID)!;
+    const sf1Again = again.state.matches.find(m => m.id === 'SF1')!;
+    expect(sf1Again.resolvedA).toBe(sf1.resolvedB);
+    expect(sf1Again.resolvedB).toBe(sf1.resolvedA);
+    // グラフ全体が作り直されたなら試合数が変わらなくても偶然の一致になりうるので、
+    // 「定義が変わった」判定に落ちていない (=試合グラフを作り直していない) ことも別に見る
+    expect(again.state.matches).toHaveLength(3);
+  });
+
+  it('1ゲーム制の決勝トーナメントは buildMatches を何度呼んでも同じ先攻・後攻になる', () => {
+    // Math.random だと呼ぶたびに変わり、stateMatchesDefinition の再構築のたびに
+    // 「定義が変わった」と誤判定されて進行状態が消える。sideCoin は定義 (id) と試合 id
+    // だけで決まるので、同じ定義なら何度呼んでも同じ結果になるはず
+    const def = parseTournamentDefinition(
+      { ...DEF_4, match: { doubleMode: false } }, { fallbackId: ID },
+    );
+    const first  = buildMatches(def);
+    const second = buildMatches(def);
+    const slotsOf = (ms: typeof first) => ms.map(m => [m.id, JSON.stringify(m.slotA), JSON.stringify(m.slotB)]);
+    expect(slotsOf(first)).toEqual(slotsOf(second));
   });
 
   it('state.json が壊れていれば定義から作り直す', () => {
@@ -419,6 +460,19 @@ describe('TournamentStore (予選リーグ + 決勝トーナメント)', () => {
     const payload = buildStatePayload(loadTournament(GID)!, 'room', null);
     expect(payload.stageLabels).toEqual([
       '予選 第1節', '予選 第2節', '予選 第3節', '準決勝', '決勝',
+    ]);
+  });
+
+  it('順次進行では節ラベルにリーグ名が付き、リーグ内の相対節番号になる', () => {
+    writeTournament({
+      ...DEF_GROUP,
+      stage: { ...DEF_GROUP.stage, groupScheduleMode: 'sequential' },
+    }, {}, GID);
+    const payload = buildStatePayload(loadTournament(GID)!, 'room', null);
+    expect(payload.stageLabels).toEqual([
+      'Aリーグ 第1節', 'Aリーグ 第2節', 'Aリーグ 第3節',
+      'Bリーグ 第1節', 'Bリーグ 第2節', 'Bリーグ 第3節',
+      '準決勝', '決勝',
     ]);
   });
 

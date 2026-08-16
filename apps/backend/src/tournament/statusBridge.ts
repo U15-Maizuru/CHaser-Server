@@ -1,5 +1,5 @@
 import type { ServerStatusPayload, TournamentMatchResult } from '@u15/ws-types';
-import { computeSetResult } from '@u15/ws-types';
+import { computeSetResult, doubleModeFor } from '@u15/ws-types';
 import { commit, ctxOf, managerOf, updateMatch, type Binding, type CommandEnv } from './binding.js';
 import { captureResult } from './progress.js';
 
@@ -23,7 +23,7 @@ export function applyServerStatus(env: CommandEnv, b: Binding, st: ServerStatusP
   const match = b.loaded.state.matches.find(m => m.id === armedId);
   if (!match) return;
 
-  const expected = b.loaded.def.match.doubleMode ? 2 : 1;
+  const expected = doubleModeFor(b.loaded.def, match) ? 2 : 1;
 
   if (match.status === 'armed' && st.phase === 'playing') {
     updateMatch(b, armedId, m => ({ ...m, status: 'in_progress' }));
