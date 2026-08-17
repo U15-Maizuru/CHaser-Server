@@ -32,6 +32,32 @@ export function FormatRulesEditor({ draft, programs, maps, patch }: FormatRulesE
             />
             <span>予選を2ゲーム制にする（先攻・後攻を入れ替えて2ゲームで1試合）</span>
           </label>
+
+          {/* 手番は予選が1ゲーム制のときだけ意味を持つ。2ゲーム制は先後が入れ替わる。
+              予選の設定なので、決勝トーナメントのチェックボックスより前に置く */}
+          {format === 'bot-then-bracket' && !draft.qualifyingDoubleMode && (
+            <>
+              <Field label="参加者の手番">
+                <ChipRow>
+                  {([[0, '先攻'], [1, '後攻']] as [0 | 1, string][]).map(([side, text]) => (
+                    <Button
+                      key={side} variant="choice" size="sm"
+                      selected={draft.bot.participantSide === side}
+                      onClick={() => patchBot({ participantSide: side })}
+                    >
+                      {text}
+                    </Button>
+                  ))}
+                </ChipRow>
+              </Field>
+              <Hint>
+                BOT対戦予選を1ゲーム制で行うときの手番です。
+                <strong>全参加者に同じ手番が当たります</strong> —
+                参加者ごとに選べるものではなく、運営がどちらかに決めるものです。
+              </Hint>
+            </>
+          )}
+
           <label style={s.check}>
             <Checkbox
               checked={draft.doubleMode}
@@ -54,30 +80,6 @@ export function FormatRulesEditor({ draft, programs, maps, patch }: FormatRulesE
             <span>2ゲーム制（先攻・後攻を入れ替えて2ゲームで1試合）</span>
           </label>
           <Hint>公式ルールの試合形式です。外すと1ゲームで決着します。</Hint>
-        </>
-      )}
-
-      {/* 手番は予選が1ゲーム制のときだけ意味を持つ。2ゲーム制は先後が入れ替わる */}
-      {format === 'bot-then-bracket' && !draft.qualifyingDoubleMode && (
-        <>
-          <Field label="参加者の手番">
-            <ChipRow>
-              {([[0, '先攻'], [1, '後攻']] as [0 | 1, string][]).map(([side, text]) => (
-                <Button
-                  key={side} variant="choice" size="sm"
-                  selected={draft.bot.participantSide === side}
-                  onClick={() => patchBot({ participantSide: side })}
-                >
-                  {text}
-                </Button>
-              ))}
-            </ChipRow>
-          </Field>
-          <Hint>
-            BOT対戦予選を1ゲーム制で行うときの手番です。
-            <strong>全参加者に同じ手番が当たります</strong> —
-            参加者ごとに選べるものではなく、運営がどちらかに決めるものです。
-          </Hint>
         </>
       )}
 

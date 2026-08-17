@@ -63,14 +63,18 @@ export function SettingsTab({ state, maps, commands }: SettingsTabProps) {
           <strong>同点で勝者が決まらないときは止まります</strong> —
           再試合か審判裁定かは運営が決めるものなので、自動では決めません。
         </Hint>
+        {/* 自動進行の開始／停止は設定ではなく操作なので、選択チップではなくボタンにする
+            (設定ダイアログ「対戦」タブのデモ開始ボタンと同じ考え方) */}
         <ChipRow>
           <Button
-            variant="choice" size="sm"
-            selected={state.autoPlay.enabled}
+            variant={state.autoPlay.enabled ? 'danger' : 'accent'}
+            size="sm"
             onClick={() => commands.setAutoPlay(!state.autoPlay.enabled)}
           >
-            {state.autoPlay.enabled ? '自動進行を止める' : '自動で進める ▶'}
+            {state.autoPlay.enabled ? '■ 自動進行を止める' : '▶ 自動進行を始める'}
           </Button>
+        </ChipRow>
+        <ChipRow>
           <Button
             variant="choice" size="sm"
             selected={state.autoPlay.loop}

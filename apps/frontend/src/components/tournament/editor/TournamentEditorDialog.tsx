@@ -8,8 +8,8 @@ import { ParticipantEditor } from './ParticipantEditor';
 import { PairingEditor } from './PairingEditor';
 import {
   FORMATS, FORMAT_LABEL, defaultId, definitionFromDraft, doubleModeSummary, draftFromDefinition,
-  emptyDraft, libraryAssignments, previewMatchCount, suggestCopyId, validateDraft,
-  type TournamentDraft,
+  emptyDraft, libraryAssignments, previewMatchCount, standardQualifyingDoubleMode, suggestCopyId,
+  validateDraft, type TournamentDraft,
 } from './draft';
 import {
   TEXT_SECONDARY, Button, Callout, ChipRow, Dialog, EmptyState, Field, Hint, Section, TextInput,
@@ -229,7 +229,20 @@ export function TournamentEditorDialog({
                   <Button
                     key={f} variant="choice" size="sm"
                     selected={draft.format === f}
-                    onClick={() => patch({ format: f as TournamentFormat })}
+                    onClick={() => {
+                      const next = f as TournamentFormat;
+                      // 予選ゲーム数がまだ元の形式の標準どおりなら、新しい形式の標準に
+                      // 合わせる（bot戦は1ゲームが標準、それ以外は2ゲームが標準）。
+                      // 明示的に触っていた場合はその選択を尊重して上書きしない
+                      const followsStandard =
+                        draft.qualifyingDoubleMode === standardQualifyingDoubleMode(draft.format);
+                      patch({
+                        format: next,
+                        ...(followsStandard
+                          ? { qualifyingDoubleMode: standardQualifyingDoubleMode(next) }
+                          : {}),
+                      });
+                    }}
                   >
                     {FORMAT_LABEL[f]}
                   </Button>

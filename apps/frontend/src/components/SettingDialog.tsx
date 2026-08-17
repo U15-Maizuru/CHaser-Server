@@ -200,6 +200,9 @@ export function SettingDialog({
           <div style={s.matchBody}>
             <span style={s.hint}>このタブの項目は [保存] を待たず、操作した時点で反映されます。</span>
 
+            {/* ── 対戦そのものの設定 (ルール・接続・進行速度) ── */}
+            <div style={s.groupLabel}>対戦の設定</div>
+
             <section style={s.section}>
               <div style={s.sectionLabel}>対戦ルール</div>
               {!canEditRules && <Callout>{rulesLockNote}</Callout>}
@@ -211,30 +214,10 @@ export function SettingDialog({
                 >
                   {status.doubleMode ? '✓ ' : ''}2ゲーム制
                 </Chip>
-                <Chip
-                  selected={status.repeatMode}
-                  disabled={!canEditRules}
-                  onClick={() => onSetRepeatMode(!status.repeatMode)}
-                >
-                  {status.repeatMode ? '✓ ' : ''}リピート
-                </Chip>
-                <Chip
-                  selected={status.demoMode}
-                  disabled={!canEditRules}
-                  onClick={() => handleDemoToggle(!status.demoMode)}
-                >
-                  {status.demoMode ? '✓ ' : ''}デモ
-                </Chip>
               </ChipRow>
               <span style={s.hint}>
-                2ゲーム制は公式ルールの試合形式（先攻・後攻を入れ替えた2ゲームで1試合）。
-                リピートは接続を保ったままの再戦、デモは無人での自動進行です。
+                公式ルールの試合形式（先攻・後攻を入れ替えた2ゲームで1試合）。
               </span>
-              {status.demoMode && (
-                <span style={s.hint}>
-                  準備完了で自動開始します。止めるには画面下部の「リセット」を押してください。
-                </span>
-              )}
             </section>
 
             <section style={s.section}>
@@ -294,6 +277,48 @@ export function SettingDialog({
                 </label>
               </div>
               <span style={s.hint}>進行中のゲームには影響せず、次のゲームから反映されます。</span>
+            </section>
+
+            <hr style={s.divider} />
+
+            {/* ── 対戦の設定ではなく、対戦の回し方 (自動化) ── */}
+            <div style={s.groupLabel}>自動化</div>
+
+            <section style={s.section}>
+              {!canEditRules && <Callout>{rulesLockNote}</Callout>}
+              <ChipRow>
+                <Chip
+                  selected={status.repeatMode}
+                  disabled={!canEditRules}
+                  onClick={() => onSetRepeatMode(!status.repeatMode)}
+                >
+                  {status.repeatMode ? '✓ ' : ''}リピート
+                </Chip>
+              </ChipRow>
+              <span style={s.hint}>
+                試合後に接続を保ったまま再戦できるようにします（「リピート」ボタンが出ます）。
+              </span>
+
+              {/* デモは設定項目ではなく操作。「開始する／止める」であることが伝わるようボタンにする */}
+              <div style={s.demoRow}>
+                <Button
+                  variant={status.demoMode ? 'danger' : 'accent'}
+                  size="sm"
+                  noShrink
+                  disabled={!canEditRules}
+                  onClick={() => handleDemoToggle(!status.demoMode)}
+                >
+                  {status.demoMode ? '■ デモを停止' : '▶ デモを開始'}
+                </Button>
+                <span style={s.hint}>
+                  両者のプログラムをライブラリから自動選択し、無人で自動進行させます。
+                </span>
+              </div>
+              {status.demoMode && (
+                <span style={s.hint}>
+                  準備完了で自動開始します。止めるには「デモを停止」を押してください。
+                </span>
+              )}
             </section>
           </div>
         )}
@@ -503,6 +528,11 @@ const s: Record<string, React.CSSProperties> = {
   sectionLabel: { fontSize: 10, color: TEXT_MUTED, letterSpacing: 1 },
   hint:         { fontSize: 10, color: TEXT_MUTED, lineHeight: 1.6 },
 
+  // 「対戦の設定」と「自動化」を視認できるように分ける見出しと区切り線
+  groupLabel: { fontSize: 12, fontWeight: 700, color: TEXT_SECONDARY, letterSpacing: 0.5, marginBottom: -8 },
+  divider:    { border: 'none', borderTop: `1px solid ${BORDER_COLOR}`, margin: 0, width: '100%' },
+
+  demoRow:  { display: 'flex', alignItems: 'center', gap: 8 },
   numRow:   { display: 'flex', gap: 12, flexWrap: 'wrap' },
   numLabel: { display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: TEXT_SECONDARY },
   unit:     { fontSize: 10, color: TEXT_MUTED },

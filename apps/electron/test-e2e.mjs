@@ -146,14 +146,21 @@ async function closeSettingDialog(page) {
   await wait(400);
 }
 
-/** 「対戦」タブの対戦ルールチップ (2ゲーム制 / リピート / デモ) を読み取る */
+/**
+ * 「対戦」タブの対戦ルール / 自動化コントロール (2ゲーム制 / リピート / デモ) を読み取る。
+ * デモは設定チップではなく「開始する／止める」ボタン (▶ デモを開始 / ■ デモを停止) なので、
+ * 他の2つとは見た目が異なるがここでは同じ形 { active, disabled } に正規化して返す。
+ */
 async function readMatchRuleChips(page) {
   return page.evaluate(() => {
     const out = {};
     for (const b of document.querySelectorAll('button')) {
       const label = (b.textContent ?? '').replace('✓', '').trim();
-      if (!['2ゲーム制', 'リピート', 'デモ'].includes(label)) continue;
-      out[label] = { active: (b.textContent ?? '').includes('✓'), disabled: b.disabled };
+      if (label === '2ゲーム制' || label === 'リピート') {
+        out[label] = { active: (b.textContent ?? '').includes('✓'), disabled: b.disabled };
+      } else if (label === '▶ デモを開始' || label === '■ デモを停止') {
+        out['デモ'] = { active: label === '■ デモを停止', disabled: b.disabled };
+      }
     }
     return out;
   });

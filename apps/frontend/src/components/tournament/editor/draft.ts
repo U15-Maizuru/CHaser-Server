@@ -359,6 +359,11 @@ function bracketMatches(entrants: number, thirdPlaceMatch: boolean): number {
   return (size < 2 ? 0 : size - 1) + (thirdPlaceMatch && size >= 4 ? 1 : 0);
 }
 
+/** 予選の既定ゲーム数。BOT対戦予選だけ1ゲームが標準 (全参加者を同一条件で測るため) */
+export function standardQualifyingDoubleMode(format: TournamentFormat): boolean {
+  return format !== 'bot-then-bracket';
+}
+
 /** エディタ下部プレビューの「何ゲーム制か」の文言。予選・決勝で違うときは内訳を出す */
 export function doubleModeSummary(d: TournamentDraft): string {
   const g = (v: boolean) => (v ? '2' : '1');

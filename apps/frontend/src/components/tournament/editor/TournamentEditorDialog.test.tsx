@@ -386,6 +386,34 @@ describe('TournamentEditorDialog — 新規作成', () => {
     expect(def.match.doubleMode).toBe(false);
   });
 
+  it('形式チップ切替: 標準どおりのままなら新形式の標準 (BOT対戦予選=1ゲーム) に自動で揃う', async () => {
+    renderNew();
+    fireEvent.change(screen.getByLabelText('大会名'), { target: { value: '予選あり杯' } });
+    addParticipants(['A', 'B', 'C', 'D']);
+
+    fireEvent.click(screen.getByText('BOT対戦予選 + 決勝トーナメント'));
+    // 触っていなければ BOT対戦予選の標準 (1ゲーム制) へ自動で揃う → 手番セレクタが現れる
+    expect(screen.getByText('参加者の手番')).toBeTruthy();
+  });
+
+  it('形式チップ切替: 予選ゲーム数を手動で変えていたら、形式を切り替えても上書きされない', async () => {
+    renderNew();
+    fireEvent.change(screen.getByLabelText('大会名'), { target: { value: '予選あり杯' } });
+    addParticipants(['A', 'B', 'C', 'D']);
+    fireEvent.click(screen.getByText('予選リーグ + 決勝トーナメント'));
+
+    // 標準 (2ゲーム制) から手動で1ゲーム制へ変える
+    fireEvent.click(screen.getByText(/予選を2ゲーム制にする/));
+
+    // 他の形式を経由して戻ってきても、手動で決めた値のままであるべき
+    fireEvent.click(screen.getByText('トーナメント (勝ち上がり)'));
+    fireEvent.click(screen.getByText('予選リーグ + 決勝トーナメント'));
+
+    fireEvent.click(screen.getByText('この内容で作成'));
+    await waitFor(() => expect(calls.some(c => c.url.includes('/import'))).toBe(true));
+    expect(sentDefinition().stage).toMatchObject({ qualifyingDoubleMode: false });
+  });
+
   it('複数リーグの進行順序を「順次進行」にすると groupScheduleMode が sequential になる', async () => {
     renderNew();
     fireEvent.change(screen.getByLabelText('大会名'), { target: { value: '予選あり杯' } });
