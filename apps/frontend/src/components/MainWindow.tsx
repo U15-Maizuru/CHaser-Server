@@ -112,8 +112,10 @@ export function MainWindow({
             padding: `${scoreDim.cardPadV}px ${scoreDim.cardPadH}px`,
             minWidth: boardW > 0 ? boardW : undefined,
           }}>
-            {/* 左側グループ: 名前+スコアを左寄せ (右側グループと独立) */}
-            <div style={{ ...s.scoreSide, justifyContent: 'flex-start', gap: scoreDim.gap }}>
+            {/* 左側グループ: 名前は左寄せ、獲得スコアは中央のアイテム数ピルに隣接させる。
+                space-between で「名前を外側の端、スコアを内側の端」に固定することで、
+                名前の長さが左右で違っても中央のアイテム数からのスコアの距離は揃う */}
+            <div style={{ ...s.scoreSide, justifyContent: 'space-between', gap: scoreDim.gap }}>
               <span style={{
                 ...s.namePill,
                 fontSize: scoreDim.nameFont,
@@ -134,8 +136,8 @@ export function MainWindow({
               <span style={{ ...s.scoreDivider, height: scoreDim.dividerH }} />
             </div>
 
-            {/* 右側グループ: 名前+スコアを右寄せ */}
-            <div style={{ ...s.scoreSide, justifyContent: 'flex-end', gap: scoreDim.gap }}>
+            {/* 右側グループ: 左側グループと対称 (名前は右寄せ、スコアは中央側の端に固定) */}
+            <div style={{ ...s.scoreSide, justifyContent: 'space-between', gap: scoreDim.gap }}>
               <span style={{ ...s.scoreNum, fontSize: scoreDim.numFont, color: rightIdx === 0 ? COOL_COLOR : HOT_COLOR }}>{rightScore}</span>
               <span style={{
                 ...s.namePill,
@@ -276,8 +278,8 @@ const s: Record<string, React.CSSProperties> = {
     display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)', alignItems: 'center',
     background: BG_CARD, borderRadius: RADIUS_LG, boxShadow: SHADOW_MD,
   },
-  // 左右グループの共通シェル。justifyContent は呼び出し側で 'flex-start'/'flex-end' を指定し、
-  // それぞれ独立して左寄せ・右寄せにする
+  // 左右グループの共通シェル。呼び出し側で justifyContent: 'space-between' を指定し、
+  // 名前 (外側の端) と獲得スコア (中央のアイテム数に隣接する内側の端) を両端に振り分ける
   scoreSide: {
     display: 'flex', alignItems: 'center', minWidth: 0,
   },
