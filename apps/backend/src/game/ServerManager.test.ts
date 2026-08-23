@@ -261,6 +261,37 @@ describe('ServerManager', () => {
       expect(regenerateSpy).toHaveBeenCalledTimes(1);
       regenerateSpy.mockRestore();
     });
+
+    // 大会運営が「予選は固定マップ、決勝はランダム生成」のように回戦ごとに使い分けたとき、
+    // 決勝の準備 (armMatch) は mapForMatch が null (ランダム) を返す。このとき何もしないと
+    // MapManager が「ライブラリ由来は引き直さない」設計のせいで予選のマップが決勝に残ってしまう。
+    it('generateRandomMap はライブラリ・エディタ由来のマップからランダム生成へ明示的に戻す', () => {
+      sm = makeServerManager([39446, 39447], 0);
+      sm.loadMapData({
+        field: [[0]], size: { x: 1, y: 1 }, turn: 10,
+        teamFirstPoint: [{ x: 0, y: 0 }, { x: 0, y: 0 }],
+      });
+      expect(sm.getStatus().mapSource.kind).toBe('editor');
+
+      sm.generateRandomMap();
+      expect(sm.getStatus().mapSource.kind).toBe('random');
+    });
+
+    it('generateRandomMap も setMapParams と同じガードに従う (2ゲーム制の第2ゲーム待機中は無視)', async () => {
+      sm = makeServerManager([39448, 39449], 0);
+      sm.setTurnDelay(0);
+      sm.setDoubleMode(true);
+      await sm.setClientType(0, 'cpu');
+      await sm.setClientType(1, 'cpu');
+      await sm.requestStart();
+      await sm.requestNextRound();
+      expect(sm.getStatus().roundResults).toHaveLength(1);
+
+      const regenerateSpy = vi.spyOn(MapManager.prototype, 'regenerate');
+      sm.generateRandomMap();
+      expect(regenerateSpy).not.toHaveBeenCalled();
+      regenerateSpy.mockRestore();
+    });
   });
 
   describe('repeatMode', () => {

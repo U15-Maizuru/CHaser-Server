@@ -342,6 +342,65 @@ describe('TournamentOrchestrator', () => {
       vi.restoreAllMocks();
     });
 
+    // 再試合のマップ指定 (rematchMapCatalogId) は discardResult した試合だけに付く。
+    // 別の試合を arm するときに引きずってしまうと、同点になった試合以降ずっと
+    // 別マップで進行することになってしまう
+    it('固定マップの大会で別マップ再試合したあと、次の試合の準備では大会指定のマップに戻る', async () => {
+      writeCup(cupDef({ stage: { map: { catalogId: 'cup-map' } } }));
+      orch.bind(ROOM, CUP);
+
+      orch.setWalkover(ROOM, 'SF1', null);            // 同点
+      orch.discardResult(ROOM, 'SF1', 'rematch-map');  // 別マップで再試合
+      orch.setWalkover(ROOM, 'SF1', 0);                // 再試合の結果を確定
+      orch.setWalkover(ROOM, 'SF2', 0);
+
+      const spy = vi.spyOn(rm.getRoom(ROOM)!.manager, 'loadMap');
+      await orch.armMatch(ROOM, 'FINAL');
+      expect(spy).toHaveBeenLastCalledWith('cup-map'); // rematch-map ではなく大会指定のマップ
+      vi.restoreAllMocks();
+    });
+
+    // ランダムマップ運用では requestReset() の refreshForNewGame が引き直すのでこれ自体は
+    // 元から動いていたが、固定マップ→ランダムのように運用が混在する大会もあるため、
+    // 「引き直す」経路そのもの (generateRandomMap) が毎回明示的に呼ばれることも確かめる
+    it('ランダムマップの大会で再試合したあと、次の試合の準備でも改めて引き直される', async () => {
+      writeCup(cupDef());
+      orch.bind(ROOM, CUP);
+
+      orch.setWalkover(ROOM, 'SF1', null);      // 同点
+      orch.discardResult(ROOM, 'SF1');          // ランダムマップなのでマップ指定は不要
+      orch.setWalkover(ROOM, 'SF1', 0);
+      orch.setWalkover(ROOM, 'SF2', 0);
+
+      const manager = rm.getRoom(ROOM)!.manager;
+      const spy = vi.spyOn(manager, 'generateRandomMap');
+      await orch.armMatch(ROOM, 'FINAL');
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(manager.getStatus().mapSource.kind).toBe('random');
+      vi.restoreAllMocks();
+    });
+
+    // 一番踏み外しやすいのは回戦ごとに運用 (固定/ランダム) が違うとき。準決勝は固定マップの
+    // 再試合で source が 'catalog' のまま止まるので、決勝がランダム運用でも
+    // 「ライブラリ由来は引き直さない」設計 (MapManager.refreshForNewGame) のせいで
+    // 準決勝の再試合マップが決勝まで残ってしまいうる (armMatch 側で明示的に切り替える必要がある)
+    it('準決勝を別マップで再試合したあと、決勝がランダム運用ならそちらもランダムに戻る', async () => {
+      writeCup(cupDef({ stage: { map: { bracketStages: ['sf-map', null] } } }));
+      orch.bind(ROOM, CUP);
+
+      orch.setWalkover(ROOM, 'SF1', null);            // 同点
+      orch.discardResult(ROOM, 'SF1', 'rematch-map');  // 準決勝だけ別マップで再試合
+      orch.setWalkover(ROOM, 'SF1', 0);
+      orch.setWalkover(ROOM, 'SF2', 0);
+
+      const manager = rm.getRoom(ROOM)!.manager;
+      const spy = vi.spyOn(manager, 'generateRandomMap');
+      await orch.armMatch(ROOM, 'FINAL'); // 決勝 (stage1) は指定なし = ランダム運用
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(manager.getStatus().mapSource.kind).toBe('random');
+      vi.restoreAllMocks();
+    });
+
     it('cancelArm で準備を取り消せる', async () => {
       writeCup(cupDef());
       orch.bind(ROOM, CUP);

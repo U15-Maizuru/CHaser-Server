@@ -64,9 +64,13 @@ export async function armMatch(env: CommandEnv, b: Binding, matchId: string): Pr
   await manager.requestReset();
   manager.setDoubleMode(doubleModeFor(b.loaded.def, match));
 
-  // 再試合の指定 → 回戦ごとのマップ → 大会全体の固定マップ の順に効かせる
+  // 再試合の指定 → 回戦ごとのマップ → 大会全体の固定マップ の順に効かせる。
+  // null (毎回ランダム生成) のときも明示的に切り替える — マップ管理は「ライブラリ由来なら
+  // 引き直さず保持する」設計 (MapManager.refreshForNewGame) なので、ここで何もしないと
+  // 前の試合 (例えば予選) で読み込んだ固定マップが決勝までそのまま残ってしまう
   const mapId = mapForMatch(b.loaded, match);
   if (mapId) manager.loadMap(mapId);
+  else manager.generateRandomMap();
 
   for (const c of configs) {
     await manager.setClientType(c.slot, c.type, c.processConfig);
@@ -230,6 +234,7 @@ export function setStageMap(
   if (armed && armed.stage === stage && armed.status === 'armed') {
     const mapId = mapForMatch(b.loaded, armed);
     if (mapId) managerOf(env, b)?.loadMap(mapId);
+    else managerOf(env, b)?.generateRandomMap();
   }
 
   env.publish(b.roomId);

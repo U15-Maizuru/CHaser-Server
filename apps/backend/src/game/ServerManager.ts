@@ -226,6 +226,13 @@ export class ServerManager extends EventEmitter {
     this.emitStatus();
   }
 
+  /** ライブラリ・エディタ由来のマップを離れ、毎回ランダム生成に戻す */
+  generateRandomMap(): void {
+    if (!this.round.canEditMap()) return;
+    this.mapManager.regenerate();
+    this.emitStatus();
+  }
+
   loadMapData(data: InlineMapData): void {
     if (!this.round.canEditMap()) return;
     this.mapManager.loadInlineData(data);
