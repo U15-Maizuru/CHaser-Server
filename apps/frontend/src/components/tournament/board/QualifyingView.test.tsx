@@ -331,13 +331,13 @@ describe('QualifierSection', () => {
   it('予選が終わるまでは確定させない', () => {
     render(<QualifierSection state={state(false)} onChange={vi.fn()} onConfirm={vi.fn()} />);
     expect(screen.getByTestId('qualifier-waiting')).toBeTruthy();
-    expect(screen.queryByText(/この顔ぶれで確定/)).toBeNull();
+    expect(screen.queryByText(/この決勝進出者で確定/)).toBeNull();
   });
 
   it('予選が終わったら確定ボタンを出す', () => {
     const onConfirm = vi.fn();
     render(<QualifierSection state={state(true)} onChange={vi.fn()} onConfirm={onConfirm} />);
-    fireEvent.click(screen.getByText(/この顔ぶれで確定/));
+    fireEvent.click(screen.getByText(/この決勝進出者で確定/));
     expect(onConfirm).toHaveBeenCalledWith(true);
   });
 
@@ -354,7 +354,7 @@ describe('QualifierSection', () => {
 
   it('確定操作を渡さなければ確定の欄は出ない (トーナメント表の選択バーなど)', () => {
     render(<QualifierSection state={state(true)} onChange={vi.fn()} />);
-    expect(screen.queryByText(/この顔ぶれで確定/)).toBeNull();
+    expect(screen.queryByText(/この決勝進出者で確定/)).toBeNull();
   });
 
   it('既に別の枠に入っている人は候補に出さない (同じ人が2回出るのを防ぐ)', () => {

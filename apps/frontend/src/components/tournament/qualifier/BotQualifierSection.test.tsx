@@ -51,7 +51,7 @@ describe('BotQualifierSection', () => {
   it('予選が終わるまでは確認リストを出さない', () => {
     render(<BotQualifierSection state={state([])} onExclude={vi.fn()} onConfirm={vi.fn()} />);
     expect(screen.getByTestId('bot-qualifier-waiting')).toBeInTheDocument();
-    expect(screen.queryByText('この顔ぶれで確定 ▶')).not.toBeInTheDocument();
+    expect(screen.queryByText('この決勝進出者で確定 ▶')).not.toBeInTheDocument();
   });
 
   it('定員ちょうどならそのまま確定できる', () => {
@@ -64,7 +64,7 @@ describe('BotQualifierSection', () => {
     );
     expect(screen.queryByTestId('bot-qualifier-over')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByText('この顔ぶれで確定 ▶'));
+    fireEvent.click(screen.getByText('この決勝進出者で確定 ▶'));
     expect(onConfirm).toHaveBeenCalledWith(true);
   });
 
@@ -84,7 +84,7 @@ describe('BotQualifierSection', () => {
     expect(screen.getByTestId('bot-qualifier-over').textContent).toContain('あと');
     expect(screen.getAllByText('同点')).toHaveLength(2);
 
-    const btn = screen.getByText('この顔ぶれで確定 ▶');
+    const btn = screen.getByText('この決勝進出者で確定 ▶');
     expect(btn).toBeDisabled();
     fireEvent.click(btn);
     expect(onConfirm).not.toHaveBeenCalled();

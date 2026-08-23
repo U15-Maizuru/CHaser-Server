@@ -174,11 +174,11 @@ export function QualifierSection({ state, onChange, onConfirm }: QualifierSectio
         <div style={confirmRow}>
           <span style={{ ...hint, flex: 1, minWidth: 200 }}>
             閲覧画面には<strong>予選リーグの最終結果</strong>を出しています。
-            上の顔ぶれでよければ確定してください。確定すると決勝トーナメント表に切り替わり、
+            上の決勝進出者でよければ確定してください。確定すると決勝トーナメント表に切り替わり、
             決勝の試合を準備できるようになります。
           </span>
           <button style={btnPrimary} onClick={() => onConfirm(true)}>
-            この顔ぶれで確定 ▶
+            この決勝進出者で確定 ▶
           </button>
         </div>
       ))}

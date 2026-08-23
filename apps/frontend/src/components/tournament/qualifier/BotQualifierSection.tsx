@@ -36,7 +36,7 @@ export function BotQualifierSection({ state, onExclude, onConfirm }: BotQualifie
   const over      = remaining.length - advance;
   const confirmed = state.qualifiersConfirmed;
 
-  /** その削除で顔ぶれが変わる決勝トーナメントが、もう動いてしまっているか */
+  /** その削除で決勝進出者が変わる決勝トーナメントが、もう動いてしまっているか */
   const locked = state.matches.find(m =>
     [m.slotA, m.slotB].some(r => r.kind === 'group-rank')
     && m.status !== 'pending' && m.status !== 'ready'
@@ -136,7 +136,7 @@ export function BotQualifierSection({ state, onExclude, onConfirm }: BotQualifie
         <div style={confirmRow}>
           <span style={{ ...hint, flex: 1, minWidth: 200 }}>
             閲覧画面には<strong>BOT対戦予選の最終結果</strong>を出しています。
-            上の顔ぶれでよければ確定してください。確定すると決勝トーナメント表に切り替わり、
+            上の決勝進出者でよければ確定してください。確定すると決勝トーナメント表に切り替わり、
             決勝の試合を準備できるようになります。
           </span>
           <button
@@ -145,7 +145,7 @@ export function BotQualifierSection({ state, onExclude, onConfirm }: BotQualifie
             title={over > 0 ? `あと ${over} 名を削ってください` : undefined}
             onClick={() => onConfirm(true)}
           >
-            この顔ぶれで確定 ▶
+            この決勝進出者で確定 ▶
           </button>
         </div>
       ))}

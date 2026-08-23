@@ -220,7 +220,7 @@ export function discardResult(
  * ある試合に (推移的に) 依存する試合の ID 集合。自分自身は含まない。
  *
  * **`group-rank` 参照は「そのリーグの全試合」に依存している。** 予選の1試合が動けば順位表が
- * 変わり、決勝トーナメントの1回戦の顔ぶれが変わりうるため。これを数えないと、確定済みの
+ * 変わり、決勝トーナメントの1回戦の決勝進出者が変わりうるため。これを数えないと、確定済みの
  * 準決勝の resolvedA/B だけが別人に書き換わり、「戦っていない相手に勝ったこと」になってしまう。
  */
 export function downstreamOf(matches: TournamentMatch[], matchId: string): Set<string> {

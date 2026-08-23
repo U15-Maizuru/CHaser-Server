@@ -42,7 +42,7 @@ export function setQualifier(
         ? `${nameOf(b, participantId)} は予選の参加者ではありません`
         : `${nameOf(b, participantId)} は${groupLabel(group)}リーグの参加者ではありません`);
     }
-    // 差し替えた「あと」の顔ぶれで重複を見る。自動判定は順位表の位置で埋まるので、
+    // 差し替えた「あと」の決勝進出者で重複を見る。自動判定は順位表の位置で埋まるので、
     // 手動で1人繰り上げると別の枠の自動値と衝突することがある
     const after = slots.map(s => (
       s.group === group && s.rank === rank ? participantId : s.participantId
@@ -65,7 +65,7 @@ export function setQualifier(
     return { ...d, qualifiers };
   });
 
-  // 差し替えで顔ぶれが変わる試合と、その下流の結果は捨てる。
+  // 差し替えで決勝進出者が変わる試合と、その下流の結果は捨てる。
   // 残すと「戦っていない相手に勝った」という記録ができてしまう
   commit(b, first
     ? reopenInGraph(b.loaded.state.matches, first.id, ctxOf(b))
@@ -95,13 +95,13 @@ export function setQualifierExclusion(
     ? [...before, participantId]
     : before.filter(id => id !== participantId);
 
-  // 削除で顔ぶれが変わりうる決勝トーナメントの試合。1つでも動いていたら先に巻き戻す
+  // 削除で決勝進出者が変わりうる決勝トーナメントの試合。1つでも動いていたら先に巻き戻す
   const affected = qualifierDependentMatches(b);
   requireRewindable(b, affected, cascade);
 
   decide(b, d => ({ ...d, exclusions: after }));
 
-  // 顔ぶれが変わる試合と、その下流の結果は捨てる。
+  // 決勝進出者が変わる試合と、その下流の結果は捨てる。
   // **巻き戻してから commit し、そのあとで armed を落とす** — disarmIfCleared は
   // b.loaded の下流を数えるので、順番を逆にすると巻き戻す前のグラフを見てしまう
   let matches = b.loaded.state.matches;
@@ -111,7 +111,7 @@ export function setQualifierExclusion(
   env.publish(b.roomId);
 }
 
-/** 決勝進出者を「この顔ぶれで始める」と確定する / 確定を取り消す */
+/** 決勝進出者を確定する / 確定を取り消す */
 export function confirmQualifiers(env: CommandEnv, b: Binding, confirmed: boolean): void {
   requireQualifying(b);
   if (confirmed && !isGroupStageDone(b.loaded.state.matches)) {
@@ -154,7 +154,7 @@ function requireRewindable(b: Binding, affected: TournamentMatch[], cascade: boo
   }
 }
 
-/** 決勝進出者の並びが変われば顔ぶれが変わる試合 (= group-rank を参照する1回戦) */
+/** 決勝進出者の並びが変われば出場する決勝進出者が変わる試合 (= group-rank を参照する1回戦) */
 function qualifierDependentMatches(b: Binding): TournamentMatch[] {
   return b.loaded.state.matches.filter(m =>
     [m.slotA, m.slotB].some(r => r.kind === 'group-rank'));

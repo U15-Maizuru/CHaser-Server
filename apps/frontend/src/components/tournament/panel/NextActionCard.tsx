@@ -89,11 +89,11 @@ function Body({ state, action, commands, programs }: {
       return (
         <>
           <p style={s.note}>
-            予選が終わりました。下の「決勝進出者」で顔ぶれを確認し、確定すると決勝トーナメントへ進みます。
+            予選が終わりました。下の「決勝進出者」を確認し、確定すると決勝トーナメントへ進みます。
             確定するまで観客席には予選の最終結果が出続けます。
           </p>
           <Button variant="primary" onClick={() => commands.confirmQualifiers(true)}>
-            この顔ぶれで確定 ▶
+            この決勝進出者で確定 ▶
           </Button>
         </>
       );

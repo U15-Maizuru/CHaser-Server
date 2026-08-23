@@ -79,7 +79,7 @@ export type OperatorAction =
   | { kind: 'confirm';             match: TournamentMatch }
   /** 割り当て済み。フッターの「ゲームスタート」を押す */
   | { kind: 'start';               match: TournamentMatch }
-  /** 予選が終わった。決勝進出者の顔ぶれを確定する */
+  /** 予選が終わった。決勝進出者を確定する */
   | { kind: 'confirm-qualifiers' }
   /** 次の試合を準備する */
   | { kind: 'arm';                 match: TournamentMatch }
@@ -101,7 +101,7 @@ export function nextOperatorAction(state: TournamentStatePayload): OperatorActio
   const armed = state.matches.find(m => m.id === state.armedMatchId);
   if (armed) return { kind: 'start', match: armed };
 
-  // ③ 予選が終わっていれば、決勝へ進む前に顔ぶれを確定する
+  // ③ 予選が終わっていれば、決勝へ進む前に決勝進出者を確定する
   if (hasQualifying(format) && isGroupStageDone(state.matches) && !state.qualifiersConfirmed) {
     return { kind: 'confirm-qualifiers' };
   }

@@ -250,7 +250,7 @@ describe('group-rank の解決', () => {
     expect(ms.find(m => m.id === 'FINAL')!.status).toBe('pending');   // B リーグが未消化
   });
 
-  it('両リーグが終われば決勝の顔ぶれが決まって ready になる', () => {
+  it('両リーグが終われば決勝進出者が決まって ready になる', () => {
     let ms = cup();
     ms = playIn(ms, 'G1-D1M1', 0);
     ms = playIn(ms, 'G2-D1M1', 1);

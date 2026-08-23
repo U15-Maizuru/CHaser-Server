@@ -104,7 +104,7 @@ describe('NextActionCard', () => {
       matches: [groupMatch, match({ id: 'FINAL', stage: 1, status: 'pending' })],
     }));
     expect(screen.getByText('決勝進出者を確定する')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('この顔ぶれで確定 ▶'));
+    fireEvent.click(screen.getByText('この決勝進出者で確定 ▶'));
     expect(commands.confirmQualifiers).toHaveBeenCalledWith(true);
   });
 });

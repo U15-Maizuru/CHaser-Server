@@ -342,7 +342,7 @@ export function parseTournamentDefinition(raw: unknown, opts: ParseOptions = {})
     id, name, match, stage, participants,
   };
 
-  // 予選のある形式では、1回戦の顔ぶれは予選の結果で決まるので明示的な組み合わせ指定は
+  // 予選のある形式では、1回戦の決勝進出者は予選の結果で決まるので明示的な組み合わせ指定は
   // 意味を持たない。黙って無視すると「指定したのに効かない」になるため、はっきり断る
   if (stage.format === 'group-then-bracket' || stage.format === 'bot-then-bracket') {
     const what = stage.format === 'group-then-bracket'
