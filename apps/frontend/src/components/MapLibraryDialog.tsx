@@ -27,7 +27,15 @@ export function MapLibraryDialog({ httpBase, onClose, previewMapId, onPreviewMap
 
   const fetchEntries = () => { void fetchMaps(httpBase).then(setEntries); };
 
-  useEffect(fetchEntries, [httpBase]);
+  // マップエディタは独立ウィンドウ/タブ (このダイアログとは別の React ツリー) なので、
+  // そちらで保存してもここの一覧 state は直接更新できない。この画面に戻ってきた
+  // (フォーカスが戻った) タイミングでも取り直すことで、閉じ直させずに反映させる。
+  useEffect(() => {
+    fetchEntries();
+    window.addEventListener('focus', fetchEntries);
+    return () => window.removeEventListener('focus', fetchEntries);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [httpBase]);
 
   const handleDelete = (entry: MapCatalogEntry) => {
     const ok = confirmDialog(

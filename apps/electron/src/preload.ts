@@ -31,6 +31,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openTournamentWindow: (): Promise<void> =>
     ipcRenderer.invoke('tournament:openWindow'),
 
+  openMapEditorWindow: (mapId: string | null): Promise<void> =>
+    ipcRenderer.invoke('mapEditor:openWindow', mapId),
+
   refocusWindow: (): Promise<void> =>
     ipcRenderer.invoke('window:refocus'),
 } satisfies ElectronAPI);

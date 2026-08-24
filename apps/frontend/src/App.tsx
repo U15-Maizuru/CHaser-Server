@@ -3,7 +3,7 @@ import { useGameState }      from './hooks/useGameState';
 import { useMatchConfig }    from './hooks/useMatchConfig';
 import { useMapGenParams, toMapParams } from './hooks/useMapGenParams';
 import { useCurrentMap } from './hooks/useCurrentMap';
-import { downloadMapFile, deleteMusicFile, deleteSoundFile, fetchCurrentMap, fetchMapCatalogData, saveMapToLibrary, uploadMusic, uploadSound } from './lib/api';
+import { downloadMapFile, deleteMusicFile, deleteSoundFile, fetchCurrentMap, saveMapToLibrary, uploadMusic, uploadSound } from './lib/api';
 import { readAppLocation } from './lib/appMode';
 import { useEnvConfig }      from './hooks/useEnvConfig';
 import { useGamePhaseSound } from './hooks/useGamePhaseSound';
@@ -12,7 +12,8 @@ import { StartupDialog }   from './components/StartupDialog';
 import { MainWindow }      from './components/MainWindow';
 import { BottomBar }       from './components/BottomBar';
 import { SettingDialog }   from './components/SettingDialog';
-import { MapEditorDialog } from './components/MapEditorDialog';
+import { MapEditorDialog, defaultEditableMap, toInlineMapData } from './components/MapEditorDialog';
+import { MapEditorMode }   from './components/MapEditorMode';
 import { MapLibraryDialog } from './components/MapLibraryDialog';
 import { ProgramLibraryDialog } from './components/ProgramLibraryDialog';
 import { TournamentMode }  from './components/tournament/TournamentMode';
@@ -31,7 +32,7 @@ const WS_URL    = (import.meta as { env?: { VITE_WS_URL?: string } }).env?.VITE_
 const HTTP_BASE = WS_URL.replace(/^ws/, 'http');
 
 export default function App() {
-  const { roomId, mode, slot } = readAppLocation(window.location.search);
+  const { roomId, mode, slot, mapId } = readAppLocation(window.location.search);
 
   // room パラメータなし → ロビー (Web サービスモード)
   if (!roomId) return <Lobby wsUrl={WS_URL} />;
@@ -43,6 +44,8 @@ export default function App() {
       return <ErrorBoundary><ManualMode wsUrl={WS_URL} roomId={roomId} slot={slot} /></ErrorBoundary>;
     case 'tournament':
       return <ErrorBoundary><TournamentMode wsUrl={WS_URL} roomId={roomId} httpBase={HTTP_BASE} /></ErrorBoundary>;
+    case 'mapEditor':
+      return <ErrorBoundary><MapEditorMode httpBase={HTTP_BASE} roomId={roomId} mapId={mapId} /></ErrorBoundary>;
     case 'control':
       return <ErrorBoundary><ControlApp roomId={roomId} /></ErrorBoundary>;
   }
@@ -71,8 +74,6 @@ function ControlApp({ roomId }: { roomId: string }) {
   const [showMapEditor,      setShowMapEditor]      = useState(false);
   const [showProgramLibrary, setShowProgramLibrary] = useState(false);
   const [editorSeed,         setEditorSeed]         = useState<EditableMap | null>(null);
-  // マップ管理から開いたときは対戦設定と無関係なので「適用して閉じる」を出さない
-  const [editorFromLibrary,  setEditorFromLibrary]  = useState(false);
 
   // 今出ているマップ (観戦窓の待機画面と同じフックを使う)
   const { currentMap, refresh: refreshCurrentMap } = useCurrentMap(
@@ -173,18 +174,22 @@ function ControlApp({ roomId }: { roomId: string }) {
     setEditorSeed(data
       ? { field: data.field as MapObject[][], size: data.size, turn: data.turn, teamFirstPoint: data.teamFirstPoint }
       : defaultEditableMap);
-    setEditorFromLibrary(false);
     setShowMapEditor(true);
   };
 
-  // マップ管理からの入口。room の対戦状態とは無関係に、ライブラリの1件 (または白紙) を下敷きにする
-  const openMapEditorFromLibrary = async (entry: MapCatalogEntry | null) => {
-    const seed = entry ? await fetchMapCatalogData(HTTP_BASE, entry.id) : null;
-    setEditorSeed(seed
-      ? { field: seed.data.field as MapObject[][], size: seed.data.size, turn: seed.data.turn, teamFirstPoint: seed.data.teamFirstPoint }
-      : defaultEditableMap);
-    setEditorFromLibrary(true);
-    setShowMapEditor(true);
+  // マップ管理からの入口。room の対戦状態とは無関係なので、モーダルではなく独立ウィンドウ/タブで開く
+  // (Electron: 専用ウィンドウ、ブラウザ: 別タブ)。openTournamentWindow と同じ分岐パターン
+  const openMapEditorWindow = (entry: MapCatalogEntry | null) => {
+    const mapId = entry?.id ?? null;
+    if (window.electronAPI) {
+      void window.electronAPI.openMapEditorWindow(mapId);
+      return;
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.set('room', roomId);
+    url.searchParams.set('mode', 'mapEditor');
+    if (mapId) url.searchParams.set('mapId', mapId); else url.searchParams.delete('mapId');
+    window.open(url.toString(), `mapEditor-${roomId}-${mapId ?? 'new'}`);
   };
 
   const handleApplyMapEntry = (entry: MapCatalogEntry) => {
@@ -244,7 +249,7 @@ function ControlApp({ roomId }: { roomId: string }) {
           onClose={() => setShowMapLibrary(false)}
           previewMapId={state.serverStatus?.previewMapId ?? null}
           onPreviewMap={state.previewMap}
-          onOpenEditor={entry => void openMapEditorFromLibrary(entry)}
+          onOpenEditor={openMapEditorWindow}
         />
       )}
 
@@ -253,7 +258,7 @@ function ControlApp({ roomId }: { roomId: string }) {
           initialMap={editorSeed}
           theme={displayPrefs.theme}
           httpBase={HTTP_BASE}
-          onApply={editorFromLibrary ? undefined : handleMapEditorApply}
+          onApply={handleMapEditorApply}
           onSaveToLibrary={(map, name) => saveMap(toInlineMapData(map), name)}
           onDownload={(map, name) => downloadMap(toInlineMapData(map), name)}
           onClose={() => setShowMapEditor(false)}
@@ -357,16 +362,4 @@ const defaultStatus = {
   mapSource:    { kind: 'random' as const },
   displayPrefs: DEFAULT_DISPLAY_PREFS,
   previewMapId: null,
-};
-
-/** EditableMap / InlineMapData の相互変換 (余分なフィールドを落として送る) */
-function toInlineMapData(map: EditableMap): InlineMapData {
-  return { field: map.field, size: map.size, turn: map.turn, teamFirstPoint: map.teamFirstPoint };
-}
-
-const defaultEditableMap: EditableMap = {
-  field: Array.from({ length: 17 }, () => Array(15).fill(MapObject.NOTHING)),
-  size:  { x: 15, y: 17 },
-  turn:  100,
-  teamFirstPoint: [{ x: 1, y: 8 }, { x: 13, y: 8 }],
 };

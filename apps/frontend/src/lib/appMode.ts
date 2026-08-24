@@ -9,15 +9,17 @@
  *
  * モジュールのトップレベルで読むとテストから差し替えられないため、関数にしてある。
  */
-export type AppMode = 'display' | 'control' | 'manual' | 'tournament';
+export type AppMode = 'display' | 'control' | 'manual' | 'tournament' | 'mapEditor';
 
-const MODES: readonly AppMode[] = ['display', 'control', 'manual', 'tournament'];
+const MODES: readonly AppMode[] = ['display', 'control', 'manual', 'tournament', 'mapEditor'];
 
 export interface AppLocation {
   /** ルーム指定なし = ロビー (Web サービスモード) */
   roomId: string | null;
   mode:   AppMode;
   slot:   0 | 1;
+  /** mode='mapEditor' のとき、マップ管理の「編集」から開いた場合のライブラリ ID (「新規作成」なら null) */
+  mapId:  string | null;
 }
 
 export function readAppLocation(search: string): AppLocation {
@@ -27,6 +29,7 @@ export function readAppLocation(search: string): AppLocation {
     roomId: params.get('room'),
     mode:   MODES.includes(mode as AppMode) ? mode as AppMode : 'display',
     slot:   params.get('slot') === '1' ? 1 : 0,
+    mapId:  params.get('mapId'),
   };
 }
 
@@ -40,6 +43,7 @@ const MODE_LABEL: Record<AppMode, string> = {
   control:    'コントロール',
   manual:     '手動操作',
   tournament: '大会運営',
+  mapEditor:  'マップエディタ',
 };
 
 const MANUAL_SLOT_LABEL = ['COOL', 'HOT'] as const;

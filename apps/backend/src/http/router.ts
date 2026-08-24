@@ -49,12 +49,13 @@ export function handleHttpRequest(
   // /api/tournament/* は大会運営モジュールへ委譲する
   if (handleTournamentRequest(req, res, url, tournamentDeps ?? { boundRoomOf: () => null })) return;
 
-  if (handleDefaultRoomRequest(req, res, url, rm)) return;
-  if (handleProgramRequest(req, res, url))         return;
-  if (handleMapRequest(req, res, url, rm))         return;
-  if (handleLibRequest(req, res, url))             return;
-  if (handleMusicRequest(req, res, url))           return;
-  if (handleSoundRequest(req, res, url))           return;
+  if (handleDefaultRoomRequest(req, res, url, rm))  return;
+  if (handleDisplayPrefsRequest(req, res, url, rm)) return;
+  if (handleProgramRequest(req, res, url))          return;
+  if (handleMapRequest(req, res, url, rm))          return;
+  if (handleLibRequest(req, res, url))              return;
+  if (handleMusicRequest(req, res, url))            return;
+  if (handleSoundRequest(req, res, url))            return;
 
   // 本番: フロントエンド静的ファイル配信 (SPA フォールバック付き)
   if (FRONTEND_DIST && req.method === 'GET') {
@@ -78,5 +79,24 @@ function handleDefaultRoomRequest(
   } else {
     json(res, 404, { error: 'ローカルルームが見つかりません' });
   }
+  return true;
+}
+
+/**
+ * GET /api/display-prefs?room=<id> → 指定ルームの表示設定。
+ *
+ * 今はテーマ (盤面テクスチャ) だけを返す。マップ管理から開く独立ウィンドウのマップエディタは
+ * room の WS 接続を持たない (対戦設定と無関係にするため) ので、対戦設定で選んだテーマを
+ * HTTP で一度だけ取りに行く。
+ */
+function handleDisplayPrefsRequest(
+  req: IncomingMessage, res: ServerResponse, url: URL, rm?: RoomManager,
+): boolean {
+  if (req.method !== 'GET' || url.pathname !== '/api/display-prefs') return false;
+
+  const room = url.searchParams.get('room');
+  const r    = room ? rm?.getRoom(room) : undefined;
+  if (!r) { json(res, 404, { error: 'ルームが見つかりません' }); return true; }
+  json(res, 200, { theme: r.manager.getStatus().displayPrefs.theme });
   return true;
 }

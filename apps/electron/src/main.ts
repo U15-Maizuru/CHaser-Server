@@ -138,14 +138,14 @@ async function fetchDefaultRoom(retries = 20): Promise<string> {
 
 // ── ウィンドウ ─────────────────────────────────────────────────────────────
 //
-// 4種類のウィンドウはサイズ以外ほぼ同じ手順で作る。個別に書くと
+// 各種ウィンドウはサイズ以外ほぼ同じ手順で作る。個別に書くと
 // preload の配線や「既に開いていたら focus」のガードが片方だけ抜ける
 // (実際、以前は display と control にだけガードが無かった) ため、生成はここに集約する。
 //
 // `mode` は URL のクエリとしてフロントエンドへ渡り、apps/frontend/src/App.tsx が
 // これを見て画面を出し分ける。E2E も `url().includes('mode=...')` でウィンドウを
 // 特定しているので、値を変えるときは両方を直すこと。
-type WindowMode = 'display' | 'control' | 'manual' | 'tournament';
+type WindowMode = 'display' | 'control' | 'manual' | 'tournament' | 'mapEditor';
 
 // ページを読み込むまでの一瞬だけ出るタイトル。用途つきの正式なタイトル
 // (「対戦表示 — CHaser Server」等) はフロントエンドが mode から組み立てて
@@ -162,9 +162,12 @@ interface WindowSpec {
   quitOnClose?: boolean;
   /** `?room=...&mode=...` に続けて足すクエリ */
   extraSearch?: string;
+  /** ウィンドウ生成直後 (loadUrl の前) に一度だけ呼ぶ。close イベントの配線などに使う */
+  onCreated?: (win: BrowserWindow) => void;
 }
 
-// 開いているウィンドウ。キーは mode (手動操作だけはスロットごとに2枚あるので 'manual:0' / 'manual:1')
+// 開いているウィンドウ。キーは基本 mode だが、複数枚あり得るものはキーを分ける
+// (手動操作はスロットごとに 'manual:0' / 'manual:1'、マップエディタは編集対象ごとに 'mapEditor:<mapId>')
 const openWindows = new Map<string, BrowserWindow>();
 
 function getWindow(key: string): BrowserWindow | null {
@@ -217,6 +220,7 @@ function createAppWindow(key: string, mode: WindowMode, roomId: string, spec: Wi
   });
   if (spec.removeMenu) win.removeMenu();
   enableFullscreenEscape(win);
+  spec.onCreated?.(win);
 
   loadUrl(win, `?room=${roomId}&mode=${mode}${spec.extraSearch ?? ''}`);
 
@@ -249,6 +253,34 @@ function openManualWindow(roomId: string, slot: 0 | 1): void {
 function openTournamentWindow(roomId: string): void {
   createAppWindow('tournament', 'tournament', roomId, {
     width: 1440, height: 900, removeMenu: true,
+  });
+}
+
+/**
+ * マップ管理から開くマップエディタ。room の対戦状態とは無関係 (HTTP のみ) なので、
+ * 対戦設定側のモーダルとは別に、マップごとにウィンドウを分ける (manual:${slot} と同じ発想)。
+ * 同じマップを指定すれば既存ウィンドウをフォーカスするだけで、勝手に中身を差し替えない。
+ */
+function openMapEditorWindow(roomId: string, mapId: string | null): void {
+  // 既定マップ (15×17) がツールバー・盤面・パラメータパネルにちょうど収まるサイズ。
+  // ウィンドウ自体は resizable (既定) なので、大きいマップを開いたときは手で広げればよい。
+  createAppWindow(`mapEditor:${mapId ?? 'new'}`, 'mapEditor', roomId, {
+    width: 720, height: 640, removeMenu: true,
+    extraSearch: mapId ? `&mapId=${mapId}` : '',
+    onCreated: win => {
+      // レンダラー側 (MapEditorMode) が dirty なとき beforeunload で閉じるのを止めるので、
+      // ここでネイティブの確認ダイアログに差し替えて、閉じてよいか改めて聞く
+      win.webContents.on('will-prevent-unload', event => {
+        const choice = dialog.showMessageBoxSync(win, {
+          type: 'question',
+          buttons: ['破棄して閉じる', 'キャンセル'],
+          defaultId: 1,
+          cancelId: 1,
+          message: '編集中の内容を破棄しますか？',
+        });
+        if (choice === 0) event.preventDefault();
+      });
+    },
   });
 }
 
@@ -341,6 +373,10 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('tournament:openWindow', () => {
     openTournamentWindow(roomId);
+  });
+
+  ipcMain.handle('mapEditor:openWindow', (_e, mapId: string | null) => {
+    openMapEditorWindow(roomId, mapId);
   });
 
   openDisplayWindow(roomId);

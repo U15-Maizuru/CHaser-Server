@@ -77,6 +77,12 @@ export function deleteProgram(httpBase: string, id: string): Promise<void> {
   return send(`${httpBase}/api/programs/${id}`, 'DELETE');
 }
 
+/** 指定ルームの表示テーマ (盤面テクスチャ)。WS を張らない画面 (マップエディタの独立ウィンドウ) 用 */
+export async function fetchDisplayTheme(httpBase: string, roomId: string): Promise<string | null> {
+  const body = await getJson<{ theme: string }>(`${httpBase}/api/display-prefs?room=${roomId}`);
+  return body?.theme ?? null;
+}
+
 // ── マップライブラリ ───────────────────────────────────────────────────────
 
 export async function fetchMaps(httpBase: string): Promise<MapCatalogEntry[]> {

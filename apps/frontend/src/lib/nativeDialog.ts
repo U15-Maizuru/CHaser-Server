@@ -21,3 +21,8 @@ export function alertDialog(message: string): void {
   window.alert(message);
   refocus();
 }
+
+/** 未保存の編集があるときだけ確認する。無ければ何も聞かず true (マップエディタの close ガード用) */
+export function confirmDiscardEdits(dirty: boolean): boolean {
+  return !dirty || confirmDialog('編集中の内容を破棄しますか？');
+}
