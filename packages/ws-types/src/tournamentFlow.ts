@@ -137,3 +137,15 @@ export function unassignedOf(
 export function allUnassigned(state: TournamentStatePayload): ResolvedParticipant[] {
   return state.participants.filter(p => !p.builtinCpu && p.programCatalogId === null);
 }
+
+/**
+ * 対戦画面が今出している試合が、予選 (BOT対戦、group を持つ) か決勝トーナメントかを表す。
+ *
+ * 交流大会ルールは予選と決勝で得点式が違う (koryuScoring.ts) ため、対戦画面
+ * (PlayerSidePanel など) が得点の内訳をどちらの式で見せるかをこれで判定する。
+ * armedMatchId から引けなければ (大会に紐付いていない単発対戦など) null。
+ */
+export function armedMatchOf(state: TournamentStatePayload): TournamentMatch | null {
+  if (!state.armedMatchId) return null;
+  return state.matches.find(m => m.id === state.armedMatchId) ?? null;
+}

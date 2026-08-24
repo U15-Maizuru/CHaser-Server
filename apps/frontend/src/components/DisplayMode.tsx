@@ -1,8 +1,9 @@
 import { useMemo, useRef } from 'react';
 import type {
-  DisplayPrefs, InlineMapData, ServerPhase, ServerStatusPayload, TournamentStatePayload,
+  DisplayPrefs, InlineMapData, RoundResult, ServerPhase, ServerStatusPayload,
+  SoloScoringMode, TournamentStatePayload,
 } from '@u15/ws-types';
-import { DEFAULT_DISPLAY_PREFS, hasQualifying, idxForSide, roundPointsFor, SCENE_FADE_MS } from '@u15/ws-types';
+import { DEFAULT_DISPLAY_PREFS, hasQualifying, idxForSide, SCENE_FADE_MS } from '@u15/ws-types';
 import { useGameState } from '../hooks/useGameState';
 import { useMuteOverride } from '../hooks/useMuteOverride';
 import { useGamePhaseSound } from '../hooks/useGamePhaseSound';
@@ -22,6 +23,7 @@ import { LeagueTable } from './tournament/board/LeagueTable';
 import { TournamentFinale } from './tournament/board/TournamentFinale';
 import { TournamentStandby } from './tournament/board/TournamentStandby';
 import { armedMatchNames, isTournamentComplete } from '../lib/tournamentResult';
+import { roundDisplayScore, scoringContextOf, type ScoringContext } from '../lib/koryuDisplay';
 import {
   BG_ROOT, BG_CARD,
   TURN_BASE, TURN_LIGHT,
@@ -115,10 +117,17 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
   // 大会中でなければ結果は使われない
   const groupView = displayQualifyingPhase(tournamentState);
 
+  // ターンごとに再レンダーされる MainWindow に渡す値なので、tournamentState/scoreDisplayMode
+  // が変わらない限り armedMatchOf の再探索をしないよう memo する (SetupWaiting 側の
+  // armedMatchNames と同じ方針)
+  const scoring = useMemo(
+    () => scoringContextOf(tournamentState, prefs.scoreDisplayMode),
+    [tournamentState, prefs.scoreDisplayMode],
+  );
+
   // 運営がマップ管理画面から手動プレビューを出しているか (ServerManager 側で対戦開始時に
   // 自動で null に戻る、永続化しない一時状態)
   const previewMapId = serverStatus?.previewMapId ?? null;
-
 
   // いま観客に出すべき画面。BGM の曲選び (BGM_OF_SCENE) と awarding 判定は、鳴らす音を
   // 即座に切り替えるためこの値をそのまま見る。描画だけは下の displayedGroup (暗転を挟んで
@@ -207,6 +216,7 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
         groupPhase={groupView.phase}
         currentMap={currentMap}
         theme={prefs.theme}
+        soloScoringMode={prefs.scoreDisplayMode}
       />
     );
   } else {
@@ -224,6 +234,7 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
           variant="display"
           countdown={countdown}
           displayTitle={prefs.displayTitle}
+          scoring={scoring}
           tournament={tournamentForMatchRef.current}
         />
       </div>
@@ -286,7 +297,15 @@ function stateBadgeStyle(state: string): React.CSSProperties {
 }
 
 
-function SetupWaiting({ serverStatus, displayTitle, tournament, groupPhase, currentMap, theme }: {
+/** 第1ゲームのリキャップに出す得点の文字列。舞鶴大会は pt 表示、交流大会は素の数値 */
+function recapScore(rr: RoundResult, side: 0 | 1, ctx: ScoringContext): string {
+  const value = roundDisplayScore(rr, side, ctx);
+  return ctx.ruleSet === 'koryu' ? `${value}` : `${value}pt`;
+}
+
+function SetupWaiting({
+  serverStatus, displayTitle, tournament, groupPhase, currentMap, theme, soloScoringMode,
+}: {
   serverStatus: ServerStatusPayload | null;
   displayTitle: string;
   /** 大会運営中なら、待機中にトーナメント表 / リーグ表を見せる */
@@ -296,11 +315,14 @@ function SetupWaiting({ serverStatus, displayTitle, tournament, groupPhase, curr
   /** これから戦うマップ。取得前は null */
   currentMap?: InlineMapData | null;
   theme: string;
+  /** 大会に紐付かないとき (tournament が null) に使う得点表示モード */
+  soloScoringMode: SoloScoringMode;
 }) {
   const clients      = serverStatus?.clients;
   const doubleMode   = serverStatus?.doubleMode ?? false;
   const currentRound = serverStatus?.currentRound ?? 0;
   const roundResults = serverStatus?.roundResults ?? [];
+  const scoring      = scoringContextOf(tournament, soloScoringMode);
 
   // 2ゲーム制の第1ゲームと第2ゲームの間 (プログラム再接続待ち)。この間 snapshot は破棄されるが
   // roundResults は ServerStatusPayload に残るので、ここから第1ゲームの結果を再構成できる。
@@ -340,9 +362,9 @@ function SetupWaiting({ serverStatus, displayTitle, tournament, groupPhase, curr
           <div style={sw.recapTitle}>第1ゲームの結果</div>
           <div style={sw.recapRow}>
             <span style={sw.recapName}>{recapDisplayNames![idxForSide(0, intermission.round)]}</span>
-            <span style={sw.recapScore}>{roundPointsFor(intermission, 0)}</span>
+            <span style={sw.recapScore}>{recapScore(intermission, 0, scoring)}</span>
             <span style={sw.recapDash}>—</span>
-            <span style={sw.recapScore}>{roundPointsFor(intermission, 1)}</span>
+            <span style={sw.recapScore}>{recapScore(intermission, 1, scoring)}</span>
             <span style={sw.recapName}>{recapDisplayNames![idxForSide(1, intermission.round)]}</span>
           </div>
         </div>

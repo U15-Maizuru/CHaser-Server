@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useGameState }      from './hooks/useGameState';
 import { useMatchConfig }    from './hooks/useMatchConfig';
 import { useMapGenParams, toMapParams } from './hooks/useMapGenParams';
@@ -24,6 +24,7 @@ import { Lobby }           from './components/Lobby';
 import type { ClientStatusPayload, InlineMapData, MapCatalogEntry, SoundKey } from '@u15/ws-types';
 import { DEFAULT_DISPLAY_PREFS, MapObject } from '@u15/ws-types';
 import type { EditableMap } from './components/MapEditorDialog';
+import { scoringContextOf } from './lib/koryuDisplay';
 
 // WS URL: 環境変数 > window.location.hostname (自動検出) の優先順位
 // file:// で読み込む Electron 本番ビルドでは hostname が空文字になるため localhost にフォールバック
@@ -91,6 +92,14 @@ function ControlApp({ roomId }: { roomId: string }) {
   const roundResults = serverStatus?.roundResults ?? [];
   // マップを差し替えてよいか (バックエンドの RoundController.canEditMap と同じ条件)
   const canEditMap   = phase === 'setup' && roundResults.length === 0;
+
+  // ターンごとに再レンダーされる MainWindow に渡す値なので、tournamentState/scoreDisplayMode
+  // が変わらない限り armedMatchOf の再探索をしないよう memo する (MainWindow 側の
+  // armedMatchNames と同じ方針)
+  const scoring = useMemo(
+    () => scoringContextOf(state.tournamentState, displayPrefs.scoreDisplayMode),
+    [state.tournamentState, displayPrefs.scoreDisplayMode],
+  );
 
   // 2ゲーム制/リピート/デモはサーバーが真実を持つ状態 (ServerStatusPayload) なので、
   // クライアントにキャッシュを持たず、そのまま表示してそのまま送る。ローカルに下書きを
@@ -310,6 +319,7 @@ function ControlApp({ roomId }: { roomId: string }) {
               variant="control"
               countdown={countdown}
               displayTitle={displayPrefs.displayTitle}
+              scoring={scoring}
               tournament={state.tournamentState}
             />
           )}

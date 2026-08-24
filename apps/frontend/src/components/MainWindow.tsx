@@ -8,6 +8,7 @@ import { GameBoardCanvas } from './GameBoardCanvas';
 import { PlayerSidePanel } from './PlayerSidePanel';
 import { decisiveEffectFrom } from '../lib/decisiveEffect';
 import { armedMatchNames } from '../lib/tournamentResult';
+import { MAIZURU_SCORING, type ScoringContext } from '../lib/koryuDisplay';
 import {
   BG_ROOT, BG_CARD, BG_HEADER,
   COOL_COLOR, COOL_LIGHT, COOL_DARK,
@@ -34,13 +35,15 @@ interface Props {
   variant:         'control' | 'display';
   countdown:       number | null;
   displayTitle:    string;
+  /** 得点計算のルールセット (大会に紐付いていなければ舞鶴大会ルール扱い) */
+  scoring?:        ScoringContext;
   /** 大会運営中のみ渡す。渡されていれば対戦画面のプレイヤー名を大会登録名で上書きする */
   tournament?:     TournamentStatePayload | null;
 }
 
 export function MainWindow({
   snapshot, turnInfo, gameEnd, serverStatus, isConnected, phase,
-  theme = 'Jewel', veilAlpha, variant, countdown, displayTitle, tournament,
+  theme = 'Jewel', veilAlpha, variant, countdown, displayTitle, scoring = MAIZURU_SCORING, tournament,
 }: Props) {
   const darkMode = (serverStatus?.darkMode ?? false) && countdown === null;
 
@@ -172,7 +175,10 @@ export function MainWindow({
       <div ref={mainRef} style={s.main}>
         {snapshot ? (
           <>
-            <PlayerSidePanel side={0} snapshot={snapshot} serverStatus={serverStatus} width={panelW} maxHeight={panelH} />
+            <PlayerSidePanel
+              side={0} snapshot={snapshot} serverStatus={serverStatus}
+              width={panelW} maxHeight={panelH} scoring={scoring}
+            />
 
             {/* 中央列: probe div で実サイズを計測し board を中央に置く */}
             <div style={s.centerProbe}>
@@ -192,7 +198,10 @@ export function MainWindow({
               </div>
             </div>
 
-            <PlayerSidePanel side={1} snapshot={snapshot} serverStatus={serverStatus} width={panelW} maxHeight={panelH} />
+            <PlayerSidePanel
+              side={1} snapshot={snapshot} serverStatus={serverStatus}
+              width={panelW} maxHeight={panelH} scoring={scoring}
+            />
           </>
         ) : (
           <div style={s.waiting}>
