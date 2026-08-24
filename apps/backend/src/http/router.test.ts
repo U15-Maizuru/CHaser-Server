@@ -173,6 +173,22 @@ describe('HttpServer', () => {
     });
   });
 
+  describe('/api/maps (マップライブラリ)', () => {
+    afterEach(() => {
+      fs.rmSync(path.resolve('server/map-catalog'), { recursive: true, force: true });
+    });
+
+    it('マルチバイト文字を含むファイル名でアップロードしても displayName が文字化けしない', async () => {
+      const form = new FormData();
+      form.append('file', new Blob(['not a valid map file']), '舞鶴マップ.map');
+      const res = await fetch(`${baseUrl}/api/maps`, { method: 'POST', body: form });
+      expect(res.status).toBe(200);
+
+      const body = await res.json();
+      expect(body.entry.displayName).toBe('舞鶴マップ');
+    });
+  });
+
   describe('GET/DELETE /api/libs', () => {
     it('アップロード済みライブラリを一覧・削除できる', async () => {
       const uploadForm = new FormData();

@@ -124,7 +124,10 @@ export function handleUpload(
 ): void {
   let bb: ReturnType<typeof busboy>;
   try {
-    bb = busboy({ headers: req.headers, limits: { fileSize: maxBytes } });
+    // busboy は既定では Content-Disposition の filename を素通りさせるだけで、Node が
+    // HTTP ヘッダーを latin1 として読む都合上マルチバイト文字が文字化けする。
+    // defParamCharset: 'utf8' でバイト列を UTF-8 として読み直させる。
+    bb = busboy({ headers: req.headers, limits: { fileSize: maxBytes }, defParamCharset: 'utf8' });
   } catch {
     badRequest(res, 'Content-Type が multipart/form-data ではありません');
     return;
