@@ -141,21 +141,20 @@ export interface SetResult {
 }
 
 /**
- * 完了したゲーム結果から、試合全体の成績と勝者を求める。
+ * 完了したゲーム結果と合計ポイントから、試合全体の勝者を求める。
  *
- * 競技ルール: 勝利数が多い方を勝者とし、勝利数が同じ場合は2ゲームの合計ポイントで決める。
+ * 競技ルール: 勝利数が多い方を勝者とし、勝利数が同じ場合は合計ポイントで決める。
+ * 合計ポイントの求め方はルールセットごとに違う (舞鶴大会/交流大会) ため、呼び出し側が totals を
+ * 用意してこの関数に渡す。① 勝利数 → ② 合計ポイント の判定順そのものは共通。
  *
  * 試合勝者を示す表示 (サイドパネルの総合欄の 🏆 など) が別々に計算して食い違わないよう、
  * 判定はこの関数に一本化する。
  */
-export function computeSetResult(roundResults: RoundResult[]): SetResult {
-  const totals: [number, number] = [0, 0];
-  const wins:   [number, number] = [0, 0];
+export function decideSetResult(totals: [number, number], roundResults: RoundResult[]): SetResult {
+  const wins: [number, number] = [0, 0];
   let draws = 0;
 
   for (const rr of roundResults) {
-    totals[0] += roundPointsFor(rr, 0);
-    totals[1] += roundPointsFor(rr, 1);
     if (rr.winner === Winner.DRAW) {
       draws++;
     } else if (roundWonBy(rr, 0)) {
@@ -165,7 +164,6 @@ export function computeSetResult(roundResults: RoundResult[]): SetResult {
     }
   }
 
-  // ① 勝利数 → ② 合計ポイント の順に判定する
   let winnerSide: 0 | 1 | null = null;
   let decidedBy: 'wins' | 'points' | null = null;
   if (wins[0] !== wins[1]) {
@@ -177,4 +175,14 @@ export function computeSetResult(roundResults: RoundResult[]): SetResult {
   }
 
   return { totals, wins, draws, winnerSide, decidedBy };
+}
+
+/** 完了したゲーム結果から、舞鶴大会ルールの試合全体の成績と勝者を求める (合計ポイントで判定)。 */
+export function computeSetResult(roundResults: RoundResult[]): SetResult {
+  const totals: [number, number] = [0, 0];
+  for (const rr of roundResults) {
+    totals[0] += roundPointsFor(rr, 0);
+    totals[1] += roundPointsFor(rr, 1);
+  }
+  return decideSetResult(totals, roundResults);
 }
