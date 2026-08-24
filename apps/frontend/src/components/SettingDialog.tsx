@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   SOUND_KEYS, VEIL_ALPHA_MIN, VEIL_ALPHA_MAX,
-  type DisplayPrefs, type ServerStatusPayload, type SoundKey,
+  type DisplayPrefs, type ServerStatusPayload, type SoloScoringMode, type SoundKey,
 } from '@u15/ws-types';
 import type { EnvConfig } from '../hooks/useEnvConfig';
 import type { MatchConfig } from '../hooks/useMatchConfig';
@@ -191,6 +191,17 @@ export function SettingDialog({
                 <span style={s.hint}>
                   {darkMode ? '明るい会場ほど濃くします。' : 'ダークモード ON 時の暗さです。'}
                 </span>
+              </Row>
+              <Row label="スコアの表示モード">
+                <Select
+                  value={displayPrefs.scoreDisplayMode}
+                  onChange={e => onSetDisplayPrefs({ scoreDisplayMode: e.target.value as SoloScoringMode })}
+                >
+                  <option value="maizuru">標準 (舞鶴大会)</option>
+                  <option value="koryu">交流大会 (決勝)</option>
+                  <option value="koryu-bot">交流大会 (BOT対戦)</option>
+                </Select>
+                <span style={s.hint}>大会運営中は大会側のルールセットが優先されます。</span>
               </Row>
             </tbody>
           </table>

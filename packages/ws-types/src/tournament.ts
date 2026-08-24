@@ -10,7 +10,7 @@
 // 回戦・節に `round` を使うと RoundResult.round (ゲーム番号 0|1) と同名で別軸になるため、
 // `stage` という別名にしている。
 
-import type { RoundResult } from './protocol.js';
+import type { RoundResult, RuleSet } from './protocol.js';
 import type { SetResult } from './scoring.js';
 
 // --- 大会の定義 (tournament.json) ---
@@ -58,6 +58,10 @@ export interface MatchRules {
   /** 1試合を先後入替の2ゲームで行うか (公式ルールの既定。false なら1ゲームで決着する) */
   doubleMode: boolean;
 }
+
+// 得点計算・勝敗判定のルールセット (`RuleSet`) は大会ごとに選ぶ。型の定義は
+// 依存を持たない protocol.ts に置いてある (単発対戦の得点表示モード `SoloScoringMode`
+// と一部を共有するため)。
 
 /** どのマップで戦うか。解決順は bracketStages[stage] → catalogId → 毎回ランダム生成 */
 export interface MapPlan {
@@ -662,6 +666,9 @@ export interface TournamentSummary {
 export interface TournamentStatePayload {
   tournamentId: string;
   name:         string;
+  /** 得点計算・勝敗判定のルールセット。対戦画面 (MainWindow/PlayerSidePanel) が
+   *  得点の見せ方を出し分けるのに使う。省略時は 'maizuru' 扱い */
+  ruleSet?:     RuleSet;
   match:        MatchRules;
   stage:        StageRules;
   participants: ResolvedParticipant[];

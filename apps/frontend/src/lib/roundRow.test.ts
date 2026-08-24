@@ -78,4 +78,48 @@ describe('computeRoundRow', () => {
     expect(row.items).toBe(0);
     expect(row.subtotal).toBe(0);
   });
+
+  it('交流大会ルールの予選 (BOT対戦) の対戦中: 決着前でもアイテム数×3で見せる', () => {
+    const status = makeStatus({ phase: 'playing', currentRound: 0 });
+    const row = computeRoundRow(
+      0, 0, [], status, makeSnapshot([5, 2]), { ruleSet: 'koryu', isQualifying: true },
+    );
+    expect(row.status).toBe('live');
+    expect(row.subtotal).toBe(5 * 3);
+  });
+
+  it('交流大会ルールの決勝の対戦中: 反則調整が決まらないので素のアイテム数のまま', () => {
+    const status = makeStatus({ phase: 'playing', currentRound: 0 });
+    const row = computeRoundRow(
+      0, 0, [], status, makeSnapshot([5, 2]), { ruleSet: 'koryu', isQualifying: false },
+    );
+    expect(row.status).toBe('live');
+    expect(row.subtotal).toBe(5);
+  });
+
+  it('交流大会ルールの予選: 小計はアイテム数×3±残りターン数になる', () => {
+    const rr = makeRound(0, { winner: Winner.COOL, scores: [5, 2], remainingTurns: 12 });
+    const row = computeRoundRow(
+      0, 0, [rr], makeStatus(), null, { ruleSet: 'koryu', isQualifying: true },
+    );
+    expect(row.subtotal).toBe(5 * 3 + 12);
+  });
+
+  it('交流大会ルールの決勝: 反則勝敗ではない通常決着は素のアイテム数が小計になる', () => {
+    const rr = makeRound(0, { winner: Winner.COOL, reason: Reason.SCORE, scores: [5, 2] });
+    const row = computeRoundRow(
+      0, 0, [rr], makeStatus(), null, { ruleSet: 'koryu', isQualifying: false },
+    );
+    expect(row.subtotal).toBe(5);
+  });
+
+  it('交流大会ルールの決勝: 反則負け (COLLISION) は 0-残りターン数になる', () => {
+    const rr = makeRound(0, {
+      winner: Winner.COOL, reason: Reason.COLLISION, scores: [5, 2], remainingTurns: 9,
+    });
+    const row = computeRoundRow(
+      1, 0, [rr], makeStatus(), null, { ruleSet: 'koryu', isQualifying: false },
+    );
+    expect(row.subtotal).toBe(-9);
+  });
 });

@@ -184,6 +184,28 @@ export interface ServerStatusPayload {
 }
 
 /**
+ * 得点計算・勝敗判定のルールセット。
+ *
+ * `'maizuru'` (既定) は舞鶴大会の公式ルール (アイテム数×10+ボーナス、2ゲーム制は
+ * 勝利数→合計ポイントでタイブレーク)。`'koryu'` は交流大会のルール
+ * (予選はアイテム数×3±残りターン数、決勝トーナメントの引き分けは獲得アイテム数の
+ * 合計でタイブレークし、特定の反則負けは獲得アイテム数を0/マイナスに読み替える) で、
+ * 舞鶴大会ルールのボーナス制度は使わない。実体は `koryuScoring.ts` に分離してある。
+ *
+ * 大会運営 (`TournamentDefinition.ruleSet`) だけでなく、大会に紐付かない単発対戦の
+ * 得点表示 (`SoloScoringMode` 経由) にも使う共通の型なので、依存を持たない
+ * このファイルに置いている。
+ */
+export type RuleSet = 'maizuru' | 'koryu';
+
+/**
+ * 大会に紐付かない単発対戦の得点表示モード。交流大会ルールは予選 (BOT対戦) と
+ * 決勝トーナメントで得点式が違う (koryuScoring.ts) ため、大会側のように
+ * armedMatchId から判定できない単発対戦では、どちらの式で見せるかを利用者が選ぶ。
+ */
+export type SoloScoringMode = 'maizuru' | 'koryu' | 'koryu-bot';
+
+/**
  * 観戦画面 (display window / ブラウザ観戦) の表示・音まわりの設定。
  * コントロールパネルが送り、サーバーが真実を持つ (`ServerStatusPayload.displayPrefs`)。
  * ブラウザ観戦は control ウィンドウと `localStorage` を共有しない別端末になりうるため、
@@ -206,6 +228,11 @@ export interface DisplayPrefs {
   // ダークモードで盤面を覆う幕の濃さ (0-1)。同じ濃さでも会場のプロジェクタ/照明では
   // 白く飛んだり真っ暗になったりするため、投影環境に合わせて調整できるようにしている
   veilAlpha:      number;
+  /**
+   * 大会運営に紐付かない単発対戦の得点表示モード。大会運営中の試合は
+   * `TournamentStatePayload.ruleSet` (大会ごとの設定) が優先され、この値は使わない。
+   */
+  scoreDisplayMode: SoloScoringMode;
 }
 
 export const VEIL_ALPHA_MIN     = 0.2;
@@ -223,6 +250,7 @@ export const DEFAULT_DISPLAY_PREFS: Readonly<DisplayPrefs> = {
   theme:          'Jewel',
   displayTitle:   'CHaser Server',
   veilAlpha:      VEIL_ALPHA_DEFAULT,
+  scoreDisplayMode: 'maizuru',
 };
 
 // --- Commands (Frontend → Backend) ---
