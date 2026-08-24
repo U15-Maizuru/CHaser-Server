@@ -789,6 +789,24 @@ team-index を引き直さないと同じプログラムを追いかけられな
 表示し、2ゲーム制の第2ゲーム終了時も切り替えない。試合全体の勝者は `PlayerSidePanel` の
 総合欄に付く 🏆 (`computeSetResult().winnerSide`) だけが示す。
 
+### 交流大会ルールの得点計算 (`koryuScoring.ts`)
+
+舞鶴大会ルール (`scoring.ts`) とは完全に独立した数式で、アイテムポイント (×10) /
+一撃ボーナス / 総取りボーナスの仕組みは使わない。依存は `protocol.ts` と `scoring.ts` の
+素の集計ヘルパー (`idxForSide` / `roundWonBy` / `isBlunder`) のみで、`scoring.ts` 側から
+このファイルは import しない (呼び出し側が `ruleSet` を見てどちらの関数を呼ぶか選ぶ)。
+
+- **予選 (BOT対戦)**: `koryuBotRoundScore` が1ゲーム分の得点を出す。勝ちはアイテム数×3+
+  残りターン数、負けはアイテム数×3−残りターン数 (`BOT_ITEM_MULTIPLIER = 3`)。
+  `computeKoryuBotSetResult` が試合ぶんを合計し、順位表 (`standings.ts`) の並び替えに使う
+- **決勝トーナメント**: `koryuMatchRoundItems` が1ゲーム分の「獲得アイテム数」(引き分けの
+  タイブレークに使う) を出す。通常は獲得アイテム数そのままだが、以下の反則で負けた場合は
+  読み替える — 相手にやられた (ATTACK/TRAPPED): 0、自滅 (COLLISION/CONFINED/FOULED):
+  0−残りターン数。`computeKoryuMatchSetResult` が① 勝利数 → ② 獲得アイテム数の合計
+  (反則調整込み) の順で勝者を決め、それでも並べば `winnerSide: null` (真の同点。
+  運営がマップを変えて再試合するか審判裁定で勝者を指定する — `matchCommands.ts` の
+  既存の仕組みがそのまま使える)
+
 ### 判定優先順位 (`judgeGame`)
 
 1. ブロック下敷き (COLLISION / ATTACK)
