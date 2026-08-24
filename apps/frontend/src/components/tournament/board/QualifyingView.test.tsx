@@ -22,7 +22,8 @@ const participants: ResolvedParticipant[] = ['A', 'B', 'C', 'D', 'E'].map((name,
 function standing(participantId: string, rank: number, tied = false): StandingRow {
   return {
     participantId, played: 1, wins: 0, draws: 0, losses: 0,
-    points: 0, totalPoints: 0, itemPoints: 0, strikePoints: 0, sweepPoints: 0, rank, tied,
+    points: 0, totalPoints: 0, itemPoints: 0, strikePoints: 0, sweepPoints: 0,
+    items: 0, remainingTurns: 0, rank, tied,
   };
 }
 
@@ -67,7 +68,7 @@ function state(
     tied: ambiguous, ambiguous, pending: !done, bye: false,
   });
   return {
-    tournamentId: 'cup', name: '予選あり杯',
+    tournamentId: 'cup', name: '予選あり杯', ruleSet: 'maizuru',
     match: { doubleMode: false },
     stage: stageRulesFor('group-then-bracket'),
     participants,

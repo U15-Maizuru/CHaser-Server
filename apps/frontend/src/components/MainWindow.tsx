@@ -8,7 +8,6 @@ import { GameBoardCanvas } from './GameBoardCanvas';
 import { PlayerSidePanel } from './PlayerSidePanel';
 import { decisiveEffectFrom } from '../lib/decisiveEffect';
 import { armedMatchNames } from '../lib/tournamentResult';
-import { MAIZURU_SCORING, type ScoringContext } from '../lib/koryuDisplay';
 import {
   BG_ROOT, BG_CARD, BG_HEADER,
   COOL_COLOR, COOL_LIGHT, COOL_DARK,
@@ -22,6 +21,7 @@ import {
 } from '../ui';
 import { drawText, reasonLabel, winnerText } from '../lib/resultText';
 import { useBoardLayout } from '../hooks/useBoardLayout';
+import { MAIZURU_SCORING, type ScoringContext } from '../lib/koryuDisplay';
 
 interface Props {
   snapshot:        GameStateSnapshot   | null;

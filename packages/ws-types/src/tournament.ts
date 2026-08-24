@@ -212,6 +212,8 @@ export interface TournamentDefinition {
   formatVersion: number;
   id:            string;
   name:          string;
+  /** 得点計算・勝敗判定のルールセット。省略時は 'maizuru' (既存の大会と同じ挙動) */
+  ruleSet?:      RuleSet;
   match:         MatchRules;
   stage:         StageRules;
   participants:  ParticipantDef[];
@@ -468,6 +470,13 @@ export interface StandingRow {
   strikePoints:  number;
   /** totalPoints の内訳: 総取りボーナス */
   sweepPoints:   number;
+  /**
+   * 全試合の獲得アイテム数の合計 (素の個数)。交流大会ルールの得点式 (アイテム数×3±残りターン数)
+   * の根拠を運営・観客が確認できるよう、ルールセットによらず常に集計する。
+   */
+  items:          number;
+  /** 全試合の残りターン数の合計。交流大会ルールの得点式の根拠を確認するため常に集計する */
+  remainingTurns: number;
   rank:          number;
   /** タイブレークを尽くしても並び、同順位になった */
   tied:          boolean;
@@ -558,6 +567,9 @@ export interface QualifierCandidate {
   /** 同点がどこで割れた/割れなかったのかを運営がその場で読めるよう内訳も配る */
   strikePoints: number;
   itemPoints:   number;
+  /** 得点の根拠 (交流大会ルールのアイテム数×3±残りターン数) を確認できるよう、素の値も配る */
+  items:          number;
+  remainingTurns: number;
   /** 運営が確認リストから削除した。取り消せるよう、行自体はリストに残る */
   excluded:     boolean;
   /** 通過ラインと並び、タイブレークでも決着しなかった = 運営が決めるべき */
@@ -579,8 +591,8 @@ export interface TournamentStatePayload {
   tournamentId: string;
   name:         string;
   /** 得点計算・勝敗判定のルールセット。対戦画面 (MainWindow/PlayerSidePanel) が
-   *  得点の見せ方を出し分けるのに使う。省略時は 'maizuru' 扱い */
-  ruleSet?:     RuleSet;
+   *  得点の見せ方を出し分けるのに使う。TournamentDefinition.ruleSet の解決済み値 */
+  ruleSet:      RuleSet;
   match:        MatchRules;
   stage:        StageRules;
   participants: ResolvedParticipant[];
@@ -666,6 +678,11 @@ export interface OperatorDecisions {
 export const NO_OPERATOR_DECISIONS: OperatorDecisions = {
   stageMaps: {}, matchMaps: {}, qualifiers: {}, exclusions: [], qualifiersConfirmed: false,
 };
+
+/** 大会のルールセット。省略時は既定の 'maizuru' */
+export function ruleSetOf(def: TournamentDefinition): RuleSet {
+  return def.ruleSet ?? 'maizuru';
+}
 
 /** 永続化される進行状態 (server/tournament/<id>/state.json) */
 export interface TournamentState {

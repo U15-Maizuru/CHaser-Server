@@ -889,7 +889,7 @@ describe('TournamentOrchestrator', () => {
       expect(() => orch.confirmResult(ROOM, 'SF1')).toThrow(TournamentError);
     });
 
-    it('決勝進出者を差し替えるとトーナメント表の顔ぶれが変わり、null で自動に戻る', () => {
+    it('決勝進出者を差し替えるとトーナメント表に反映され、null で自動に戻る', () => {
       writeCup(groupCup());
       orch.bind(ROOM, CUP);
       finishGroups();

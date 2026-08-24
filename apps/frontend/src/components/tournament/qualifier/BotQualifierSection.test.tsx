@@ -3,7 +3,7 @@ import { stageRulesFor } from '../../../test/tournamentFixture';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type {
   StageRules,
-  QualifierCandidate, ResolvedParticipant, TournamentStatePayload,
+  QualifierCandidate, ResolvedParticipant, RuleSet, TournamentStatePayload,
 } from '@u15/ws-types';
 import { BotQualifierSection } from './BotQualifierSection';
 
@@ -24,15 +24,16 @@ function candidate(
 ): QualifierCandidate {
   return {
     participantId: id, rank, totalPoints: 100, strikePoints: 0, itemPoints: 100,
+    items: 100, remainingTurns: 0,
     excluded: false, onBorder: false, ...opts,
   };
 }
 
 function state(
-  candidates: QualifierCandidate[], confirmed = false,
+  candidates: QualifierCandidate[], confirmed = false, ruleSet: RuleSet = 'maizuru',
 ): TournamentStatePayload {
   return {
-    tournamentId: 'cup', name: 'BOT予選杯',
+    tournamentId: 'cup', name: 'BOT予選杯', ruleSet,
     match: { doubleMode: false },
     stage: { ...stageRulesFor('bot-then-bracket'), advanceCount: 2 } as StageRules,
     participants,
@@ -133,6 +134,25 @@ describe('BotQualifierSection', () => {
     );
     expect(screen.getByText('一撃')).toBeInTheDocument();
     expect(screen.getByText('50')).toBeInTheDocument();
+  });
+
+  it('交流大会ルールでは得点の内訳としてアイテム数・残りターン数を出す (一撃/アイテムポイントは出さない)', () => {
+    render(
+      <BotQualifierSection
+        state={state([
+          candidate('p1', 1, { totalPoints: 27, items: 5, remainingTurns: 12 }),
+          candidate('p2', 2, { totalPoints: -3, items: 3, remainingTurns: 12 }),
+        ], false, 'koryu')}
+        onExclude={vi.fn()} onConfirm={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('得点')).toBeInTheDocument();
+    expect(screen.getByText('アイテム数')).toBeInTheDocument();
+    expect(screen.getByText('残りターン')).toBeInTheDocument();
+    expect(screen.queryByText('一撃')).not.toBeInTheDocument();
+    expect(screen.getByText('27')).toBeInTheDocument();
+    expect(screen.getByText('-3')).toBeInTheDocument();
+    expect(screen.getAllByText('12')).toHaveLength(2);
   });
 
   it('確定済みなら取り消しだけを出す', () => {

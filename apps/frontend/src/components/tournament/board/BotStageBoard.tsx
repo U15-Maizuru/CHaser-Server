@@ -15,8 +15,9 @@ import {
 // **順位リストには終わった人だけを載せる。** 予選が進むにつれてリストが伸びていくのが
 // この画面の要点で、未実施の人を0ポイントで先頭から並べると通過ラインが動かなくなる。
 //
-// 順位は「合計ポイント → 一撃ボーナス → アイテムポイント」で決まる (backend の
-// computeStandings)。内訳を列に出すのは、同点がどこで割れたのかを観客と運営が読めるようにするため。
+// 順位は舞鶴大会ルールなら「合計ポイント → 一撃ボーナス → アイテムポイント」、交流大会ルールなら
+// 得点 (アイテム数×3±残りターン数) のみで決まる (backend の computeStandings)。内訳を列に
+// 出すのは、同点がどこで割れたのか・得点がどう計算されたのかを観客と運営が読めるようにするため。
 
 export interface BotStageBoardProps {
   state:    TournamentStatePayload;
@@ -36,6 +37,8 @@ export function BotStageBoard({
 
   const nameOf = (id: string) => state.participants.find(p => p.id === id)?.name ?? id;
   const botName = state.participants.find(p => p.isBot)?.name ?? '運営BOT';
+  // 交流大会ルールは一撃/アイテムの内訳制度が無いので、得点の列だけ出す
+  const isKoryu = state.ruleSet === 'koryu';
 
   const qualifying = state.matches.filter(m => m.group !== undefined);
   /** その参加者の BOT 戦 */
@@ -112,9 +115,11 @@ export function BotStageBoard({
               <th style={th}>順位</th>
               <th style={{ ...th, textAlign: 'left' }}>プレイヤー</th>
               <th style={th}>結果</th>
-              <th style={th}>ポイント</th>
-              <th style={th}>一撃</th>
-              <th style={th}>アイテム</th>
+              <th style={th}>{isKoryu ? '得点' : 'ポイント'}</th>
+              {isKoryu && <th style={th}>アイテム数</th>}
+              {isKoryu && <th style={th}>残りターン</th>}
+              {!isKoryu && <th style={th}>一撃</th>}
+              {!isKoryu && <th style={th}>アイテム</th>}
             </tr>
           </thead>
           <tbody>
@@ -137,8 +142,10 @@ export function BotStageBoard({
                   <td style={{ ...cell, textAlign: 'left' }}>{nameOf(s.participantId)}</td>
                   <td style={cell}>{resultMark(s)}</td>
                   <td style={{ ...cellNum, fontWeight: 700 }}>{s.totalPoints}</td>
-                  <td style={cellNum}>{s.strikePoints}</td>
-                  <td style={cellNum}>{s.itemPoints}</td>
+                  {isKoryu && <td style={cellNum}>{s.items}</td>}
+                  {isKoryu && <td style={cellNum}>{s.remainingTurns}</td>}
+                  {!isKoryu && <td style={cellNum}>{s.strikePoints}</td>}
+                  {!isKoryu && <td style={cellNum}>{s.itemPoints}</td>}
                 </tr>
               );
             })}

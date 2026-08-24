@@ -21,7 +21,7 @@ import type {
 import {
   BOT_PARTICIPANT_ID, DEFAULT_LEAGUE_POINTS, NO_OPERATOR_DECISIONS,
   advancePerGroupOf, groupLabel, groupStageCount, hasQualifying, isConsolationMatch,
-  isGroupStageDone, leagueRulesOf, stageLabel,
+  isGroupStageDone, leagueRulesOf, ruleSetOf, stageLabel,
 } from '@u15/ws-types';
 import { addCatalogEntry, getCatalogEntry, setDemoEnabled } from '../programCatalog.js';
 import { buildBracket } from './bracket.js';
@@ -144,9 +144,13 @@ export function groupsOf(def: TournamentDefinition): string[][] {
   return assignGroups(def.participants, def.stage.groupCount).map(g => g.map(p => p.id));
 }
 
-/** 順位の付け方。予選リーグは公式ルールの勝ち点制、BOT対戦予選はポイント制 */
+/**
+ * 順位の付け方。予選リーグは公式ルールの勝ち点制、BOT対戦予選はポイント制
+ * (舞鶴大会ルールは 'total-points'、交流大会ルールは得点式が違うので 'koryu-bot-score')
+ */
 export function rankByOf(def: TournamentDefinition): StandingsRankBy {
-  return def.stage.format === 'bot-then-bracket' ? 'total-points' : 'league-points';
+  if (def.stage.format !== 'bot-then-bracket') return 'league-points';
+  return ruleSetOf(def) === 'koryu' ? 'koryu-bot-score' : 'total-points';
 }
 
 function contextOf(
@@ -785,6 +789,7 @@ export function buildStatePayload(
   return {
     tournamentId: loaded.def.id,
     name:         loaded.def.name,
+    ruleSet:      ruleSetOf(loaded.def),
     match:        loaded.def.match,
     stage:        loaded.def.stage,
     participants,

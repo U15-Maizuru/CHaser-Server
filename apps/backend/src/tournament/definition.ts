@@ -5,6 +5,7 @@ import type {
   MapPlan,
   ParticipantDef,
   ParticipantProgram,
+  RuleSet,
   StageRules,
   TournamentDefinition,
   TournamentFormat,
@@ -19,6 +20,32 @@ export class DefinitionError extends Error {}
 const FORMATS: TournamentFormat[] = [
   'single-elimination', 'league', 'group-then-bracket', 'bot-then-bracket',
 ];
+
+const RULE_SETS: RuleSet[] = ['maizuru', 'koryu'];
+
+/**
+ * 大会取り込み時のエラーは、大会一覧が名前だけで id を出さないぶん、フォルダ名 (id) しか
+ * 分からないと「どの大会データか」が運営から見て特定しづらい。name (無ければ id) を
+ * メッセージの頭に付けて、tournament.json を見に行かなくても分かるようにする
+ */
+function tournamentLabel(o: Record<string, unknown>): string {
+  const name = typeof o['name'] === 'string' && o['name'].trim() !== '' ? o['name'].trim() : null;
+  const id   = typeof o['id']   === 'string' && o['id'].trim()   !== '' ? o['id'].trim()   : null;
+  const label = name ?? id;
+  return label ? `${label}: ` : '';
+}
+
+/** ruleSet 省略時は 'maizuru' (既存の大会と同じ挙動)。指定するなら既知の値のみ受け付ける */
+function readRuleSet(o: Record<string, unknown>): RuleSet {
+  const v = o['ruleSet'];
+  if (v === undefined || v === null) return 'maizuru';
+  if (typeof v !== 'string' || !RULE_SETS.includes(v as RuleSet)) {
+    throw new DefinitionError(
+      `${tournamentLabel(o)}ruleSet は ${RULE_SETS.map(r => `"${r}"`).join(' か ')} を指定してください (実際の値: ${String(v)})`,
+    );
+  }
+  return v as RuleSet;
+}
 
 const DEFAULT_GROUP_COUNT       = 2;
 const DEFAULT_ADVANCE_PER_GROUP = 2;
@@ -332,6 +359,7 @@ export function parseTournamentDefinition(raw: unknown, opts: ParseOptions = {})
   }
 
   const name         = asString(o['name'] ?? id, 'name');
+  const ruleSet      = readRuleSet(o);
   const participants = parseParticipants(o['participants']);
   const match        = { doubleMode: asBool(asRecord(o['match'] ?? {}, 'match')['doubleMode'], true) };
   const stage        = parseStageRules(format as TournamentFormat, o['stage'], match.doubleMode);
@@ -339,7 +367,7 @@ export function parseTournamentDefinition(raw: unknown, opts: ParseOptions = {})
 
   const def: TournamentDefinition = {
     formatVersion: asNumber(o['formatVersion'], 1),
-    id, name, match, stage, participants,
+    id, name, ruleSet, match, stage, participants,
   };
 
   // 予選のある形式では、1回戦の決勝進出者は予選の結果で決まるので明示的な組み合わせ指定は

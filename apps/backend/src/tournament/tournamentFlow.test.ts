@@ -177,6 +177,7 @@ function payload(
   return {
     tournamentId: 'cup',
     name:         'テスト杯',
+    ruleSet:      'maizuru',
     match:        { doubleMode: false },
     stage:        stageOf(format),
     // 出場者は全員 内蔵CPU にしておく (プログラム未登録の判定に引っかからないように)

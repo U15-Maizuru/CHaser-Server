@@ -191,6 +191,8 @@ function candidateOf(s: StandingRow, excluded: boolean, onBorder: boolean): Qual
     totalPoints:   s.totalPoints,
     strikePoints:  s.strikePoints,
     itemPoints:    s.itemPoints,
+    items:          s.items,
+    remainingTurns: s.remainingTurns,
     excluded,
     onBorder,
   };
