@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { stageRulesFor } from '../../../test/tournamentFixture';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import type {
-  QualifierCandidate, ResolvedParticipant, StandingRow, TournamentMatch, TournamentStatePayload,
+  QualifierCandidate, ResolvedParticipant, RuleSet, StandingRow, TournamentMatch,
+  TournamentStatePayload,
 } from '@u15/ws-types';
 import { BOT_PARTICIPANT_ID } from '@u15/ws-types';
 import { BotStageBoard } from './BotStageBoard';
@@ -29,10 +30,12 @@ const participants: ResolvedParticipant[] = [
 
 function standing(
   participantId: string, rank: number, played: number, totalPoints = 0, tied = false,
+  items = totalPoints, remainingTurns = 0,
 ): StandingRow {
   return {
     participantId, played, wins: played, draws: 0, losses: 0,
     points: 0, totalPoints, itemPoints: totalPoints, strikePoints: 0, sweepPoints: 0,
+    items, remainingTurns,
     rank, tied,
   };
 }
@@ -55,13 +58,16 @@ function botMatch(i: number, done: boolean): TournamentMatch {
 /** 先頭 `finished` 人だけが終わっている状態 */
 function state(
   finished: number,
-  opts: { candidates?: QualifierCandidate[]; armedMatchId?: string } = {},
+  opts: {
+    candidates?: QualifierCandidate[]; armedMatchId?: string; ruleSet?: RuleSet;
+    standings?: StandingRow[];
+  } = {},
 ): TournamentStatePayload {
-  const standings: StandingRow[] = NAMES.map((_, i) =>
+  const standings: StandingRow[] = opts.standings ?? NAMES.map((_, i) =>
     standing(`p${i + 1}`, i + 1, i < finished ? 1 : 0, i < finished ? 100 - i * 10 : 0));
 
   return {
-    tournamentId: 'cup', name: 'BOT予選杯',
+    tournamentId: 'cup', name: 'BOT予選杯', ruleSet: opts.ruleSet ?? 'maizuru',
     match: { doubleMode: false },
     stage: stageRulesFor('bot-then-bracket'),
     participants,
@@ -139,10 +145,32 @@ describe('BotStageBoard', () => {
   it('確認リストで削除された人は順位リストから外れ、下が繰り上がる', () => {
     const excluded: QualifierCandidate[] = [{
       participantId: 'p2', rank: 2, totalPoints: 90, strikePoints: 0, itemPoints: 90,
+      items: 90, remainingTurns: 0,
       excluded: true, onBorder: false,
     }];
     render(<BotStageBoard state={state(6, { candidates: excluded })} />);
     expect(rankedNames()).toEqual(['A', 'C', 'D', 'E', 'F']);
+  });
+
+  it('交流大会ルールでは得点の内訳としてアイテム数・残りターン数の列を出す (一撃/アイテムポイントは出さない)', () => {
+    const standings: StandingRow[] = [
+      standing('p1', 1, 1, 27, false, 5, 12),   // 5個×3+残り12=27
+      standing('p2', 2, 1, -3, false, 3, 12),   // 3個×3-残り12=-3
+      ...NAMES.slice(2).map((_, i) => standing(`p${i + 3}`, i + 3, 0, 0)),
+    ];
+    render(<BotStageBoard state={state(6, { ruleSet: 'koryu', standings })} />);
+
+    const table = screen.getByText(/^試合結果/).parentElement!.querySelector('table')!;
+    expect(within(table).getByText('得点')).toBeInTheDocument();
+    expect(within(table).getByText('アイテム数')).toBeInTheDocument();
+    expect(within(table).getByText('残りターン')).toBeInTheDocument();
+    expect(within(table).queryByText('一撃')).not.toBeInTheDocument();
+
+    const rows = within(table).getAllByRole('row').slice(1);
+    expect(rows[0]!.children[3]!.textContent).toBe('27');   // 得点
+    expect(rows[0]!.children[4]!.textContent).toBe('5');    // アイテム数
+    expect(rows[0]!.children[5]!.textContent).toBe('12');   // 残りターン
+    expect(rows[1]!.children[3]!.textContent).toBe('-3');
   });
 
   it('これから行う試合のエントリー行を「▶ 対戦」にする', () => {

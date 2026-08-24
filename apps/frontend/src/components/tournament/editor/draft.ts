@@ -1,10 +1,10 @@
 import type {
-  LeaguePoints, MapPlan, ParticipantDef, ParticipantProgram, StageRules,
+  LeaguePoints, MapPlan, ParticipantDef, ParticipantProgram, RuleSet, StageRules,
   TournamentDefinition, TournamentFormat, TournamentStatePayload,
 } from '@u15/ws-types';
 import {
   DEFAULT_LEAGUE_POINTS, autoGroupAssign, botRulesOf, bracketSizeFor, groupLabel,
-  hasQualifying, hasThirdPlaceMatch, leagueRulesOf, stageCountFor,
+  hasQualifying, hasThirdPlaceMatch, leagueRulesOf, ruleSetOf, stageCountFor,
 } from '@u15/ws-types';
 import { matchCountOf } from '../../../lib/bracketSlots';
 
@@ -60,6 +60,8 @@ export interface TournamentDraft {
   id:     string;
   name:   string;
   format: TournamentFormat;
+  /** 得点計算・勝敗判定のルールセット。'maizuru' (既定) / 'koryu' */
+  ruleSet: RuleSet;
 
   doubleMode:       boolean;
   /** 予選専用の doubleMode (group-then-bracket / bot-then-bracket のみ意味を持つ) */
@@ -120,7 +122,7 @@ export function newParticipant(taken: Set<string>, name: string): DraftParticipa
 
 export function emptyDraft(id = defaultId()): TournamentDraft {
   return {
-    id, name: '', format: 'single-elimination',
+    id, name: '', format: 'single-elimination', ruleSet: 'maizuru',
     doubleMode: true, qualifyingDoubleMode: true, thirdPlaceMatch: false, doubleRoundRobin: false,
     leaguePoints: DEFAULT_LEAGUE_POINTS,
     mapCatalogId: '', stageMaps: [],
@@ -166,6 +168,7 @@ export function draftFromDefinition(
     ...d,
     name:   def.name,
     format: stage.format,
+    ruleSet: ruleSetOf(def),
 
     doubleMode:       def.match.doubleMode,
     qualifyingDoubleMode:
@@ -249,6 +252,7 @@ export function definitionFromDraft(d: TournamentDraft): TournamentDefinition {
     formatVersion: 1,
     id:    d.id,
     name:  d.name.trim(),
+    ruleSet: d.ruleSet,
     match: { doubleMode: d.doubleMode },
     stage: stageRulesFromDraft(d, map),
     participants,

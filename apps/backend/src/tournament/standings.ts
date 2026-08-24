@@ -1,5 +1,7 @@
 import type { LeaguePoints, RoundResult, StandingRow, TournamentMatch } from '@u15/ws-types';
-import { roundItemPointsFor, roundStrikeBonusFor, roundSweepBonusFor } from '@u15/ws-types';
+import {
+  idxForSide, roundItemPointsFor, roundStrikeBonusFor, roundSweepBonusFor,
+} from '@u15/ws-types';
 
 // 順位表を求める純関数。並べ方は2系統ある (rankBy)。
 //
@@ -8,26 +10,34 @@ import { roundItemPointsFor, roundStrikeBonusFor, roundSweepBonusFor } from '@u1
 //      ・勝ち点が同じ場合は、全試合の合計ポイントにて順位を決定する。
 //      ・勝ち点・合計ポイントが同点の場合は、直接対決の結果にて順位を決定する。」
 //
-// ② 'total-points' — BOT対戦予選。全員が同じ BOT としか戦っていないので直接対決が存在せず、
-//    勝敗も「同じ基準器に勝てたか」でしかない。そこで**ポイントそのもの**で測り、
+// ② 'total-points' — BOT対戦予選 (舞鶴大会ルール)。全員が同じ BOT としか戦っていないので直接対決が
+//    存在せず、勝敗も「同じ基準器に勝てたか」でしかない。そこで**ポイントそのもの**で測り、
 //    同点は合計ポイントの内訳 (一撃 → アイテム) で割る。それでも並んだら同着とし、
 //    運営が最終決定確認リストで決める (機械的に決めない)。
 //
-// **①は変えない。** 公式ルールがタイブレークの連鎖を定めているので、②はその外側に足す別系統。
+// ③ 'koryu-bot-score' — BOT対戦予選 (交流大会ルール)。得点式が
+//    アイテム数×3±残りターン数 (koryuBotRoundScore) に変わるだけで、
+//    「同点は同着として運営が決める」という考え方は②と同じ。舞鶴大会のボーナス内訳
+//    (一撃/アイテム) は交流大会ルールでは意味を持たないため、タイブレークに使わない。
+//
+// **①は変えない。** 公式ルールがタイブレークの連鎖を定めているので、②③はその外側に足す別系統。
 
-export type StandingsRankBy = 'league-points' | 'total-points';
+export type StandingsRankBy = 'league-points' | 'total-points' | 'koryu-bot-score';
 
 interface Tally {
   played: number; wins: number; draws: number; losses: number;
   points: number; totalPoints: number;
   /** totalPoints の内訳 (合計 = item + strike + sweep) */
   itemPoints: number; strikePoints: number; sweepPoints: number;
+  /** 素のアイテム数・残りターン数の合計。交流大会ルールの得点式の根拠を確認するため */
+  items: number; remainingTurns: number;
 }
 
 function emptyTally(): Tally {
   return {
     played: 0, wins: 0, draws: 0, losses: 0, points: 0, totalPoints: 0,
     itemPoints: 0, strikePoints: 0, sweepPoints: 0,
+    items: 0, remainingTurns: 0,
   };
 }
 
@@ -47,6 +57,8 @@ function tallyOne(
     t.itemPoints   += roundItemPointsFor(rr, side);
     t.strikePoints += roundStrikeBonusFor(rr, side);
     t.sweepPoints  += roundSweepBonusFor(rr, side);
+    t.items          += rr.scores[idxForSide(side, rr.round)];
+    t.remainingTurns += rr.remainingTurns;
   }
   if (isDraw)        { t.draws++;  t.points += lp.draw; }
   else if (isWinner) { t.wins++;   t.points += lp.win;  }
@@ -97,9 +109,9 @@ export function computeStandings(
 
   const base = participantIds.map(id => ({ id, t: tallies.get(id) ?? emptyTally() }));
 
-  return rankBy === 'total-points'
-    ? rankByTotalPoints(base)
-    : rankByLeaguePoints(base, matches, lp);
+  if (rankBy === 'total-points')       return rankByTotalPoints(base);
+  if (rankBy === 'koryu-bot-score') return rankByKoryuBotScore(base);
+  return rankByLeaguePoints(base, matches, lp);
 }
 
 /** ① 勝ち点 → ② 全試合の合計ポイント → ③ 直接対決 */
@@ -162,20 +174,56 @@ function rankByTotalPoints(base: { id: string; t: Tally }[]): StandingRow[] {
     || y.t.strikePoints - x.t.strikePoints
     || y.t.itemPoints   - x.t.itemPoints);
 
-  const same = (a: Tally, b: Tally) =>
+  return rankPlayedThenRest(base, (a, b) =>
     a.totalPoints === b.totalPoints
     && a.strikePoints === b.strikePoints
-    && a.itemPoints === b.itemPoints;
+    && a.itemPoints === b.itemPoints);
+}
 
+/**
+ * 交流大会ルールの BOT対戦予選: totalPoints (= koryuBotRoundScore の合計) だけで順位を付ける。
+ * 舞鶴大会ルールの一撃/アイテムポイント内訳は交流大会ルールでは存在しないので、それ以上の
+ * タイブレークはせず、並んだら同着として運営の最終決定確認リストに委ねる。
+ */
+function rankByKoryuBotScore(base: { id: string; t: Tally }[]): StandingRow[] {
+  base.sort((x, y) => y.t.totalPoints - x.t.totalPoints);
+  return rankPlayedThenRest(base, (a, b) => a.totalPoints === b.totalPoints);
+}
+
+/**
+ * BOT対戦予選の2系統 (②③) だけが通る分岐。まだ対戦していない人 (played=0) は
+ * emptyTally() で totalPoints=0 になるが、これは「対戦して0点だった人」と区別が付かない。
+ * 交流大会ルールの得点 (koryuBotRoundScore) は下限なしでマイナスになり得るため、
+ * 分けずに混ぜて並べると「マイナス点を取った人」が、まだ誰も対戦していない他の全員
+ * (0点扱い) より下だと即座に判定され、予選が終わる前から最下位に固定されてしまう。
+ * 対戦済みの人だけで順位を確定し、未対戦の人はその下にまとめて追加する
+ * (① league-points は敗北の床が0でこの逆転が起きないため対象外)。
+ */
+function rankPlayedThenRest(
+  base: { id: string; t: Tally }[], isTied: (a: Tally, b: Tally) => boolean,
+): StandingRow[] {
+  const played = base.filter(x => x.t.played > 0);
+  const rest   = base.filter(x => x.t.played === 0);
+  return [...rankSortedGroups(played, isTied), ...rankSortedGroups(rest, isTied, played.length)];
+}
+
+/**
+ * ソート済みの base を、隣接する同着グループ (isTied) ごとに rank を振って StandingRow へ変換する。
+ * rank は同着のぶんだけ飛ぶ (1,2,2,4) — league 側 (rankByLeaguePoints) と同じ数え方。
+ * `rankOffset` はこのグループより上に確定済みの行数 (rankPlayedThenRest が未対戦者をその下に
+ * まとめて追加するために使う)。
+ */
+function rankSortedGroups(
+  base: { id: string; t: Tally }[], isTied: (a: Tally, b: Tally) => boolean, rankOffset = 0,
+): StandingRow[] {
   const rows: StandingRow[] = [];
   let i = 0;
   while (i < base.length) {
     let j = i + 1;
-    while (j < base.length && same(base[j]!.t, base[i]!.t)) j++;
+    while (j < base.length && isTied(base[j]!.t, base[i]!.t)) j++;
 
     const tied = j - i > 1;
-    // rank は同着のぶんだけ飛ぶ (1,2,2,4) — league 側と同じ数え方
-    for (let k = i; k < j; k++) rows.push(toRow(base[k]!.id, base[k]!.t, i + 1, tied));
+    for (let k = i; k < j; k++) rows.push(toRow(base[k]!.id, base[k]!.t, i + 1 + rankOffset, tied));
     i = j;
   }
 
@@ -198,6 +246,8 @@ function toRow(participantId: string, t: Tally, rank: number, tied: boolean): St
     itemPoints:   t.itemPoints,
     strikePoints: t.strikePoints,
     sweepPoints:  t.sweepPoints,
+    items:          t.items,
+    remainingTurns: t.remainingTurns,
     rank,
     tied,
   };

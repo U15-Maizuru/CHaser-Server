@@ -31,7 +31,7 @@ export function scoringContextOf(
 ): ScoringContext {
   if (!tournamentState) return scoringContextForMode(soloMode);
   const match = armedMatchOf(tournamentState);
-  return { ruleSet: tournamentState.ruleSet ?? 'maizuru', isQualifying: match?.group !== undefined };
+  return { ruleSet: tournamentState.ruleSet, isQualifying: match?.group !== undefined };
 }
 
 /** 交流大会ルールでの1ゲーム分の得点。予選は items×3±残りターン数、決勝は獲得アイテム数 */

@@ -1,5 +1,10 @@
-import type { ServerStatusPayload, TournamentMatchResult } from '@u15/ws-types';
-import { computeSetResult, doubleModeFor } from '@u15/ws-types';
+import type {
+  ServerStatusPayload, TournamentDefinition, TournamentMatch, TournamentMatchResult,
+} from '@u15/ws-types';
+import {
+  computeKoryuBotSetResult, computeKoryuMatchSetResult, computeSetResult,
+  doubleModeFor, ruleSetOf,
+} from '@u15/ws-types';
 import { commit, ctxOf, managerOf, updateMatch, type Binding, type CommandEnv } from './binding.js';
 import { captureResult } from './progress.js';
 
@@ -37,7 +42,9 @@ export function applyServerStatus(env: CommandEnv, b: Binding, st: ServerStatusP
     // 全ゲーム終了。結果を取り込んで運営の確定を待つ
     // (この時点で state.json に保存するので、以降にリセットされても結果は失われない)
     commit(b, captureResult(
-      b.loaded.state.matches, armedId, matchResultOf(st.roundResults.slice(0, expected)), ctxOf(b),
+      b.loaded.state.matches, armedId,
+      matchResultOf(st.roundResults.slice(0, expected), b.loaded.def, match),
+      ctxOf(b),
     ));
     env.publish(b.roomId);
     return;
@@ -51,9 +58,25 @@ export function applyServerStatus(env: CommandEnv, b: Binding, st: ServerStatusP
   }
 }
 
-/** 完了したゲーム結果から、試合の結果レコードを組み立てる */
-function matchResultOf(roundResults: ServerStatusPayload['roundResults']): TournamentMatchResult {
-  const set = computeSetResult(roundResults);
+/**
+ * 完了したゲーム結果から、試合の結果レコードを組み立てる。
+ *
+ * 得点計算は大会の ruleSet に従う。交流大会ルールでは、予選 (BOT対戦、group を持つ試合) と
+ * 決勝トーナメントで得点式が異なる (予選: アイテム数×3±残りターン数の合計をそのまま
+ * 順位表の得点に使う。決勝: 獲得アイテム数の合計で引き分けをタイブレークする) ため、
+ * どちらの式を使うかを match.group の有無で分ける。
+ */
+function matchResultOf(
+  roundResults: ServerStatusPayload['roundResults'],
+  def: TournamentDefinition,
+  match: TournamentMatch,
+): TournamentMatchResult {
+  const ruleSet = ruleSetOf(def);
+  const set = ruleSet === 'koryu'
+    ? (match.group !== undefined
+      ? computeKoryuBotSetResult(roundResults)
+      : computeKoryuMatchSetResult(roundResults))
+    : computeSetResult(roundResults);
   return {
     roundResults,
     set,

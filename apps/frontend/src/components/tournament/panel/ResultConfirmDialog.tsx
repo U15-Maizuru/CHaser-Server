@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { MapCatalogEntry, ResolvedParticipant, TournamentMatch } from '@u15/ws-types';
+import type { MapCatalogEntry, ResolvedParticipant, RuleSet, TournamentMatch } from '@u15/ws-types';
 import {
   BG_CARD, BORDER_COLOR, COOL_COLOR, FONT_NUM, FONT_UI, GOLD_BASE, HOT_COLOR,
   RADIUS_MD, RADIUS_SM, SHADOW_MD, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE,
@@ -18,15 +18,23 @@ export interface ResultConfirmDialogProps {
   httpBase:     string;
   /** 大会が固定マップ運用か (再試合で別マップの指定が要る) */
   requireMapChangeOnRematch: boolean;
+  /**
+   * 得点計算のルールセット。交流大会ルールは match.result.set.totals の意味が試合の種類で
+   * 異なる (予選 = BOT対戦: 得点 = アイテム数×3±残りターン数。決勝トーナメント: 獲得アイテム数
+   * そのまま)。isLeague (= match.group を持つ、予選の試合) で分けて正しいラベルを出す
+   */
+  ruleSet?:   RuleSet;
   onConfirm:  (winnerSide?: 0 | 1, note?: string) => void;
   onRematch:  (rematchMapCatalogId?: string) => void;
   onWalkover: (winnerSide: 0 | 1 | null) => void;
 }
 
 export function ResultConfirmDialog({
-  match, participants, isLeague, httpBase, requireMapChangeOnRematch,
+  match, participants, isLeague, httpBase, requireMapChangeOnRematch, ruleSet = 'maizuru',
   onConfirm, onRematch, onWalkover,
 }: ResultConfirmDialogProps) {
+  const isKoryu = ruleSet === 'koryu';
+  const totalsLabel = isKoryu ? (isLeague ? '得点' : '獲得アイテム数') : '合計ポイント';
   const [maps, setMaps]       = useState<MapCatalogEntry[]>([]);
   const [mapId, setMapId]     = useState('');
   const [manual, setManual]   = useState<0 | 1 | null>(null);
@@ -66,7 +74,7 @@ export function ResultConfirmDialog({
             <tr>
               <th style={th}>プレイヤー</th>
               <th style={thNum}>勝</th>
-              <th style={thNum}>合計ポイント</th>
+              <th style={thNum}>{totalsLabel}</th>
             </tr>
           </thead>
           <tbody>
@@ -84,7 +92,7 @@ export function ResultConfirmDialog({
 
         {match.result?.set?.decidedBy && (
           <p style={hint}>
-            決め手: {match.result.set.decidedBy === 'wins' ? '勝利数' : '合計ポイント'}
+            決め手: {match.result.set.decidedBy === 'wins' ? '勝利数' : totalsLabel}
           </p>
         )}
 

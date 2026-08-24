@@ -112,6 +112,7 @@ export function TournamentPanel({
           requireMapChangeOnRematch={
             (state.stageMaps[awaiting.stage] ?? state.stage.map.catalogId) !== null
           }
+          ruleSet={state.ruleSet}
           onConfirm={(winnerSide, note) => commands.confirm(awaiting.id, winnerSide, note)}
           onRematch={mapId => commands.discard(awaiting.id, mapId)}
           onWalkover={winnerSide => commands.walkover(awaiting.id, winnerSide)}

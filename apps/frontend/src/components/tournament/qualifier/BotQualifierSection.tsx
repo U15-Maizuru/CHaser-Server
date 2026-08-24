@@ -28,6 +28,9 @@ export function BotQualifierSection({ state, onExclude, onConfirm }: BotQualifie
   const candidates = state.qualifierCandidates ?? [];
   const advance    = advancePerGroupOf(state.stage);
   const nameOf     = (id: string) => state.participants.find(p => p.id === id)?.name ?? id;
+  // 交流大会ルールは一撃/アイテムの内訳制度が無いので、得点そのものだけで並べる
+  // (packages/ws-types の standings.ts rankByKoryuBotScore と同じ考え方)
+  const isKoryu = state.ruleSet === 'koryu';
 
   // 予選が終わっていなければ候補が出ない (バックエンドが空を配る)
   const waiting = candidates.length === 0;
@@ -58,8 +61,10 @@ export function BotQualifierSection({ state, onExclude, onConfirm }: BotQualifie
     <section style={card}>
       <div style={sectionTitle}>決勝進出者</div>
       <p style={hint}>
-        予選の順位（合計ポイント → 一撃ボーナス → アイテムポイント）から候補を並べています。
-        <strong>同ポイントで並んだ人は全員載せている</strong>ので、
+        {isKoryu
+          ? '予選の得点（アイテム数×3±残りターン数）から候補を並べています。'
+          : '予選の順位（合計ポイント → 一撃ボーナス → アイテムポイント）から候補を並べています。'}
+        <strong>同{isKoryu ? '得点' : 'ポイント'}で並んだ人は全員載せている</strong>ので、
         上位 {advance} 名になるまで削ってください。
       </p>
 
@@ -81,9 +86,11 @@ export function BotQualifierSection({ state, onExclude, onConfirm }: BotQualifie
               <tr>
                 <th style={th}>順位</th>
                 <th style={{ ...th, textAlign: 'left' }}>プレイヤー</th>
-                <th style={th}>ポイント</th>
-                <th style={th}>一撃</th>
-                <th style={th}>アイテム</th>
+                <th style={th}>{isKoryu ? '得点' : 'ポイント'}</th>
+                {isKoryu && <th style={th}>アイテム数</th>}
+                {isKoryu && <th style={th}>残りターン</th>}
+                {!isKoryu && <th style={th}>一撃</th>}
+                {!isKoryu && <th style={th}>アイテム</th>}
                 <th style={th} />
               </tr>
             </thead>
@@ -96,8 +103,10 @@ export function BotQualifierSection({ state, onExclude, onConfirm }: BotQualifie
                     {c.onBorder && <span style={borderTag}>同点</span>}
                   </td>
                   <td style={{ ...tdNum, fontWeight: 700 }}>{c.totalPoints}</td>
-                  <td style={tdNum}>{c.strikePoints}</td>
-                  <td style={tdNum}>{c.itemPoints}</td>
+                  {isKoryu && <td style={tdNum}>{c.items}</td>}
+                  {isKoryu && <td style={tdNum}>{c.remainingTurns}</td>}
+                  {!isKoryu && <td style={tdNum}>{c.strikePoints}</td>}
+                  {!isKoryu && <td style={tdNum}>{c.itemPoints}</td>}
                   <td style={td}>
                     {c.excluded ? (
                       <button
