@@ -5,7 +5,7 @@ import { useTextures } from '../hooks/useTextures';
 import { MAP_SIZES, useMapGenParams } from '../hooks/useMapGenParams';
 import {
   BG_ROOT, BG_CARD, BORDER_COLOR, COOL_COLOR, COOL_PALE,
-  TEXT_SECONDARY, TEXT_MUTED, RADIUS_SM,
+  TEXT_SECONDARY, TEXT_MUTED, WIN_BASE, RADIUS_SM,
   Button, Checkbox, Dialog, NumberInput, Select, TextInput,
 } from '../ui';
 import { generateRandomMap } from '../lib/api';
@@ -14,7 +14,7 @@ import {
   drawPlayerFallback, drawStaticBoard, drawTexture, EDITOR_GRID_COLOR,
 } from '../lib/boardDraw';
 import type { Textures } from '../lib/boardDraw';
-import { confirmDiscardEdits } from '../lib/nativeDialog';
+import { alertDialog, confirmDiscardEdits } from '../lib/nativeDialog';
 
 export interface EditableMap {
   field: MapObject[][];
@@ -43,8 +43,9 @@ interface PanelProps {
   httpBase:        string;
   /** 省略時は「適用して閉じる」を出さない (対戦設定と無関係にマップ管理から開いたとき) */
   onApply?:        (map: EditableMap) => void;
-  onSaveToLibrary: (map: EditableMap, displayName: string) => void;
-  onDownload:      (map: EditableMap, displayName: string) => void;
+  /** 成功なら null、失敗なら画面に出すエラーメッセージを返すこと (lib/api.ts の uploadFile と同じ形) */
+  onSaveToLibrary: (map: EditableMap, displayName: string) => Promise<string | null>;
+  onDownload:      (map: EditableMap, displayName: string) => Promise<string | null>;
   /** 常に無条件で閉じる (確認は Panel 自身が持つ dirty で行う)。呼び出し元で二重に確認しないこと */
   onClose:         () => void;
   onDirtyChange?:  (dirty: boolean) => void;
@@ -90,6 +91,9 @@ export function MapEditorPanel({
   const [name,     setName]     = useState(initialName ?? '');
   const [generating, setGenerating] = useState(false);
   const [dirty, setDirtyState] = useState(false);
+  // ダウンロードは保存先ダイアログ自体がフィードバックになるので、ここで出すのは
+  // ライブラリ保存だけでよい (「ダウンロードしました」は横幅にも入り切らなかった)
+  const [saved, setSaved] = useState(false);
   const dragging = useRef(false);
   // 生成パラメータはマップ列の「ランダム生成」と同じものを使う (設定の二重管理を避ける)
   const { params: gen, update: setGen } = useMapGenParams();
@@ -101,6 +105,13 @@ export function MapEditorPanel({
   const H = map.size.y * CELL;
 
   const setDirty = (v: boolean) => { setDirtyState(v); onDirtyChange?.(v); };
+
+  // ライブラリ保存の成功をボタン脇に一瞬だけ出す。「押しても何も起きたか分からない」を防ぐため
+  useEffect(() => {
+    if (!saved) return;
+    const t = setTimeout(() => setSaved(false), 2500);
+    return () => clearTimeout(t);
+  }, [saved]);
 
   // ── Draw ────────────────────────────────────────────────────────────────────
   // 編集中は反転しない (エディタは常に COOL 視点)。マスの当たりを見せるためグリッドを引く。
@@ -206,14 +217,18 @@ export function MapEditorPanel({
   };
   // Electron は window.prompt を実装していないため、名前はダイアログ内の入力欄で受け取る
   const trimmedName = name.trim();
-  const handleSaveToLibrary = () => {
+  const handleSaveToLibrary = async () => {
     if (!trimmedName) return;
-    onSaveToLibrary(map, trimmedName);
+    const error = await onSaveToLibrary(map, trimmedName);
+    if (error) { alertDialog(error); return; }
     setDirty(false); // ライブラリに保存した時点で「編集内容が消える」リスクは無くなる
+    setSaved(true);
   };
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (!trimmedName) return;
-    onDownload(map, trimmedName);
+    const error = await onDownload(map, trimmedName);
+    if (error) alertDialog(error);
+    // 成功時は保存先ダイアログ自体がフィードバックになるので、ここでは何も出さない
   };
 
   const blocks = countObj(map.field, MapObject.BLOCK);
@@ -233,6 +248,7 @@ export function MapEditorPanel({
       <Button size="sm" disabled={!trimmedName} onClick={handleDownload} noShrink={topBar}>
         ダウンロード
       </Button>
+      {saved && <span style={s.saveStatus}>✓ 保存しました</span>}
     </>
   );
 
@@ -347,8 +363,8 @@ interface DialogWrapperProps {
   theme:           string;
   httpBase:        string;
   onApply?:        (map: EditableMap) => void;
-  onSaveToLibrary: (map: EditableMap, displayName: string) => void;
-  onDownload:      (map: EditableMap, displayName: string) => void;
+  onSaveToLibrary: (map: EditableMap, displayName: string) => Promise<string | null>;
+  onDownload:      (map: EditableMap, displayName: string) => Promise<string | null>;
   onClose:         () => void;
 }
 
@@ -462,6 +478,7 @@ const s: Record<string, React.CSSProperties> = {
   },
   side:  { display: 'flex', flexDirection: 'column', gap: 6, width: 150, flexShrink: 0 },
   hint: { fontSize: 9, lineHeight: 1.5, color: TEXT_MUTED },
+  saveStatus: { fontSize: 10, fontWeight: 700, color: WIN_BASE },
   countRow:   { display: 'flex', justifyContent: 'space-between', fontSize: 12 },
   countLabel: { color: TEXT_SECONDARY },
   dialogBody: { padding: 0 },

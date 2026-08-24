@@ -6,7 +6,9 @@ import type { CatalogEntry, InlineMapData, MapCatalogEntry, MapParams, SoundKey 
 // 降順に並べる」が4箇所で完全に同じコードだった。URL とレスポンスの形を知るのはここだけにする。
 //
 // 失敗の扱いは呼び出し元の都合に合わせる: 一覧・取得系は「取れなければ空/ null」を返して
-// 画面を壊さない (元の .catch(() => {}) と同じ)。副作用系は Promise<void> を返す。
+// 画面を壊さない (元の .catch(() => {}) と同じ)。副作用系のうち、呼び出し元が失敗理由を
+// 画面に出す必要があるものは uploadFile と同じ形 (成功なら null、失敗ならメッセージの
+// Promise<string | null>) で返し、そうでないものは Promise<void> を返す。
 
 /** 一覧は新しい順 (アップロード日時の降順) に見せる */
 function byNewest<T extends { uploadedAt: number }>(entries: T[]): T[] {
@@ -43,15 +45,19 @@ async function send(url: string, method: string): Promise<void> {
   }
 }
 
+/** 失敗レスポンスから { error } を取り出す。無ければ fallback */
+async function errorMessage(res: Response, fallback: string): Promise<string> {
+  const body = await res.json().catch(() => ({})) as { error?: string };
+  return body.error ?? fallback;
+}
+
 /** ファイルを1つ POST する。成功なら null、失敗ならユーザーに見せるエラーメッセージ */
 async function uploadFile(url: string, file: File): Promise<string | null> {
   const fd = new FormData();
   fd.append('file', file);
   try {
     const res = await fetch(url, { method: 'POST', body: fd });
-    if (res.ok) return null;
-    const body = await res.json().catch(() => ({})) as { error?: string };
-    return body.error ?? `アップロードに失敗しました (${res.status})`;
+    return res.ok ? null : await errorMessage(res, `アップロードに失敗しました (${res.status})`);
   } catch (e) {
     return `アップロードに失敗しました: ${(e as Error).message}`;
   }
@@ -117,22 +123,37 @@ export async function generateRandomMap(
   return body?.data ?? null;
 }
 
+/** 成功なら null、失敗ならユーザーに見せるエラーメッセージ (uploadFile と同じ形) */
 export async function saveMapToLibrary(
   httpBase: string, displayName: string, data: InlineMapData,
-): Promise<void> {
-  await sendJson(`${httpBase}/api/maps/save-inline`, 'POST', { displayName, data });
+): Promise<string | null> {
+  try {
+    const res = await fetch(`${httpBase}/api/maps/save-inline`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ displayName, data }),
+    });
+    return res.ok ? null : await errorMessage(res, `保存に失敗しました (${res.status})`);
+  } catch (e) {
+    return `保存に失敗しました: ${(e as Error).message}`;
+  }
 }
 
-/** ライブラリに残さず .map ファイルとして落とす */
+/** ライブラリに残さず .map ファイルとして落とす。成功なら null、失敗ならエラーメッセージ */
 export async function downloadMapFile(
   httpBase: string, displayName: string, data: InlineMapData,
-): Promise<void> {
-  const res = await fetch(`${httpBase}/api/maps/export`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ displayName, data }),
-  }).catch(() => null);
-  if (!res?.ok) return;
+): Promise<string | null> {
+  let res: Response;
+  try {
+    res = await fetch(`${httpBase}/api/maps/export`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ displayName, data }),
+    });
+  } catch (e) {
+    return `ダウンロードに失敗しました: ${(e as Error).message}`;
+  }
+  if (!res.ok) return errorMessage(res, `ダウンロードに失敗しました (${res.status})`);
 
   const url = URL.createObjectURL(await res.blob());
   const a   = document.createElement('a');
@@ -140,6 +161,7 @@ export async function downloadMapFile(
   a.download = `${displayName}.map`;
   a.click();
   URL.revokeObjectURL(url);
+  return null;
 }
 
 // ── 大会ライブラリ ─────────────────────────────────────────────────────────

@@ -73,8 +73,8 @@ export function MapEditorMode({ httpBase, roomId, mapId }: Props) {
         theme={theme}
         httpBase={httpBase}
         topBar
-        onSaveToLibrary={(map, name) => void saveMapToLibrary(httpBase, name, toInlineMapData(map))}
-        onDownload={(map, name) => void downloadMapFile(httpBase, name, toInlineMapData(map))}
+        onSaveToLibrary={(map, name) => saveMapToLibrary(httpBase, name, toInlineMapData(map))}
+        onDownload={(map, name) => downloadMapFile(httpBase, name, toInlineMapData(map))}
         onClose={() => window.close()}
         onDirtyChange={setDirty}
       />
