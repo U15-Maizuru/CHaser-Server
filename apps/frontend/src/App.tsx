@@ -285,6 +285,7 @@ function ControlApp({ roomId }: { roomId: string }) {
               variant="control"
               countdown={countdown}
               displayTitle={displayPrefs.displayTitle}
+              tournament={state.tournamentState}
             />
           )}
         </div>

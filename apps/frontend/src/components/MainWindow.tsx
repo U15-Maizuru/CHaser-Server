@@ -1,12 +1,13 @@
 import { useMemo, useRef } from 'react';
 import type {
   GameEndPayload, GameStateSnapshot, TurnStartPayload,
-  ServerPhase, ServerStatusPayload,
+  ServerPhase, ServerStatusPayload, TournamentStatePayload,
 } from '@u15/ws-types';
 import { idxForSide, isBlunder, Reason, Winner } from '@u15/ws-types';
 import { GameBoardCanvas } from './GameBoardCanvas';
 import { PlayerSidePanel } from './PlayerSidePanel';
 import { decisiveEffectFrom } from '../lib/decisiveEffect';
+import { armedMatchNames } from '../lib/tournamentResult';
 import {
   BG_ROOT, BG_CARD, BG_HEADER,
   COOL_COLOR, COOL_LIGHT, COOL_DARK,
@@ -33,17 +34,18 @@ interface Props {
   variant:         'control' | 'display';
   countdown:       number | null;
   displayTitle:    string;
+  /** 大会運営中のみ渡す。渡されていれば対戦画面のプレイヤー名を大会登録名で上書きする */
+  tournament?:     TournamentStatePayload | null;
 }
 
 export function MainWindow({
   snapshot, turnInfo, gameEnd, serverStatus, isConnected, phase,
-  theme = 'Jewel', veilAlpha, variant, countdown, displayTitle,
+  theme = 'Jewel', veilAlpha, variant, countdown, displayTitle, tournament,
 }: Props) {
   const darkMode = (serverStatus?.darkMode ?? false) && countdown === null;
 
   const turnCount  = snapshot?.turnCount     ?? 0;
   const leaveItems = snapshot?.leaveItems    ?? 0;
-  const names      = snapshot?.playerNames   ?? ['COOL', 'HOT'];
 
   // ステップ数ゲージの最大値 (原本の map.turn 相当): turnCount はゲーム中は単調減少するのみなので、
   // 新しいゲームの開始で値が増加した瞬間を検知して満タン値を更新する
@@ -75,6 +77,19 @@ export function MainWindow({
   }
   const displayRound = displayRoundRef.current;
   const flip = doubleMode && displayRound === 1;
+
+  // 大会運営中は、TCPで名乗ったプログラム名でなく大会登録時の参加者名を優先する。
+  // 大会運営でない (tournament が無い) / armed match が引けない場合はこれまで通り。
+  // round を渡すのは、第2ゲームで COOL/HOT の中身が入れ替わる (swapSlotConfigs) ため。
+  // ターンごとに再レンダーされるホットパスなので、tournament/displayRound が変わらない
+  // 限り matches/participants の再探索をしないよう memo する
+  const tournamentNames = useMemo(
+    () => armedMatchNames(tournament, displayRound),
+    [tournament, displayRound],
+  );
+  const names = tournamentNames ?? snapshot?.playerNames ?? ['COOL', 'HOT'];
+  // ボトムバーの結果ピル用。gameEnd が無い間は使われないので、無い場合の値は何でもよい
+  const gameEndNames = tournamentNames ?? gameEnd?.playerNames ?? names;
 
   // 画面左右のスコア表示: 第2ゲームは先攻/後攻(COOL/HOT)が入れ替わるため、
   // 画面の左右は固定したまま中身の team-index を round に応じて入れ替える
@@ -205,7 +220,7 @@ export function MainWindow({
                 background: leftIdx === 0 ? COOL_LIGHT : HOT_LIGHT,
                 color: TEXT_PRIMARY,
               }}>
-                {winnerText(gameEnd, gameEnd.playerNames[leftIdx])}
+                {winnerText(gameEnd, gameEndNames[leftIdx])}
               </span>
             )}
 
@@ -233,7 +248,7 @@ export function MainWindow({
                 background: rightIdx === 0 ? COOL_LIGHT : HOT_LIGHT,
                 color: TEXT_PRIMARY,
               }}>
-                {winnerText(gameEnd, gameEnd.playerNames[rightIdx])}
+                {winnerText(gameEnd, gameEndNames[rightIdx])}
               </span>
             )}
           </div>

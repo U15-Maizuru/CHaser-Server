@@ -1,3 +1,4 @@
+import { useMemo, useRef } from 'react';
 import type {
   DisplayPrefs, InlineMapData, ServerPhase, ServerStatusPayload, TournamentStatePayload,
 } from '@u15/ws-types';
@@ -20,7 +21,7 @@ import type { QualifyingPhase } from './tournament/board/QualifyingView';
 import { LeagueTable } from './tournament/board/LeagueTable';
 import { TournamentFinale } from './tournament/board/TournamentFinale';
 import { TournamentStandby } from './tournament/board/TournamentStandby';
-import { isTournamentComplete } from '../lib/tournamentResult';
+import { armedMatchNames, isTournamentComplete } from '../lib/tournamentResult';
 import {
   BG_ROOT, BG_CARD,
   TURN_BASE, TURN_LIGHT,
@@ -108,7 +109,18 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
 
   // 画面の切り替え自体は即座にせず、BGM のクロスフェードと同じ長さの暗転を挟む
   // (useSceneTransition のコメント参照)。以下の出し分けは displayedGroup だけを見る
-  const { displayed: displayedGroup, curtain } = useSceneTransition(visualGroupOf(scene));
+  const currentGroup = visualGroupOf(scene);
+  const { displayed: displayedGroup, curtain } = useSceneTransition(currentGroup);
+
+  // 試合結果を確定した瞬間、tournamentState は (armedMatchId=null, 該当試合 status='done') に
+  // 即座に更新される。この変化そのものは正しいが、暗転が閉じ切って画面を隠す前に
+  // MainWindow が再描画されると、大会登録名からプログラム自己申告名への切り替わりが
+  // 暗転前に一瞬見えてしまう。displayedGroup がまだ切り替わっていない (= 暗転が閉じて
+  // いない) 間は、MainWindow に渡す tournamentState を直前の値のまま凍結する
+  const tournamentForMatchRef = useRef(tournamentState);
+  if (currentGroup === displayedGroup) {
+    tournamentForMatchRef.current = tournamentState;
+  }
 
   // 対戦画面がマウントされた瞬間 (暗転が閉じきった瞬間) から開始カウントダウンを進める。
   // ServerManager の startDelayMs 側に暗転ぶん (SCENE_FADE_MS) の余裕を足してあるので、
@@ -183,6 +195,7 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
           variant="display"
           countdown={countdown}
           displayTitle={prefs.displayTitle}
+          tournament={tournamentForMatchRef.current}
         />
       </div>
     );
@@ -264,6 +277,20 @@ function SetupWaiting({ serverStatus, displayTitle, tournament, groupPhase, curr
   // roundResults は ServerStatusPayload に残るので、ここから第1ゲームの結果を再構成できる。
   const intermission = doubleMode && roundResults.length === 1 ? roundResults[0] : null;
 
+  // 大会運営中は TCP 自己申告名でなく大会登録名を優先する (MainWindow と同じ規則)。
+  // これから待つゲーム (currentRound) と、リキャップが指す第1ゲーム (常に round 0) とで
+  // COOL/HOT の中身が違う (swapSlotConfigs) ため、round ごとに引き直す
+  const tournamentNames = useMemo(
+    () => armedMatchNames(tournament, currentRound),
+    [tournament, currentRound],
+  );
+  const recapRound = intermission?.round ?? 0;
+  const recapNames = useMemo(
+    () => intermission ? armedMatchNames(tournament, recapRound) : null,
+    [tournament, intermission, recapRound],
+  );
+  const recapDisplayNames = intermission ? (recapNames ?? intermission.playerNames) : null;
+
   // カードの左右は MainWindow と同じく idxForSide で決める。そうしないと swapSlotConfigs 後の
   // 待機画面だけプログラムの左右が入れ替わって見え、第2ゲームが始まるとまた元に戻ってしまう。
   // 第1ゲーム前 (currentRound=0) は恒等写像なので COOL が左・HOT が右になる。
@@ -283,11 +310,11 @@ function SetupWaiting({ serverStatus, displayTitle, tournament, groupPhase, curr
         <div style={sw.recap}>
           <div style={sw.recapTitle}>第1ゲームの結果</div>
           <div style={sw.recapRow}>
-            <span style={sw.recapName}>{intermission.playerNames[idxForSide(0, intermission.round)]}</span>
+            <span style={sw.recapName}>{recapDisplayNames![idxForSide(0, intermission.round)]}</span>
             <span style={sw.recapScore}>{roundPointsFor(intermission, 0)}</span>
             <span style={sw.recapDash}>—</span>
             <span style={sw.recapScore}>{roundPointsFor(intermission, 1)}</span>
-            <span style={sw.recapName}>{intermission.playerNames[idxForSide(1, intermission.round)]}</span>
+            <span style={sw.recapName}>{recapDisplayNames![idxForSide(1, intermission.round)]}</span>
           </div>
         </div>
       )}
@@ -295,7 +322,10 @@ function SetupWaiting({ serverStatus, displayTitle, tournament, groupPhase, curr
       {/* COOL / マップ / HOT (セットアップ画面と同じ骨格) */}
       <div style={sw.teams}>
         {clients && (
-          <TeamCard idx={leftIdx} name={clients[leftIdx].name || '---'} state={clients[leftIdx].state} />
+          <TeamCard
+            idx={leftIdx} state={clients[leftIdx].state}
+            name={tournamentNames?.[leftIdx] ?? (clients[leftIdx].name || '---')}
+          />
         )}
         {currentMap
           ? <MapPreview
@@ -304,7 +334,10 @@ function SetupWaiting({ serverStatus, displayTitle, tournament, groupPhase, curr
             />
           : <div style={sw.vs}>VS</div>}
         {clients && (
-          <TeamCard idx={rightIdx} name={clients[rightIdx].name || '---'} state={clients[rightIdx].state} />
+          <TeamCard
+            idx={rightIdx} state={clients[rightIdx].state}
+            name={tournamentNames?.[rightIdx] ?? (clients[rightIdx].name || '---')}
+          />
         )}
       </div>
     </div>
@@ -439,7 +472,12 @@ const sw: Record<string, React.CSSProperties> = {
     fontSize: 13, fontWeight: 700, color: WIN_BASE, letterSpacing: '0.1em',
   },
   recapRow:   { display: 'flex', alignItems: 'baseline', gap: 16 },
-  recapName:  { fontSize: 18, fontWeight: 700, color: TEXT_PRIMARY, minWidth: 120, textAlign: 'center' },
+  // 左右で幅を揃えて初めて中央の score/dash が動かない。狭すぎると読めないので
+  // 160px 確保しつつ、それでも収まらない名前は省略せず折り返す (文字が切り捨てられないように)
+  recapName:  {
+    fontSize: 18, fontWeight: 700, color: TEXT_PRIMARY, textAlign: 'center',
+    width: 160, flexShrink: 0, lineHeight: 1.25, wordBreak: 'break-word',
+  },
   recapScore: { fontSize: 34, fontWeight: 800, color: TEXT_PRIMARY, fontFamily: FONT_NUM },
   recapDash:  { fontSize: 22, color: TEXT_MUTED },
 };
@@ -463,11 +501,12 @@ const mp: Record<string, React.CSSProperties> = {
 };
 
 const tc: Record<string, React.CSSProperties> = {
+  // 左右で幅を揃えないと、名前の長さでカードの幅が変わって中央のマップがズレる
   card: {
     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
     padding: '0 0 20px',
     borderRadius: RADIUS_MD, overflow: 'hidden',
-    boxShadow: SHADOW_MD, minWidth: 220,
+    boxShadow: SHADOW_MD, width: 220, flexShrink: 0,
   },
   header: {
     width: '100%', textAlign: 'center',
@@ -476,8 +515,9 @@ const tc: Record<string, React.CSSProperties> = {
     marginBottom: 4,
   },
   name:  {
-    fontSize: 22, fontWeight: 800,
-    minHeight: 32, letterSpacing: '0.02em',
+    width: '100%', boxSizing: 'border-box', padding: '0 12px',
+    fontSize: 22, fontWeight: 800, textAlign: 'center',
+    minHeight: 32, letterSpacing: '0.02em', wordBreak: 'break-word',
   },
   badge: {
     fontWeight: 700, fontSize: 12,

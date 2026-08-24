@@ -1,5 +1,5 @@
 import type { TournamentMatch, TournamentStatePayload } from '@u15/ws-types';
-import { isConsolationMatch } from '@u15/ws-types';
+import { idxForSide, isConsolationMatch } from '@u15/ws-types';
 
 // 大会が終わったときの表彰台を求める純関数。
 //
@@ -136,6 +136,32 @@ function participantOfSide(m: TournamentMatch, side: 0 | 1 | null): string | nul
 
 function nameLookup(state: TournamentStatePayload): (id: string | null) => string | null {
   return id => (id ? state.participants.find(p => p.id === id)?.name ?? null : null);
+}
+
+/**
+ * いま対戦中 (armedMatchId) の試合の参加者登録名。index は team-index (COOL=0/HOT=1)。
+ *
+ * resolvedA/resolvedB は第1ゲーム (round 0) の COOL/HOT。2ゲーム制の第2ゲームは
+ * swapSlotConfigs で中身が入れ替わるため、idxForSide (packages/ws-types/scoring.ts) と
+ * 同じ規則で round ごとに team-index を引き直す。
+ *
+ * 名前が引けない (armed でない/未確定) 場合や、armedMatchId が指す試合が既に `done` の
+ * 場合は null を返す。後者は、armMatch がスロットのリセット (server_status) を
+ * tournament_state の armedMatchId 更新より先に配信するため、次の試合を準備中の一瞬
+ * armedMatchId が直前に確定した試合を指したままになる隙間を吸収するため。
+ * 呼び出し側はいずれの null もプログラムの自己申告名へのフォールバックとして扱う。
+ */
+export function armedMatchNames(
+  state: TournamentStatePayload | null | undefined, round: 0 | 1 = 0,
+): [string, string] | null {
+  if (!state) return null;
+  const match = state.matches.find(m => m.id === state.armedMatchId);
+  if (!match || match.status === 'done') return null;
+  const nameOf = nameLookup(state);
+  const bySlot: [string | null, string | null] = [match.resolvedA, match.resolvedB];
+  const cool = nameOf(bySlot[idxForSide(0, round)]);
+  const hot  = nameOf(bySlot[idxForSide(1, round)]);
+  return cool !== null && hot !== null ? [cool, hot] : null;
 }
 
 function pushRow(rows: PodiumRow[], rank: 1 | 2 | 3, name: string | null): void {
