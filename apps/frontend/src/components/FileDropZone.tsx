@@ -58,52 +58,54 @@ export function FileDropZone({ endpoint, accept, label, onUploaded }: Props) {
     e.target.value = '';
   };
 
-  const handleDelete = () => {
+  const handleClearList = () => {
     setUploadedNames([]);
     reset();
   };
 
-  if (uploadedNames.length > 0 && state === 'done') {
-    return (
-      <div style={s.done}>
-        <span style={s.check}>✓</span>
-        <span style={s.filename}>
-          {uploadedNames.length === 1 ? uploadedNames[0] : `${uploadedNames.length} 件アップロード済み: ${uploadedNames.join(', ')}`}
-        </span>
-        <button style={s.deleteBtn} onClick={handleDelete}>削除</button>
-      </div>
-    );
-  }
-
+  // アップロード完了後もドロップゾーンは表示し続け、続けて別のファイルを
+  // 追加アップロードできるようにする。完了済みファイルの一覧はその下に残す。
   return (
-    <div style={{ ...s.zone, borderColor: dragging ? COOL_COLOR : (error ? ERROR_COLOR : BORDER_COLOR) }}
-      onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={handleDrop}
-      onClick={() => state !== 'uploading' && inputRef.current?.click()}
-    >
-      <input
-        ref={inputRef}
-        type="file"
-        accept={accept.join(',')}
-        multiple
-        style={{ display: 'none' }}
-        onChange={handleInputChange}
-      />
+    <div style={s.wrapper}>
+      <div style={{ ...s.zone, borderColor: dragging ? COOL_COLOR : (error ? ERROR_COLOR : BORDER_COLOR) }}
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={handleDrop}
+        onClick={() => state !== 'uploading' && inputRef.current?.click()}
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          accept={accept.join(',')}
+          multiple
+          style={{ display: 'none' }}
+          onChange={handleInputChange}
+        />
 
-      {state === 'uploading' ? (
-        <div style={s.inner}>
-          <div style={s.progressBar}>
-            <div style={{ ...s.progressFill, width: `${progress}%` }} />
+        {state === 'uploading' ? (
+          <div style={s.inner}>
+            <div style={s.progressBar}>
+              <div style={{ ...s.progressFill, width: `${progress}%` }} />
+            </div>
+            <span style={s.hint}>{progress}%</span>
           </div>
-          <span style={s.hint}>{progress}%</span>
-        </div>
-      ) : (
-        <div style={s.inner}>
-          <span style={s.icon}>⬆</span>
-          <span style={s.mainText}>{label}</span>
-          <span style={s.hint}>または クリックして選択 ({accept.join(', ')} / 複数選択可)</span>
-          {error && <span style={s.errorText}>{error}</span>}
+        ) : (
+          <div style={s.inner}>
+            <span style={s.icon}>⬆</span>
+            <span style={s.mainText}>{label}</span>
+            <span style={s.hint}>または クリックして選択 ({accept.join(', ')} / 複数選択可・何度でも追加可)</span>
+            {error && <span style={s.errorText}>{error}</span>}
+          </div>
+        )}
+      </div>
+
+      {uploadedNames.length > 0 && (
+        <div style={s.done}>
+          <span style={s.check}>✓</span>
+          <span style={s.filename}>
+            {uploadedNames.length === 1 ? uploadedNames[0] : `${uploadedNames.length} 件アップロード済み: ${uploadedNames.join(', ')}`}
+          </span>
+          <button style={s.deleteBtn} onClick={handleClearList}>クリア</button>
         </div>
       )}
     </div>
@@ -111,6 +113,11 @@ export function FileDropZone({ endpoint, accept, label, onUploaded }: Props) {
 }
 
 const s: Record<string, React.CSSProperties> = {
+  wrapper: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+  },
   zone: {
     border: '2px dashed',
     borderRadius: RADIUS_SM,
