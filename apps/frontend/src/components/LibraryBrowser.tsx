@@ -41,7 +41,13 @@ export function LibraryBrowser<T extends Entry>({
   );
 }
 
-/** 一覧の1行。左に名前と補足、右に操作を並べる */
+/**
+ * 一覧の1行。名前・補足を上段にフル幅で、操作ボタン列を下段に分けて置く。
+ *
+ * 以前は名前と操作ボタンを横1列に並べていたが、マップ管理のように操作が
+ * DL/編集/プレビュー/削除の4つに増えると、ボタンに幅を取られて名前が
+ * 前半しか見えなくなり、似た名前のマップを区別できなくなっていた。
+ */
 export function LibraryRow({
   name, meta, children,
 }: {
@@ -51,11 +57,9 @@ export function LibraryRow({
 }) {
   return (
     <div style={s.row}>
-      <div style={s.main}>
-        <span style={s.name}>{name}</span>
-        {meta && <span style={s.meta}>{meta}</span>}
-      </div>
-      {children}
+      <span style={s.name} title={name}>{name}</span>
+      {meta && <div style={s.meta}>{meta}</div>}
+      {children && <div style={s.actions}>{children}</div>}
     </div>
   );
 }
@@ -64,13 +68,13 @@ const s: Record<string, React.CSSProperties> = {
   hint: { fontSize: 11, color: TEXT_MUTED },
   list: { display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 260, overflow: 'auto' },
   row: {
-    display: 'flex', alignItems: 'center', gap: 8,
-    padding: '6px 8px', border: `1px solid ${BORDER_COLOR}`, borderRadius: 6,
+    display: 'flex', flexDirection: 'column', gap: 4,
+    padding: '8px 10px', border: `1px solid ${BORDER_COLOR}`, borderRadius: 6,
   },
-  main: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' },
   name: {
     fontSize: 12, fontFamily: FONT_NUM, color: TEXT_PRIMARY,
     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
   },
   meta: { fontSize: 10, color: TEXT_MUTED, lineHeight: 1.5 },
+  actions: { display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' },
 };

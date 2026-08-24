@@ -12,12 +12,17 @@ interface Props {
   /** 今対戦画面にプレビュー表示中のマップ (手動プレビュー)。無ければ null */
   previewMapId:  string | null;
   onPreviewMap:  (mapId: string | null) => void;
+  /** マップエディタを開く。entry 指定でそのマップを下敷きに、null なら白紙から。
+   *  対戦設定とは無関係なので、開いたエディタでは「適用して閉じる」は出ない (ライブラリ保存/DLのみ)。 */
+  onOpenEditor:  (entry: MapCatalogEntry | null) => void;
 }
 
-// マップライブラリの整理 (追加・ダウンロード・削除) だけを扱う。
+// マップライブラリの整理 (追加・編集・ダウンロード・削除) だけを扱う。
 // 「対戦でどのマップを使うか」の選択はセットアップ画面の MapSourceSection に一本化する。
 // 「プレビュー表示」は対戦設定とは別の、対戦画面への一時的な表示切り替え (手動プレビュー)。
-export function MapLibraryDialog({ httpBase, onClose, previewMapId, onPreviewMap }: Props) {
+// ここから開くマップエディタも同様に対戦設定とは切り離してあり、保存は常にライブラリへの
+// 新規追加になる (対戦中のマップを差し替える「適用」は無い)。
+export function MapLibraryDialog({ httpBase, onClose, previewMapId, onPreviewMap, onOpenEditor }: Props) {
   const [entries, setEntries] = useState<MapCatalogEntry[]>([]);
 
   const fetchEntries = () => { void fetchMaps(httpBase).then(setEntries); };
@@ -40,6 +45,8 @@ export function MapLibraryDialog({ httpBase, onClose, previewMapId, onPreviewMap
         対戦で使うマップはセットアップ画面のマップ列で選んでください。
       </Callout>
 
+      <Button size="sm" onClick={() => onOpenEditor(null)}>エディタで新規作成...</Button>
+
       <LibraryBrowser
         entries={entries}
         placeholder="マップ名で検索"
@@ -58,6 +65,7 @@ export function MapLibraryDialog({ httpBase, onClose, previewMapId, onPreviewMap
             }
           >
             <a style={download} href={`${httpBase}/api/maps/${entry.id}/download`}>DL</a>
+            <Button size="sm" noShrink onClick={() => onOpenEditor(entry)}>編集</Button>
             <Button
               size="sm" noShrink
               onClick={() => onPreviewMap(entry.id === previewMapId ? null : entry.id)}

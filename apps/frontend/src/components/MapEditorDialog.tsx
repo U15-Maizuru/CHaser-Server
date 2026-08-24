@@ -22,7 +22,8 @@ interface Props {
   initialMap:      EditableMap;
   theme:           string;
   httpBase:        string;
-  onApply:         (map: EditableMap) => void;
+  /** 省略時は「適用して閉じる」を出さない (対戦設定と無関係にマップ管理から開いたとき) */
+  onApply?:        (map: EditableMap) => void;
   onSaveToLibrary: (map: EditableMap, displayName: string) => void;
   onDownload:      (map: EditableMap, displayName: string) => void;
   onClose:         () => void;
@@ -152,7 +153,7 @@ export function MapEditorDialog({ initialMap, theme, httpBase, onApply, onSaveTo
 
   // ── Save ──────────────────────────────────────────────────────────────────
   const handleApply = () => {
-    onApply(map);
+    onApply?.(map);
     onClose();
   };
   // Electron は window.prompt を実装していないため、名前はダイアログ内の入力欄で受け取る
@@ -239,10 +240,13 @@ export function MapEditorDialog({ initialMap, theme, httpBase, onApply, onSaveTo
           ダウンロード
         </Button>
 
-        <Divider />
-
-        <Button variant="primary" size="md" onClick={handleApply}>適用して閉じる</Button>
-        <Button size="sm" onClick={onClose}>キャンセル</Button>
+        {onApply && (
+          <>
+            <Divider />
+            <Button variant="primary" size="md" onClick={handleApply}>適用して閉じる</Button>
+          </>
+        )}
+        <Button size="sm" onClick={onClose}>{onApply ? 'キャンセル' : '閉じる'}</Button>
       </div>
     </Dialog>
   );

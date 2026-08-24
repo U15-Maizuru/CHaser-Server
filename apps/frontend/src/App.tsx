@@ -3,7 +3,7 @@ import { useGameState }      from './hooks/useGameState';
 import { useMatchConfig }    from './hooks/useMatchConfig';
 import { useMapGenParams, toMapParams } from './hooks/useMapGenParams';
 import { useCurrentMap } from './hooks/useCurrentMap';
-import { downloadMapFile, deleteMusicFile, deleteSoundFile, fetchCurrentMap, saveMapToLibrary, uploadMusic, uploadSound } from './lib/api';
+import { downloadMapFile, deleteMusicFile, deleteSoundFile, fetchCurrentMap, fetchMapCatalogData, saveMapToLibrary, uploadMusic, uploadSound } from './lib/api';
 import { readAppLocation } from './lib/appMode';
 import { useEnvConfig }      from './hooks/useEnvConfig';
 import { useGamePhaseSound } from './hooks/useGamePhaseSound';
@@ -71,6 +71,8 @@ function ControlApp({ roomId }: { roomId: string }) {
   const [showMapEditor,      setShowMapEditor]      = useState(false);
   const [showProgramLibrary, setShowProgramLibrary] = useState(false);
   const [editorSeed,         setEditorSeed]         = useState<EditableMap | null>(null);
+  // マップ管理から開いたときは対戦設定と無関係なので「適用して閉じる」を出さない
+  const [editorFromLibrary,  setEditorFromLibrary]  = useState(false);
 
   // 今出ているマップ (観戦窓の待機画面と同じフックを使う)
   const { currentMap, refresh: refreshCurrentMap } = useCurrentMap(
@@ -171,6 +173,17 @@ function ControlApp({ roomId }: { roomId: string }) {
     setEditorSeed(data
       ? { field: data.field as MapObject[][], size: data.size, turn: data.turn, teamFirstPoint: data.teamFirstPoint }
       : defaultEditableMap);
+    setEditorFromLibrary(false);
+    setShowMapEditor(true);
+  };
+
+  // マップ管理からの入口。room の対戦状態とは無関係に、ライブラリの1件 (または白紙) を下敷きにする
+  const openMapEditorFromLibrary = async (entry: MapCatalogEntry | null) => {
+    const seed = entry ? await fetchMapCatalogData(HTTP_BASE, entry.id) : null;
+    setEditorSeed(seed
+      ? { field: seed.data.field as MapObject[][], size: seed.data.size, turn: seed.data.turn, teamFirstPoint: seed.data.teamFirstPoint }
+      : defaultEditableMap);
+    setEditorFromLibrary(true);
     setShowMapEditor(true);
   };
 
@@ -231,6 +244,7 @@ function ControlApp({ roomId }: { roomId: string }) {
           onClose={() => setShowMapLibrary(false)}
           previewMapId={state.serverStatus?.previewMapId ?? null}
           onPreviewMap={state.previewMap}
+          onOpenEditor={entry => void openMapEditorFromLibrary(entry)}
         />
       )}
 
@@ -239,7 +253,7 @@ function ControlApp({ roomId }: { roomId: string }) {
           initialMap={editorSeed}
           theme={displayPrefs.theme}
           httpBase={HTTP_BASE}
-          onApply={handleMapEditorApply}
+          onApply={editorFromLibrary ? undefined : handleMapEditorApply}
           onSaveToLibrary={(map, name) => saveMap(toInlineMapData(map), name)}
           onDownload={(map, name) => downloadMap(toInlineMapData(map), name)}
           onClose={() => setShowMapEditor(false)}
