@@ -59,6 +59,14 @@ function ControlApp({ roomId }: { roomId: string }) {
   const { serverStatus, isConnected, gameEnd, snapshot } = state;
   const displayPrefs = serverStatus?.displayPrefs ?? DEFAULT_DISPLAY_PREFS;
 
+  // 「接続中...」の全画面差し替えは初回接続前だけにする。一度繋がったあとの瞬断
+  // (例: window.confirm() でレンダラーが一瞬ブロックされる間の再接続) のたびに
+  // 全部差し替えると、開いていたダイアログ (マップ管理など) ごと消えて「一旦閉じる」
+  // ように見えてしまう。再接続中かどうかは BottomBar の CONNECTED/DISCONNECTED
+  // バッジで十分に伝わるので、初回接続後は UI を保ったまま裏で再接続させる。
+  const hasConnectedOnce = useRef(false);
+  if (isConnected) hasConnectedOnce.current = true;
+
   // コントロール窓には場面転換の暗転が無いので、phase の変化がそのままカウントダウン開始の合図
   const countdown = useStartCountdown(serverStatus?.phase === 'playing', state.turnInfo);
 
@@ -204,15 +212,11 @@ function ControlApp({ roomId }: { roomId: string }) {
 
   // ランダム生成・エディタ由来のマップを残す手段。ライブラリ保存もダウンロードも
   // 「今出ているマップ」に対して働くので、エディタとマップ列の両方から同じものを使う。
-  const saveMap = (data: InlineMapData, displayName: string) => {
-    void saveMapToLibrary(HTTP_BASE, displayName, data);
-  };
+  // 成功したかどうかは呼び出し元 (マップエディタ) が画面に出すので、そのまま返す。
+  const saveMap = (data: InlineMapData, displayName: string) => saveMapToLibrary(HTTP_BASE, displayName, data);
+  const downloadMap = (data: InlineMapData, displayName: string) => downloadMapFile(HTTP_BASE, displayName, data);
 
-  const downloadMap = (data: InlineMapData, displayName: string) => {
-    void downloadMapFile(HTTP_BASE, displayName, data);
-  };
-
-  if (!isConnected) {
+  if (!isConnected && !hasConnectedOnce.current) {
     return <div style={connecting}>バックエンドに接続中...</div>;
   }
 
@@ -289,8 +293,8 @@ function ControlApp({ roomId }: { roomId: string }) {
               onApplyMapEntry={handleApplyMapEntry}
               onApplyMapParams={handleApplyMapParams}
               onOpenMapEditor={() => void openMapEditor()}
-              onSaveCurrentMap={name => { if (currentMap) saveMap(currentMap, name); }}
-              onDownloadCurrentMap={name => { if (currentMap) downloadMap(currentMap, name); }}
+              onSaveCurrentMap={name => { if (currentMap) void saveMap(currentMap, name); }}
+              onDownloadCurrentMap={name => { if (currentMap) void downloadMap(currentMap, name); }}
               onOpenMapLibrary={() => setShowMapLibrary(true)}
             />
           ) : (
