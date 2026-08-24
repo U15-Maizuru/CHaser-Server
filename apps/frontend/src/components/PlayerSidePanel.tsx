@@ -4,7 +4,10 @@ import type {
   RoundResult,
   ServerStatusPayload,
 } from '@u15/ws-types';
-import { computeSetResult, idxForSide, ITEM_POINT, roundPointsFor, Winner } from '@u15/ws-types';
+import { idxForSide, ITEM_POINT, roundPointsFor, Winner } from '@u15/ws-types';
+import {
+  koryuLiveRoundScore, koryuRoundScore, MAIZURU_SCORING, setResultFor, type ScoringContext,
+} from '../lib/koryuDisplay';
 import {
   BG_CARD,
   COOL_COLOR, COOL_DARK, COOL_PALE,
@@ -29,9 +32,13 @@ interface Props {
   serverStatus: ServerStatusPayload | null;
   width:        number;
   maxHeight:    number;
+  /** 得点計算のルールセット (大会に紐付いていなければ舞鶴大会ルール扱い) */
+  scoring?:     ScoringContext;
 }
 
-export function PlayerSidePanel({ side, snapshot, serverStatus, width, maxHeight }: Props) {
+export function PlayerSidePanel({
+  side, snapshot, serverStatus, width, maxHeight, scoring = MAIZURU_SCORING,
+}: Props) {
   const roundResults = serverStatus?.roundResults ?? [];
   const doubleMode   = serverStatus?.doubleMode   ?? false;
 
@@ -70,9 +77,12 @@ export function PlayerSidePanel({ side, snapshot, serverStatus, width, maxHeight
       serverStatus={serverStatus}
       roundResults={roundResults}
       dim={dim}
+      scoring={scoring}
     />
   ) : (
-    <SingleModeContent side={side} snapshot={snapshot} roundResults={roundResults} dim={dim} />
+    <SingleModeContent
+      side={side} snapshot={snapshot} roundResults={roundResults} dim={dim} scoring={scoring}
+    />
   );
 
   return (
@@ -109,18 +119,22 @@ function bonusColor(n: number): string {
 // 2ゲーム制の DoubleModeContent と同じく「1パネル = 自分側のプログラム」に揃え、左右で同じ表を
 // 二重に出さない。勝敗はフッターの結果ピル、獲得アイテム数は上部スコアバーが既に大きく出して
 // いるため、このパネルは得点計算の内訳 (アイテム → 一撃 → 総取り → 合計ポイント) に絞る。
-function SingleModeContent({ side, snapshot, roundResults, dim }: {
+function SingleModeContent({ side, snapshot, roundResults, dim, scoring }: {
   side: 0 | 1; snapshot: GameStateSnapshot | null; roundResults: RoundResult[]; dim: PanelDim;
+  scoring: ScoringContext;
 }) {
   // 1ゲーム制で roundResults が2件以上になることはない (リピート/リセットのたびに
   // RoundController.resetForNewGame() で消え、2ゲーム制への切り替えは setup 中のみ)
   const rr       = roundResults.find(r => r.round === 0);
   const finished = rr !== undefined;
+  const isKoryu = scoring.ruleSet === 'koryu';
 
   const items = rr ? rr.scores[side] : (snapshot?.teamScore[side] ?? 0);
-  // ゲーム中は確定していない一撃/総取りを除いた アイテム×10 をライブ表示し、
-  // 決着後にボーナス込みの確定値へ切り替える
-  const totalPoints = rr ? roundPointsFor(rr, side) : items * ITEM_POINT;
+  // ゲーム中は確定していない一撃/総取り (舞鶴大会) や反則調整 (交流大会) を除いた素の値を
+  // ライブ表示し、決着後に確定値へ切り替える
+  const totalPoints = rr
+    ? (isKoryu ? koryuRoundScore(rr, side, scoring) : roundPointsFor(rr, side))
+    : (isKoryu ? koryuLiveRoundScore(items, scoring) : items * ITEM_POINT);
 
   const base  = side === 0 ? COOL_COLOR : HOT_COLOR;
   const dark  = side === 0 ? COOL_DARK  : HOT_DARK;
@@ -139,36 +153,44 @@ function SingleModeContent({ side, snapshot, roundResults, dim }: {
           <span style={{ ...s.teamLabel, fontSize: dim.labelFont }}>{label}</span>
         </div>
 
-        {/* 得点の明細。一撃/総取りが確定するのは決着後のみだが、ゲーム中も同じ3行を描いて
-            高さを確保し、終了の瞬間に行が増えて下の合計ポイントがずれないようにする
-            (2ゲーム制の RoundLedger と同じ方針)。未確定は「—」で示す。 */}
+        {/* 得点の明細。舞鶴大会ルールは一撃/総取りが決着後に確定するので、ゲーム中も同じ3行を
+            描いて高さを確保し、終了の瞬間に行が増えて下の合計ポイントがずれないようにする
+            (2ゲーム制の RoundLedger と同じ方針)。未確定は「—」で示す。
+            交流大会ルールは一撃/総取りの仕組みが無いので、アイテム数の行だけ出す。 */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: dim.rowGap }}>
           <LedgerRow
-            label="アイテム" value={`${items * ITEM_POINT}pt`} color={base}
+            label={isKoryu ? 'アイテム数' : 'アイテム'}
+            value={isKoryu ? `${items}個` : `${items * ITEM_POINT}pt`} color={base}
             labelFont={dim.ledgerLabelFont} valueFont={dim.ledgerValueFont} gap={dim.rowGap}
           />
-          <LedgerRow
-            label="一撃"
-            value={finished ? bonusText(rr.strikeBonus[side]) : '—'}
-            color={finished ? bonusColor(rr.strikeBonus[side]) : TEXT_MUTED}
-            labelFont={dim.ledgerLabelFont} valueFont={dim.ledgerValueFont} gap={dim.rowGap}
-          />
-          <LedgerRow
-            label="総取り"
-            value={finished ? bonusText(rr.sweepBonus[side]) : '—'}
-            color={finished ? bonusColor(rr.sweepBonus[side]) : TEXT_MUTED}
-            labelFont={dim.ledgerLabelFont} valueFont={dim.ledgerValueFont} gap={dim.rowGap}
-          />
+          {!isKoryu && (
+            <>
+              <LedgerRow
+                label="一撃"
+                value={finished ? bonusText(rr.strikeBonus[side]) : '—'}
+                color={finished ? bonusColor(rr.strikeBonus[side]) : TEXT_MUTED}
+                labelFont={dim.ledgerLabelFont} valueFont={dim.ledgerValueFont} gap={dim.rowGap}
+              />
+              <LedgerRow
+                label="総取り"
+                value={finished ? bonusText(rr.sweepBonus[side]) : '—'}
+                color={finished ? bonusColor(rr.sweepBonus[side]) : TEXT_MUTED}
+                labelFont={dim.ledgerLabelFont} valueFont={dim.ledgerValueFont} gap={dim.rowGap}
+              />
+            </>
+          )}
         </div>
       </div>
 
-      {/* ── 合計ポイント (このパネルの主役) ── */}
+      {/* ── 合計 (このパネルの主役) ── */}
       <div style={{ ...s.totalSection, padding: `${dim.totalPadV}px ${dim.totalPadH}px` }}>
         <div style={{
           ...s.totalHeader,
           fontSize: dim.soloTotalLabelFont, marginBottom: dim.totalHeaderMarginB, paddingTop: dim.totalHeaderPadT,
-        }}>合計ポイント</div>
-        <div style={{ ...s.soloTotalValue, fontSize: dim.soloTotalValueFont }}>{totalPoints}pt</div>
+        }}>{isKoryu ? '合計得点' : '合計ポイント'}</div>
+        <div style={{ ...s.soloTotalValue, fontSize: dim.soloTotalValueFont }}>
+          {isKoryu ? totalPoints : `${totalPoints}pt`}
+        </div>
       </div>
     </>
   );
@@ -177,21 +199,24 @@ function SingleModeContent({ side, snapshot, roundResults, dim }: {
 // ── DoubleModeContent (2ゲーム制ON: ゲームごとに明細を分け、自分側だけの成績を出す) ──────
 
 
-function DoubleModeContent({ side, snapshot, serverStatus, roundResults, dim }: {
+function DoubleModeContent({ side, snapshot, serverStatus, roundResults, dim, scoring }: {
   side: 0 | 1; snapshot: GameStateSnapshot | null;
   serverStatus: ServerStatusPayload | null; roundResults: RoundResult[]; dim: PanelDim;
+  scoring: ScoringContext;
 }) {
+  const isKoryu = scoring.ruleSet === 'koryu';
   const rows: [RoundRowData, RoundRowData] = [
-    computeRoundRow(side, 0, roundResults, serverStatus, snapshot),
-    computeRoundRow(side, 1, roundResults, serverStatus, snapshot),
+    computeRoundRow(side, 0, roundResults, serverStatus, snapshot, scoring),
+    computeRoundRow(side, 1, roundResults, serverStatus, snapshot, scoring),
   ];
-  // 進行中ゲームの分 (アイテム×10) も含めてライブ更新したいので、確定分だけを扱う
-  // computeSetResult の totals ではなく行データから合算する。2ゲームとも確定した時点では
-  // totals と一致するため、下の勝者判定と食い違うことはない。
+  // 進行中ゲームの分も含めてライブ更新したいので、確定分だけを扱う computeSetResult の
+  // totals ではなく行データから合算する。2ゲームとも確定した時点では totals と一致するため、
+  // 下の勝者判定と食い違うことはない。
   const sideTotalPoints = rows[0].subtotal + rows[1].subtotal;
 
-  // 競技ルール: 勝利数が多い方が勝者、同数なら合計ポイント。勝利数は確定したゲームだけを数える。
-  const setResult = computeSetResult(roundResults);
+  // 競技ルール: 勝利数が多い方が勝者、同数なら合計 (舞鶴大会=合計ポイント / 交流大会=獲得アイテム数合計)。
+  // 勝利数は確定したゲームだけを数える。
+  const setResult = setResultFor(roundResults, scoring);
   const wins   = setResult.wins[side];
   const draws  = setResult.draws;
   const losses = roundResults.length - wins - draws;
@@ -205,8 +230,8 @@ function DoubleModeContent({ side, snapshot, serverStatus, roundResults, dim }: 
 
   return (
     <>
-      <RoundLedger row={rows[0]} dim={dim} />
-      <RoundLedger row={rows[1]} dim={dim} />
+      <RoundLedger row={rows[0]} dim={dim} isKoryu={isKoryu} />
+      <RoundLedger row={rows[1]} dim={dim} isKoryu={isKoryu} />
 
       {/* ── 総合 (この画面側=このプログラム自身の2ゲームの成績) ── */}
       <div style={{
@@ -230,14 +255,14 @@ function DoubleModeContent({ side, snapshot, serverStatus, roundResults, dim }: 
           <span style={{ ...s.winsValue, fontSize: dim.winsFont }}>{winsText}</span>
         </div>
 
-        {/* 合計ポイント = 勝利数が並んだときの第2基準 */}
+        {/* 合計 = 勝利数が並んだときの第2基準 (舞鶴大会=合計ポイント / 交流大会=獲得アイテム数合計) */}
         <div style={{
           ...s.totalPointsBox,
           padding: `${dim.winsPadV}px ${dim.rowGap}px`,
           ...(wonByPoints ? { background: WIN_LIGHT, boxShadow: `inset 0 0 0 2px ${WIN_BASE}` } : null),
         }}>
           <LedgerRow
-            label="合計" value={`${sideTotalPoints}pt`} color={WIN_BASE}
+            label="合計" value={isKoryu ? `${sideTotalPoints}` : `${sideTotalPoints}pt`} color={WIN_BASE}
             labelFont={dim.subLabelFont} valueFont={dim.subValueFont} gap={dim.rowGap}
           />
         </div>
@@ -246,7 +271,7 @@ function DoubleModeContent({ side, snapshot, serverStatus, roundResults, dim }: 
   );
 }
 
-function RoundLedger({ row, dim }: { row: RoundRowData; dim: PanelDim }) {
+function RoundLedger({ row, dim, isKoryu }: { row: RoundRowData; dim: PanelDim; isKoryu: boolean }) {
   const base = row.idx === 0 ? COOL_COLOR : HOT_COLOR;
   const dark = row.idx === 0 ? COOL_DARK  : HOT_DARK;
   const pale = row.idx === 0 ? COOL_PALE  : HOT_PALE;
@@ -284,30 +309,40 @@ function RoundLedger({ row, dim }: { row: RoundRowData; dim: PanelDim }) {
           pending 時は中身を空にし、「未対戦」バッジを中央に重ねて表示する。 */}
       <div style={{ position: 'relative' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: dim.rowGap }}>
-          {/* アイテムは個数ではなくポイント (獲得数×10) で出す。下の一撃/総取りと単位がそろい、
-              アイテム + 一撃 + 総取り = 小計 と足し算で読める。獲得数そのものは上部スコアバーが
-              大きく表示している。 */}
+          {/* 舞鶴大会ルール: アイテムは個数ではなくポイント (獲得数×10) で出す。下の一撃/総取りと
+              単位がそろい、アイテム + 一撃 + 総取り = 小計 と足し算で読める。
+              交流大会ルールは一撃/総取りの仕組みが無いので、アイテム数の行だけ出す
+              (獲得数はアイテム数×3±残りターン数、または反則調整後の獲得アイテム数)。
+              獲得数そのものは上部スコアバーが大きく表示している。 */}
           <LedgerRow
-            label={blank ? '' : 'アイテム'} value={blank ? '' : `${row.items * ITEM_POINT}pt`} color={base}
+            label={blank ? '' : (isKoryu ? 'アイテム数' : 'アイテム')}
+            value={blank ? '' : (isKoryu ? `${row.items}個` : `${row.items * ITEM_POINT}pt`)}
+            color={base}
             labelFont={dim.ledgerLabelFont} valueFont={dim.ledgerValueFont} gap={dim.rowGap}
           />
-          <LedgerRow
-            label={blank ? '' : '一撃'}
-            value={finished ? bonusText(row.strikeBonus) : bonusPlaceholder}
-            color={finished ? bonusColor(row.strikeBonus) : TEXT_MUTED}
-            labelFont={dim.ledgerLabelFont} valueFont={dim.ledgerValueFont} gap={dim.rowGap}
-          />
-          <LedgerRow
-            label={blank ? '' : '総取り'}
-            value={finished ? bonusText(row.sweepBonus) : bonusPlaceholder}
-            color={finished ? bonusColor(row.sweepBonus) : TEXT_MUTED}
-            labelFont={dim.ledgerLabelFont} valueFont={dim.ledgerValueFont} gap={dim.rowGap}
-          />
+          {!isKoryu && (
+            <>
+              <LedgerRow
+                label={blank ? '' : '一撃'}
+                value={finished ? bonusText(row.strikeBonus) : bonusPlaceholder}
+                color={finished ? bonusColor(row.strikeBonus) : TEXT_MUTED}
+                labelFont={dim.ledgerLabelFont} valueFont={dim.ledgerValueFont} gap={dim.rowGap}
+              />
+              <LedgerRow
+                label={blank ? '' : '総取り'}
+                value={finished ? bonusText(row.sweepBonus) : bonusPlaceholder}
+                color={finished ? bonusColor(row.sweepBonus) : TEXT_MUTED}
+                labelFont={dim.ledgerLabelFont} valueFont={dim.ledgerValueFont} gap={dim.rowGap}
+              />
+            </>
+          )}
 
           <div style={{ ...s.ledgerDivider, margin: `${dim.dividerMargin}px 0` }} />
 
           <LedgerRow
-            label={blank ? '' : '小計'} value={blank ? '' : `${row.subtotal}pt`} color={base}
+            label={blank ? '' : (isKoryu ? '獲得数' : '小計')}
+            value={blank ? '' : (isKoryu ? `${row.subtotal}` : `${row.subtotal}pt`)}
+            color={base}
             labelFont={dim.subLabelFont} valueFont={dim.subValueFont} gap={dim.rowGap}
           />
         </div>

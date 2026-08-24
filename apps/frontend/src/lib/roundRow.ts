@@ -1,5 +1,8 @@
 import type { GameStateSnapshot, RoundResult, ServerStatusPayload } from '@u15/ws-types';
 import { idxForSide, ITEM_POINT, roundPointsFor, roundWonBy, Winner } from '@u15/ws-types';
+import {
+  koryuLiveRoundScore, koryuRoundScore, MAIZURU_SCORING, type ScoringContext,
+} from './koryuDisplay';
 
 // 2ゲーム制のサイドパネルに出す1ゲーム分の明細。純粋な組み立てなのでここでテストできる。
 
@@ -34,10 +37,12 @@ export function computeRoundRow(
   roundResults: RoundResult[],
   serverStatus: ServerStatusPayload | null,
   snapshot: GameStateSnapshot | null,
+  ctx: ScoringContext = MAIZURU_SCORING,
 ): RoundRowData {
   const idx   = idxForSide(side, round);
   const label = idx === 0 ? 'COOL' : 'HOT';
   const rr    = roundResults.find(r => r.round === round);
+  const isKoryu = ctx.ruleSet === 'koryu';
 
   if (rr) {
     const items       = rr.scores[idx];
@@ -47,14 +52,18 @@ export function computeRoundRow(
       round, idx, label, status: 'finished',
       items, strikeBonus, sweepBonus,
       outcome: roundOutcome(rr, side),
-      subtotal: roundPointsFor(rr, side),
+      subtotal: isKoryu ? koryuRoundScore(rr, side, ctx) : roundPointsFor(rr, side),
     };
   }
 
   const isLive = serverStatus?.currentRound === round && serverStatus?.phase === 'playing';
   if (isLive) {
     const items = snapshot?.teamScore[idx] ?? 0;
-    return { round, idx, label, status: 'live', items, strikeBonus: 0, sweepBonus: 0, outcome: null, subtotal: items * ITEM_POINT };
+    // 進行中は決着理由も残りターン数もまだ確定していないので、それらに依存する分は見せられない
+    return {
+      round, idx, label, status: 'live', items, strikeBonus: 0, sweepBonus: 0, outcome: null,
+      subtotal: isKoryu ? koryuLiveRoundScore(items, ctx) : items * ITEM_POINT,
+    };
   }
 
   return { round, idx, label, status: 'pending', items: 0, strikeBonus: 0, sweepBonus: 0, outcome: null, subtotal: 0 };
