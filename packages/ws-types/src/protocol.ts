@@ -174,6 +174,11 @@ export interface ServerStatusPayload {
   mapSource:    MapSourceInfo;
   /** 観戦画面の表示・音声設定。コントロールパネルが決め、全観戦画面 (Electron / ブラウザ) に配信される */
   displayPrefs: DisplayPrefs;
+  /**
+   * マップ管理画面から運営が手動で対戦画面に出しているプレビュー (マップライブラリの id)。
+   * 対戦設定 (mapSource) には影響しない、一時的な表示切り替え専用の状態。永続化しない。
+   */
+  previewMapId: string | null;
 }
 
 /**

@@ -29,6 +29,7 @@ function status(phase: ServerStatusPayload['phase'], state: ClientState = 'ready
     darkMode: false,
     mapSource: { kind: 'random' },
     displayPrefs: DEFAULT_DISPLAY_PREFS,
+    previewMapId: null,
   };
 }
 

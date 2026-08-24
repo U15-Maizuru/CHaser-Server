@@ -32,6 +32,7 @@ function makeStatus(over: Partial<ServerStatusPayload> = {}): ServerStatusPayloa
     currentRound: 1, roundResults: [], darkMode: false,
     mapSource: { kind: 'random' } as ServerStatusPayload['mapSource'],
     displayPrefs: DEFAULT_DISPLAY_PREFS,
+    previewMapId: null,
     ...over,
   };
 }

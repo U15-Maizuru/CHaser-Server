@@ -7,13 +7,17 @@ import { deleteMap, fetchMaps } from '../lib/api';
 import { confirmDialog } from '../lib/nativeDialog';
 
 interface Props {
-  httpBase: string;
-  onClose:  () => void;
+  httpBase:      string;
+  onClose:       () => void;
+  /** 今対戦画面にプレビュー表示中のマップ (手動プレビュー)。無ければ null */
+  previewMapId:  string | null;
+  onPreviewMap:  (mapId: string | null) => void;
 }
 
 // マップライブラリの整理 (追加・ダウンロード・削除) だけを扱う。
 // 「対戦でどのマップを使うか」の選択はセットアップ画面の MapSourceSection に一本化する。
-export function MapLibraryDialog({ httpBase, onClose }: Props) {
+// 「プレビュー表示」は対戦設定とは別の、対戦画面への一時的な表示切り替え (手動プレビュー)。
+export function MapLibraryDialog({ httpBase, onClose, previewMapId, onPreviewMap }: Props) {
   const [entries, setEntries] = useState<MapCatalogEntry[]>([]);
 
   const fetchEntries = () => { void fetchMaps(httpBase).then(setEntries); };
@@ -54,6 +58,12 @@ export function MapLibraryDialog({ httpBase, onClose }: Props) {
             }
           >
             <a style={download} href={`${httpBase}/api/maps/${entry.id}/download`}>DL</a>
+            <Button
+              size="sm" noShrink
+              onClick={() => onPreviewMap(entry.id === previewMapId ? null : entry.id)}
+            >
+              {entry.id === previewMapId ? 'プレビュー解除' : 'プレビュー表示'}
+            </Button>
             <Button size="sm" noShrink onClick={() => handleDelete(entry)}>削除</Button>
           </LibraryRow>
         )}

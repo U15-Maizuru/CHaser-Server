@@ -49,6 +49,9 @@ export class GameMessageDispatch {
       case 'load_map_data':
         manager.loadMapData(msg.payload);
         break;
+      case 'preview_map':
+        manager.setMapPreview(msg.payload.mapId);
+        break;
       case 'set_double_mode':
         manager.setDoubleMode(msg.payload.enabled);
         break;

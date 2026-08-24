@@ -31,6 +31,7 @@ function status(over: Partial<ServerStatusPayload> = {}): ServerStatusPayload {
     darkMode:     false,
     mapSource:    { kind: 'random' },
     displayPrefs: DEFAULT_DISPLAY_PREFS,
+    previewMapId: null,
     ...over,
   };
 }

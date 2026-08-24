@@ -26,6 +26,8 @@ export type FrontendMessage =
   | { type: 'load_map';          payload: { catalogId: string } }
   | { type: 'set_map_params';    payload: MapParams }
   | { type: 'load_map_data';     payload: InlineMapData }
+  /** マップ管理画面からの手動プレビュー。対戦設定 (load_map) には影響しない。null で解除 */
+  | { type: 'preview_map';       payload: { mapId: string | null } }
   | { type: 'set_double_mode';   payload: { enabled: boolean } }
   | { type: 'set_repeat_mode';   payload: { enabled: boolean } }
   | { type: 'set_demo_mode';     payload: { enabled: boolean } }

@@ -7,7 +7,7 @@ import { DEFAULT_MAP_PARAMS } from '@u15/ws-types';
 import {
   badRequest, handleUpload, json, sanitizeFilename, sendFileDownload, withJsonBody,
 } from '../network/httpUtil.js';
-import { createRandomMap, exportMap } from '../game/GameSystem.js';
+import { createRandomMap, exportMap, importMap } from '../game/GameSystem.js';
 import { toGameMap, toInlineData } from '../game/inlineMap.js';
 import {
   addMapCatalogEntry,
@@ -113,13 +113,24 @@ export function handleMapRequest(
     return true;
   }
 
+  // GET /api/maps/:id → ライブラリ内のマップ1件を room に紐付けずそのまま返す (standby プレビュー・手動プレビュー用)
   // DELETE /api/maps/:id → マップライブラリからの削除
   const idMatch = url.pathname.match(/^\/api\/maps\/([^/]+)$/);
-  if (req.method === 'DELETE' && idMatch) {
-    deleteMapCatalogEntry(idMatch[1]!);
-    res.writeHead(204);
-    res.end();
-    return true;
+  if (idMatch) {
+    if (req.method === 'GET') {
+      const entry = getMapCatalogEntry(idMatch[1]!);
+      if (!entry) { json(res, 404, { error: 'マップが見つかりません' }); return true; }
+      const map = importMap(entry.mapPath);
+      if (!map) { json(res, 404, { error: 'マップを読み込めませんでした' }); return true; }
+      json(res, 200, { data: toInlineData(map), displayName: entry.displayName });
+      return true;
+    }
+    if (req.method === 'DELETE') {
+      deleteMapCatalogEntry(idMatch[1]!);
+      res.writeHead(204);
+      res.end();
+      return true;
+    }
   }
 
   return false;

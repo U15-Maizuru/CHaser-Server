@@ -229,6 +229,8 @@ function ControlApp({ roomId }: { roomId: string }) {
         <MapLibraryDialog
           httpBase={HTTP_BASE}
           onClose={() => setShowMapLibrary(false)}
+          previewMapId={state.serverStatus?.previewMapId ?? null}
+          onPreviewMap={state.previewMap}
         />
       )}
 
@@ -340,6 +342,7 @@ const defaultStatus = {
   darkMode:     false,
   mapSource:    { kind: 'random' as const },
   displayPrefs: DEFAULT_DISPLAY_PREFS,
+  previewMapId: null,
 };
 
 /** EditableMap / InlineMapData の相互変換 (余分なフィールドを落として送る) */

@@ -96,6 +96,13 @@ export async function fetchCurrentMap(
   return body?.data ?? null;
 }
 
+/** ライブラリ内のマップ1件を room に紐付けず取得 (standby プレビュー・手動プレビュー用) */
+export async function fetchMapCatalogData(
+  httpBase: string, id: string,
+): Promise<{ data: InlineMapData; displayName: string } | null> {
+  return getJson<{ data: InlineMapData; displayName: string }>(`${httpBase}/api/maps/${id}`);
+}
+
 /** どのルームにも影響しないランダム生成 (マップエディタのプレビュー用) */
 export async function generateRandomMap(
   httpBase: string, params: Partial<MapParams>,

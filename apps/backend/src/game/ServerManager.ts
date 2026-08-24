@@ -49,6 +49,8 @@ export class ServerManager extends EventEmitter {
   private readonly demoDelaysMs: DemoDelaysMs;
   private darkMode = false;
   private displayPrefs: DisplayPrefs = { ...DEFAULT_DISPLAY_PREFS };
+  // マップ管理画面からの手動プレビュー (対戦画面の一時的な表示切り替え)。永続化しない
+  private previewMapId: string | null = null;
   private demoTimer: ReturnType<typeof setTimeout> | null = null;
   private logDir = DEFAULT_LOG_DIR;
   private roomId = 'local';
@@ -239,6 +241,16 @@ export class ServerManager extends EventEmitter {
     this.emitStatus();
   }
 
+  /**
+   * マップ管理画面からの手動プレビュー。対戦設定 (loadMap) は一切変更せず、対戦画面の
+   * 表示だけを一時的に切り替える。null で解除。requestStart() で対戦を始めた瞬間に
+   * 自動で解除する (付けっぱなしのまま対戦画面が古い表示を出し続けないため)。
+   */
+  setMapPreview(mapId: string | null): void {
+    this.previewMapId = mapId;
+    this.emitStatus();
+  }
+
   getCurrentMapData(): InlineMapData {
     return this.mapManager.getCurrentMapData();
   }
@@ -250,6 +262,7 @@ export class ServerManager extends EventEmitter {
     const token = ++this.gameToken;
 
     this.round.phase = 'playing';
+    this.previewMapId = null;
     this.emitStatus();
 
     const clients     = this.slots.buildClients();
@@ -371,6 +384,7 @@ export class ServerManager extends EventEmitter {
       darkMode:     this.darkMode,
       mapSource:    this.mapManager.sourceInfo,
       displayPrefs: this.displayPrefs,
+      previewMapId: this.previewMapId,
     };
   }
 

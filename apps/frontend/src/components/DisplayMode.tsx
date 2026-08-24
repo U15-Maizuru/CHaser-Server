@@ -2,7 +2,7 @@ import { useMemo, useRef } from 'react';
 import type {
   DisplayPrefs, InlineMapData, ServerPhase, ServerStatusPayload, TournamentStatePayload,
 } from '@u15/ws-types';
-import { DEFAULT_DISPLAY_PREFS, hasQualifying, idxForSide, MapObject, roundPointsFor, SCENE_FADE_MS } from '@u15/ws-types';
+import { DEFAULT_DISPLAY_PREFS, hasQualifying, idxForSide, roundPointsFor, SCENE_FADE_MS } from '@u15/ws-types';
 import { useGameState } from '../hooks/useGameState';
 import { useMuteOverride } from '../hooks/useMuteOverride';
 import { useGamePhaseSound } from '../hooks/useGamePhaseSound';
@@ -10,10 +10,10 @@ import { useStartCountdown } from '../hooks/useStartCountdown';
 import { useBgm } from '../hooks/useBgm';
 import { useSceneTransition } from '../hooks/useSceneTransition';
 import { useCurrentMap } from '../hooks/useCurrentMap';
-import { useTextures } from '../hooks/useTextures';
+import { useMapCatalogPreview } from '../hooks/useMapCatalogPreview';
 import { MainWindow } from './MainWindow';
 import { FitArea } from './FitArea';
-import { MapThumbnail } from './MapThumbnail';
+import { MapPreview } from './MapPreview';
 import { sourceLabel } from './MapSourceSection';
 import { BracketView } from './tournament/board/BracketView';
 import { QualifyingView, displayQualifyingPhase } from './tournament/board/QualifyingView';
@@ -48,13 +48,26 @@ import {
 // 予選ありの大会では「予選表 / 決勝表 のどちらを出すか」を運営パネルが決める
 // (運営席の表示とは連動しない)。全工程が終わったうえで決勝側を見ていれば表彰画面。
 
-type DisplayScene = 'award' | 'standby' | 'waiting' | 'playing' | 'result';
+type DisplayScene = 'award' | 'standby' | 'waiting' | 'playing' | 'result' | 'preview';
 
 function displayScene(
+  phase:         ServerPhase,
+  tournament:    TournamentStatePayload | null | undefined,
+  groupPhase:    QualifyingPhase,
+  previewMapId:  string | null,
+): DisplayScene {
+  const base = baseDisplayScene(phase, tournament, groupPhase);
+  // 運営がマップ管理画面から手動プレビューを出している間は、対戦の空き時間 (waiting/standby)
+  // をそのプレビューで置き換える。対戦中・結果表示・表彰中は割り込まない
+  if (previewMapId && (base === 'waiting' || base === 'standby')) return 'preview';
+  return base;
+}
+
+function baseDisplayScene(
   phase:      ServerPhase,
   tournament: TournamentStatePayload | null | undefined,
   groupPhase: QualifyingPhase,
-): DisplayScene {
+): Exclude<DisplayScene, 'preview'> {
   if (tournament && phase !== 'playing') {
     if (groupPhase === 'bracket' && isTournamentComplete(tournament)) return 'award';
     if (!tournament.armedMatchId)                                     return 'standby';
@@ -74,11 +87,12 @@ const BGM_OF_SCENE: Record<DisplayScene, (p: DisplayPrefs, round: 0 | 1) => stri
   waiting: p => p.bgmTrackWait,
   playing: (p, round) => round === 1 ? p.bgmTrack1 : p.bgmTrack0,
   result:  p => p.bgmTrackResult,
+  preview: p => p.bgmTrackWait,
 };
 
 // 画面の暗転はこの単位で判定する。playing と result は同じ MainWindow をそのまま出し続ける
 // (盤面の上に結果を重ねるだけ) ので、両者の間に切り替えは無く暗転もしない。
-type VisualGroup = 'award' | 'standby' | 'waiting' | 'match';
+type VisualGroup = 'award' | 'standby' | 'waiting' | 'match' | 'preview';
 
 function visualGroupOf(scene: DisplayScene): VisualGroup {
   return scene === 'playing' || scene === 'result' ? 'match' : scene;
@@ -101,11 +115,16 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
   // 大会中でなければ結果は使われない
   const groupView = displayQualifyingPhase(tournamentState);
 
+  // 運営がマップ管理画面から手動プレビューを出しているか (ServerManager 側で対戦開始時に
+  // 自動で null に戻る、永続化しない一時状態)
+  const previewMapId = serverStatus?.previewMapId ?? null;
+
+
   // いま観客に出すべき画面。BGM の曲選び (BGM_OF_SCENE) と awarding 判定は、鳴らす音を
   // 即座に切り替えるためこの値をそのまま見る。描画だけは下の displayedGroup (暗転を挟んで
   // 遅れて切り替わる方) を見る — 条件を増やすと画面と音の食い違いが起きるので、
   // 「画面用に何を出すか」と「音用に何を鳴らすか」は常にこの scene 一つから決める
-  const scene = displayScene(phase, tournamentState, groupView.phase);
+  const scene = displayScene(phase, tournamentState, groupView.phase, previewMapId);
 
   // 画面の切り替え自体は即座にせず、BGM のクロスフェードと同じ長さの暗転を挟む
   // (useSceneTransition のコメント参照)。以下の出し分けは displayedGroup だけを見る
@@ -144,6 +163,8 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
   );
   // 待機中にこれから戦うマップを見せる (対戦中は盤面そのものが出るので使わない)
   const { currentMap } = useCurrentMap(httpBase, roomId, isConnected, serverStatus);
+  // 手動プレビュー中のマップ本体 (ライブラリの1件、room には触れない)
+  const manualPreview = useMapCatalogPreview(httpBase, previewMapId);
 
   if (!isConnected) {
     return (
@@ -169,6 +190,14 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
         holdingGroupResult={groupView.holdingResult}
       />
     );
+  } else if (displayedGroup === 'preview') {
+    content = manualPreview ? (
+      <div style={sw.previewRoot}>
+        <FitArea maxScale={3}>
+          <MapPreview map={manualPreview.data} theme={prefs.theme} flip={false} label={manualPreview.displayName} />
+        </FitArea>
+      </div>
+    ) : null;
   } else if (displayedGroup === 'waiting') {
     content = (
       <SetupWaiting
@@ -384,31 +413,6 @@ function SetupWaiting({ serverStatus, displayTitle, tournament, groupPhase, curr
   );
 }
 
-/** これから戦うマップ。第2ゲーム前は対戦画面と同じ向き (反転) で見せる */
-function MapPreview({ map, theme, flip, label }: {
-  map: InlineMapData; theme: string; flip: boolean; label: string;
-}) {
-  const tex = useTextures(theme);
-  // 15×17 のマップでプレイヤーカードと釣り合う大きさ
-  const cellSize = Math.max(4, Math.min(12, Math.floor(200 / Math.max(map.size.x, map.size.y))));
-  const itemCount = map.field.flat().filter(c => c === MapObject.ITEM).length;
-  return (
-    <div style={mp.card}>
-      <div style={mp.name}>{label}</div>
-      <MapThumbnail
-        field={map.field as MapObject[][]}
-        size={map.size}
-        teamFirstPoint={map.teamFirstPoint}
-        textures={tex}
-        cellSize={cellSize}
-        flip={flip}
-      />
-      <div style={mp.meta}>ターン {map.turn} ・ アイテム {itemCount}</div>
-      {flip && <div style={mp.flip}>盤面反転</div>}
-    </div>
-  );
-}
-
 function TeamCard({ idx, name, state }: { idx: 0 | 1; name: string; state: string }) {
   const { label, color, dark, pale } = TEAM_PALETTE[idx];
   const badge = stateBadgeStyle(state);
@@ -442,6 +446,11 @@ const sw: Record<string, React.CSSProperties> = {
     alignItems: 'stretch', justifyContent: 'center',
     background: BG_ROOT, fontFamily: FONT_UI, gap: 16, padding: '20px 16px',
     boxSizing: 'border-box', overflow: 'hidden',
+  },
+  // 手動プレビュー中。タイトルやチームカードは出さず、マップだけを画面いっぱいに表示する
+  previewRoot: {
+    height: '100vh', boxSizing: 'border-box', padding: '20px 16px',
+    background: BG_ROOT,
   },
   // 対戦カード + マップ。大会運営中は画面を勝ち上がり表と分け合う
   meeting: {
@@ -480,24 +489,6 @@ const sw: Record<string, React.CSSProperties> = {
   },
   recapScore: { fontSize: 34, fontWeight: 800, color: TEXT_PRIMARY, fontFamily: FONT_NUM },
   recapDash:  { fontSize: 22, color: TEXT_MUTED },
-};
-
-// これから戦うマップ (待機画面の中央)
-const mp: Record<string, React.CSSProperties> = {
-  card: {
-    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-    padding: '14px 18px', background: BG_CARD,
-    borderRadius: RADIUS_MD, boxShadow: SHADOW_SM,
-  },
-  name: {
-    fontSize: 14, fontWeight: 700, color: TEXT_PRIMARY,
-    maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-  },
-  meta: { fontSize: 11, color: TEXT_SECONDARY, fontFamily: FONT_NUM },
-  flip: {
-    fontSize: 11, fontWeight: 700, color: TURN_BASE, background: TURN_LIGHT,
-    borderRadius: 99, padding: '3px 10px',
-  },
 };
 
 const tc: Record<string, React.CSSProperties> = {

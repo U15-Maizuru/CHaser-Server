@@ -81,6 +81,7 @@ export interface GameStateHook {
   loadMap:          (catalogId: string) => void;
   setMapParams:     (params: MapParams) => void;
   loadMapData:      (data: InlineMapData) => void;
+  previewMap:       (mapId: string | null) => void;
   tournament:       TournamentCommands;
 }
 
@@ -205,6 +206,7 @@ export function useGameState(wsUrl: string, roomId: string): GameStateHook {
     loadMap:          (catalogId)                  => send({ type: 'load_map',          payload: { catalogId } }),
     setMapParams:     (params)                     => send({ type: 'set_map_params',    payload: params }),
     loadMapData:      (data)                       => send({ type: 'load_map_data',     payload: data }),
+    previewMap:       (mapId)                      => send({ type: 'preview_map',       payload: { mapId } }),
     tournament: {
       bind:     (tournamentId)        => send({ type: 'tournament_bind',           payload: { tournamentId } }),
       unbind:   ()                    => send({ type: 'tournament_unbind' }),
