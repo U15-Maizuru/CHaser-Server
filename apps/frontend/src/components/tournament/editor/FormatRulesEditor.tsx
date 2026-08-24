@@ -1,4 +1,4 @@
-import type { CatalogEntry, MapCatalogEntry } from '@u15/ws-types';
+import type { CatalogEntry, MapCatalogEntry, RuleSet } from '@u15/ws-types';
 import { hasQualifying, stageLabel } from '@u15/ws-types';
 import {
   Button, Checkbox, ChipRow, Field, Hint, NumberInput, Section, Select, TextInput,
@@ -23,6 +23,30 @@ export function FormatRulesEditor({ draft, programs, maps, patch }: FormatRulesE
 
   return (
     <Section title="ルール">
+      <Field label="ルールセット">
+        <ChipRow>
+          {([['maizuru', '標準 (舞鶴大会)'], ['koryu', '交流大会']] as [RuleSet, string][]).map(
+            ([rs, text]) => (
+              <Button
+                key={rs} variant="choice" size="sm"
+                selected={draft.ruleSet === rs}
+                onClick={() => patch({ ruleSet: rs })}
+              >
+                {text}
+              </Button>
+            ))}
+        </ChipRow>
+      </Field>
+      <Hint>
+        {draft.ruleSet === 'koryu'
+          ? '交流大会ルール: 予選(BOT対戦)はアイテム数×3±残りターン数で得点し、決勝トーナメントの'
+            + '引き分けは2ゲームの獲得アイテム数合計で決着します。反則負け'
+            + '(相手に上へブロックを置かれる/囲まれる)は獲得アイテム数0、'
+            + '(自らブロックへ移動/自分を囲む/通信エラー)は0−残りターン数として扱い、'
+            + '一撃・総取りボーナスは使いません。'
+          : '標準ルール (舞鶴大会): アイテム数×10に一撃・総取りボーナスを加えた合計ポイントで得点します。'}
+      </Hint>
+
       {hasQualifying(format) ? (
         <>
           <label style={s.check}>
@@ -136,9 +160,12 @@ export function FormatRulesEditor({ draft, programs, maps, patch }: FormatRulesE
         <>
           <div style={s.subTitle}>BOT対戦予選</div>
           <Hint>
-            全参加者が<strong>同じ BOT・同じマップ</strong>と1試合ずつ戦い、獲得ポイントで
-            順位を決めます（同点は 一撃ボーナス → アイテムポイント の順で比べ、
-            それでも並んだら運営が決めます）。
+            {draft.ruleSet === 'koryu'
+              ? '全参加者が同じ BOT・同じマップと1試合ずつ戦い、'
+                + 'アイテム数×3±残りターン数の得点で順位を決めます（同点は運営が決めます）。'
+              : '全参加者が同じ BOT・同じマップと1試合ずつ戦い、獲得ポイントで'
+                + '順位を決めます（同点は 一撃ボーナス → アイテムポイント の順で比べ、'
+                + 'それでも並んだら運営が決めます）。'}
           </Hint>
 
           <Field label="BOTのプログラム">

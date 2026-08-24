@@ -27,7 +27,7 @@ const match = (over: Partial<TournamentMatch> = {}): TournamentMatch => ({
 
 function state(over: Partial<TournamentStatePayload> = {}): TournamentStatePayload {
   const base: TournamentStatePayload = {
-    tournamentId: 'cup', name: 'テスト杯',
+    tournamentId: 'cup', name: 'テスト杯', ruleSet: 'maizuru',
     match: { doubleMode: false },
     stage: stageRulesFor('single-elimination'),
     participants: [participant('p1'), participant('p2')],

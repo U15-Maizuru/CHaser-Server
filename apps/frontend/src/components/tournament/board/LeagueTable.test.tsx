@@ -27,7 +27,8 @@ function match(id: string, a: string, b: string, extra: Partial<TournamentMatch>
 function standing(participantId: string, rank: number): StandingRow {
   return {
     participantId, played: 1, wins: 0, draws: 0, losses: 0,
-    points: 0, totalPoints: 0, itemPoints: 0, strikePoints: 0, sweepPoints: 0, rank, tied: false,
+    points: 0, totalPoints: 0, itemPoints: 0, strikePoints: 0, sweepPoints: 0,
+    items: 0, remainingTurns: 0, rank, tied: false,
   };
 }
 

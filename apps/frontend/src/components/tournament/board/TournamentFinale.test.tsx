@@ -37,7 +37,8 @@ function match(id: string, stage: number, a: string, b: string, winnerSide: 0 | 
 function standing(participantId: string, rank: number): StandingRow {
   return {
     participantId, played: 3, wins: 0, draws: 0, losses: 0,
-    points: 0, totalPoints: 0, itemPoints: 0, strikePoints: 0, sweepPoints: 0, rank, tied: false,
+    points: 0, totalPoints: 0, itemPoints: 0, strikePoints: 0, sweepPoints: 0,
+    items: 0, remainingTurns: 0, rank, tied: false,
   };
 }
 
@@ -47,7 +48,7 @@ function state(
   standings: StandingRow[] | null = null,
 ): TournamentStatePayload {
   return {
-    tournamentId: 'cup', name: 'テスト杯',
+    tournamentId: 'cup', name: 'テスト杯', ruleSet: 'maizuru',
     match: { doubleMode: false },
     stage: stageRulesFor(format),
     participants, matches, standings, groups: null, qualifiers: null, qualifierCandidates: null, stageMaps: [], thirdPlaceMapId: null, stageLabels: [],
