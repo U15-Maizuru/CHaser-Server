@@ -91,11 +91,18 @@ const WEB_PREFS = {
 // ウィンドウとタスクバーのアイコン。dist/main.js から見た相対位置なので、
 // dev (apps/electron/dist) でもパッケージ版 (app.asar 内) でも同じ式で解決できる。
 // electron-builder には package.json の build.win.icon / build.mac.icon で
-// 同じファイルを渡している (mac はアプリバンドルの .icns、dock/タスクバーは OS 側が使う)。
+// 同じファイルを渡しており、パッケージ版の Dock アイコンはそちら (Info.plist の
+// CFBundleIconFile) で決まる。
 const ICON_PATH = path.join(
   __dirname,
   process.platform === 'darwin' ? '../assets/icon.icns' : '../assets/icon.ico',
 );
+
+// dev は Info.plist を持たない生の Electron バイナリで起動するため、Dock アイコンは
+// 自分で app.dock.setIcon() を呼ばないと Electron のデフォルトアイコンのままになる。
+// nativeImage は .icns を読めない (Failed to load image from path で失敗する) ので、
+// パッケージ版と同じ絵を icon.icns から書き出した PNG を別途 assets に置いてある。
+const DOCK_ICON_PATH = path.join(__dirname, '../assets/icon.png');
 
 function loadUrl(win: BrowserWindow, search: string): void {
   if (isDev) {
@@ -246,6 +253,10 @@ function openTournamentWindow(roomId: string): void {
 }
 
 app.whenReady().then(async () => {
+  if (process.platform === 'darwin') {
+    app.dock?.setIcon(DOCK_ICON_PATH);
+  }
+
   ipcMain.handle('dialog:openFile', async () => {
     const result = await dialog.showOpenDialog({
       filters: [{ name: 'Map files', extensions: ['map'] }],
