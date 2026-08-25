@@ -133,10 +133,12 @@ U15-server-maizuru/
 │   │       ├── RoomManager.ts      部屋ライフサイクル管理
 │   │       ├── programCatalog.ts   対戦用プログラムライブラリ (CRUD カタログ、全ルーム共通)
 │   │       ├── programName.ts      プログラムのソースから名乗るプレイヤー名を読み取る
-│   │       ├── mapCatalog.ts       マップライブラリ (CRUD カタログ、全ルーム共通)
+│   │       ├── mapCatalog.ts       マップライブラリ (CRUD カタログ、全ルーム共通)。
+│   │       │                       起動時に assets/map-library/ の既定マップを取り込む
 │   │       ├── libTemplates.ts     既定ライブラリ (pyCHaser 等) を各ルームの libs/ に配置
 │   │       ├── assets/
-│   │       │   └── lib-templates/  配置元テンプレート (ビルド時に dist へコピー)
+│   │       │   ├── lib-templates/  配置元テンプレート (ビルド時に dist へコピー)
+│   │       │   └── map-library/    既定で同梱する過去大会マップ (mapCatalog.ts が取り込む)
 │   │       ├── clients/
 │   │       │   ├── ComClient.ts        内蔵 CPU
 │   │       │   ├── ManualClient.ts     手動操作
