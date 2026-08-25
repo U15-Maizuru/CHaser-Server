@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import type { ResolvedParticipant, TournamentFormat, TournamentMatch } from '@u15/ws-types';
 import { bracketLayout } from '../../../lib/bracketLayout';
 import { FitArea } from '../../FitArea';
-import { CARD_H, CARD_W, MatchCard } from './MatchCard';
+import { CARD_H, CARD_W, matchCardHeight, MatchCard } from './MatchCard';
 import { BORDER_COLOR, FONT_UI, TEXT_SECONDARY } from '../../../ui';
 
 // トーナメント表。接続線だけ SVG、カードは絶対配置の DOM というハイブリッド。
@@ -34,7 +34,7 @@ export function BracketView({
   upcomingId = null, finishedId = null, scale = 1, fit = false, maxScale = 3,
 }: BracketViewProps) {
   const layout = useMemo(
-    () => bracketLayout(matches, { cardW: CARD_W, cardH: CARD_H }),
+    () => bracketLayout(matches, { cardW: CARD_W, cardH: CARD_H, cardHeightOf: matchCardHeight }),
     [matches],
   );
   const byId = useMemo(() => new Map(matches.map(m => [m.id, m])), [matches]);
