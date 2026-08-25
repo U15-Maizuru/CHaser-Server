@@ -52,7 +52,7 @@ function state(
     tournamentId: 'cup', name: 'テスト杯',
     match: { doubleMode: false },
     stage: stageRulesFor(format),
-    participants, matches, standings, groups: null, qualifiers: null, qualifierCandidates: null, stageMaps: [], stageLabels: [],
+    participants, matches, standings, groups: null, qualifiers: null, qualifierCandidates: null, stageMaps: [], thirdPlaceMapId: null, stageLabels: [],
     qualifiersConfirmed: false,
     displayView: 'auto', autoPlay: { enabled: false, loop: false, stoppedReason: null },
     armedMatchId: null, boundRoomId: 'room', updatedAt: 0,

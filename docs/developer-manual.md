@@ -1551,8 +1551,13 @@ argparse の `--name` の `default` の順に見る。Python はパースせず�
 **予選ありのとき index は決勝トーナメント相対** (0 = 決勝Tの1回戦)。予選の節は
 「大会の設定」に従うだけなので画面に出さない (節数の算出を frontend に二重定義しないため —
 運営画面では backend が配る `stageLabels` を使う)。
-3位決定戦は決勝と同じ stage なので決勝と同じマップになる。
-運営中は編集画面が開けないため、差し替えは運営パネル (`tournament_set_stage_map`) から行う。
+3位決定戦は決勝と同じ stage を共有するため、回戦ごとの指定 (`stageMaps`) だけでは
+決勝と書き分けられない。個別に上書きしたいときは `OperatorDecisions.matchMaps`
+(試合ごとのマップ差し替え。対象は3位決定戦のみ、`isConsolationMatch` で判定) を使う。
+解決順は「再試合の指定 → 試合ごとの差し替え (3位決定戦のみ) → 回戦ごとのマップ」
+(`TournamentStore.ts` の `mapForMatch`)。
+運営中は編集画面が開けないため、差し替えは運営パネルから行う
+(回戦ごとの指定は `tournament_set_stage_map`、3位決定戦の個別指定は `tournament_set_match_map`)。
 リーグの節には用意していない (節数の算出を frontend に二重定義することになるため)。
 
 **参加者 id の扱い**: 表示順がそのまま `seed` (選手番号 = 第1ゲームの先攻順) になる。

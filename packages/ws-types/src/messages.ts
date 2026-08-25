@@ -58,6 +58,11 @@ export type FrontendMessage =
   | { type: 'tournament_swap_sides';      payload: { matchId: string } }
   /** 回戦 (stage) ごとのマップ差し替え。null は「大会の設定に従う」 */
   | { type: 'tournament_set_stage_map';   payload: { stage: number; mapCatalogId: string | null } }
+  /**
+   * 試合ごとのマップ差し替え (3位決定戦のみ)。決勝と同じ stage を共有するため、
+   * stage 単位の指定では書き分けられない。null は「決勝と同じマップに戻す」
+   */
+  | { type: 'tournament_set_match_map';   payload: { matchId: string; mapCatalogId: string | null } }
   /** 決勝進出者の手動差し替え。participantId: null は「自動判定に戻す」 */
   | { type: 'tournament_set_qualifier';   payload: { group: number; rank: number; participantId: string | null; cascade?: boolean } }
   /**

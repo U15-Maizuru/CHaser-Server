@@ -1,7 +1,7 @@
 import type {
   MapCatalogEntry, TournamentDisplayView, TournamentStatePayload,
 } from '@u15/ws-types';
-import { groupStageCount, hasBracket, hasQualifying, hasThirdPlaceMatch } from '@u15/ws-types';
+import { groupStageCount, hasBracket, hasQualifying, isConsolationMatch } from '@u15/ws-types';
 import type { TournamentCommands } from '../../../hooks/useGameState';
 import { Button, Callout, ChipRow, Field, Hint, Section, Select } from '../../../ui';
 
@@ -108,6 +108,8 @@ export function SettingsTab({ state, maps, commands }: SettingsTabProps) {
 function StageMapSection({ state, maps, commands }: SettingsTabProps) {
   const botStage = state.stage.format === 'bot-then-bracket';
   const offset   = groupStageCount(state.matches);
+  // id を 'THIRD' と決め打ちしない — bracket.ts の命名に依存せず、敗者戦かどうかで見分ける
+  const thirdPlaceMatchId = state.matches.find(isConsolationMatch)?.id ?? null;
 
   return (
     <Section title="回戦ごとのマップ">
@@ -140,8 +142,18 @@ function StageMapSection({ state, maps, commands }: SettingsTabProps) {
           </Field>
         );
       })}
-      {hasThirdPlaceMatch(state.stage) && (
-        <Hint>3位決定戦は決勝と同じ回戦なので、決勝と同じマップになります。</Hint>
+      {thirdPlaceMatchId && (
+        <Field label="3位決定戦" labelWidth={88}>
+          <Select
+            aria-label="3位決定戦のマップ"
+            value={state.thirdPlaceMapId ?? ''}
+            onChange={e => commands.setMatchMap(thirdPlaceMatchId, e.target.value || null)}
+            style={{ flex: 1, minWidth: 0 }}
+          >
+            <option value="">決勝と同じ</option>
+            {maps.map(m => <option key={m.id} value={m.id}>{m.displayName}</option>)}
+          </Select>
+        </Field>
       )}
     </Section>
   );

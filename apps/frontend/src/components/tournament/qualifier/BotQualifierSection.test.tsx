@@ -40,7 +40,7 @@ function state(
     standings: null, groups: null, qualifiers: null,
     qualifierCandidates: candidates,
     qualifiersConfirmed: confirmed,
-    stageMaps: [], stageLabels: [],
+    stageMaps: [], thirdPlaceMapId: null, stageLabels: [],
     displayView: 'auto',
     autoPlay: { enabled: false, loop: false, stoppedReason: null },
     armedMatchId: null, boundRoomId: 'room', updatedAt: 0,

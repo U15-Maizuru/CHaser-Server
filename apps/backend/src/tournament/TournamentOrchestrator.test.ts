@@ -665,6 +665,52 @@ describe('TournamentOrchestrator', () => {
     });
   });
 
+  describe('setMatchMap (3位決定戦だけのマップ差し替え)', () => {
+    it('差し替えると thirdPlaceMapId が変わり、配信される (決勝の回戦マップとは別に持てる)', () => {
+      writeCup(cupDef({
+        stage: { thirdPlaceMatch: true, map: { catalogId: 'cup-map', bracketStages: [null, 'final-map'] } },
+      }));
+      orch.bind(ROOM, CUP);
+      // 差し替え前は決勝と同じ回戦マップに従う
+      expect(lastState()!.thirdPlaceMapId).toBe('final-map');
+
+      orch.setMatchMap(ROOM, 'THIRD', 'third-map');
+      expect(lastState()!.thirdPlaceMapId).toBe('third-map');
+      // 決勝側 (stageMaps) は変わらない — 両者は別の値を持てる
+      expect(lastState()!.stageMaps).toEqual([null, 'final-map']);
+    });
+
+    it('null に戻すと決勝と同じマップに戻る', () => {
+      writeCup(cupDef({
+        stage: { thirdPlaceMatch: true, map: { bracketStages: [null, 'final-map'] } },
+      }));
+      orch.bind(ROOM, CUP);
+      orch.setMatchMap(ROOM, 'THIRD', 'third-map');
+      orch.setMatchMap(ROOM, 'THIRD', null);
+      expect(lastState()!.thirdPlaceMapId).toBe('final-map');
+    });
+
+    it('決勝・3位決定戦以外の試合には使えない', () => {
+      writeCup(cupDef({ stage: { thirdPlaceMatch: true } }));
+      orch.bind(ROOM, CUP);
+      expect(() => orch.setMatchMap(ROOM, 'SF1', 'x')).toThrow(/個別に指定できません/);
+    });
+
+    it('差し替えは state.json に残り、次の arm で使われる', async () => {
+      writeCup(cupDef({ stage: { thirdPlaceMatch: true } }));
+      orch.bind(ROOM, CUP);
+      orch.setMatchMap(ROOM, 'THIRD', 'third-map');
+      expect(loadTournament(CUP)!.state.decisions.matchMaps).toEqual({ THIRD: 'third-map' });
+
+      orch.setWalkover(ROOM, 'SF1', 0);
+      orch.setWalkover(ROOM, 'SF2', 0);
+      const spy = vi.spyOn(rm.getRoom(ROOM)!.manager, 'loadMap');
+      await orch.armMatch(ROOM, 'THIRD');
+      expect(spy).toHaveBeenLastCalledWith('third-map');
+      vi.restoreAllMocks();
+    });
+  });
+
   describe('永続化', () => {
     it('確定した結果は state.json に残る', () => {
       writeCup(cupDef());

@@ -77,7 +77,7 @@ function state(
     qualifiers: [q(0, 1, 'p1'), q(0, 2, 'p4', true), q(1, 1, 'p2'), q(1, 2, 'p3')],
     qualifierCandidates: [],
     qualifiersConfirmed: opts.confirmed ?? false,
-    stageMaps: [null, null], stageLabels: ['予選 第1節', '決勝'],
+    stageMaps: [null, null], thirdPlaceMapId: null, stageLabels: ['予選 第1節', '決勝'],
     displayView: opts.displayView ?? 'auto',
     autoPlay: { enabled: false, loop: false, stoppedReason: null },
     armedMatchId: null, boundRoomId: 'room', updatedAt: 0,

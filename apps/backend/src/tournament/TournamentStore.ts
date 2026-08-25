@@ -20,8 +20,8 @@ import type {
 } from '@u15/ws-types';
 import {
   BOT_PARTICIPANT_ID, DEFAULT_LEAGUE_POINTS, NO_OPERATOR_DECISIONS,
-  advancePerGroupOf, groupLabel, groupStageCount, hasQualifying, isGroupStageDone, leagueRulesOf,
-  stageLabel,
+  advancePerGroupOf, groupLabel, groupStageCount, hasQualifying, isConsolationMatch,
+  isGroupStageDone, leagueRulesOf, stageLabel,
 } from '@u15/ws-types';
 import { addCatalogEntry, getCatalogEntry, setDemoEnabled } from '../programCatalog.js';
 import { buildBracket } from './bracket.js';
@@ -289,9 +289,30 @@ export function mapForStage(loaded: LoadedTournament, stage: number): string | n
   return resolveStageMaps(loaded)[stage] ?? loaded.def.stage.map.catalogId;
 }
 
-/** その試合で実際に使うマップ。null ならランダム生成のまま */
+/**
+ * その試合で実際に使うマップ。null ならランダム生成のまま。
+ *
+ * 解決順は「再試合の指定 → 試合ごとの差し替え (3位決定戦のみ) → 回戦ごとのマップ」。
+ * 3位決定戦は決勝と同じ stage を共有するので、回戦ごとの指定だけでは両者を書き分けられない。
+ */
 export function mapForMatch(loaded: LoadedTournament, match: TournamentMatch): string | null {
-  return match.rematchMapCatalogId ?? mapForStage(loaded, match.stage);
+  const matchOverride = loaded.state.decisions.matchMaps[match.id];
+  return match.rematchMapCatalogId ?? matchOverride ?? mapForStage(loaded, match.stage);
+}
+
+/**
+ * 3位決定戦の実効マップ (差し替えの指定を除く)。3位決定戦を持たない大会では null。
+ * 設定画面がここだけ別マップを選べるようにするための解決値
+ * (回戦ごとの指定 = 決勝と同じマップ、を上書きしているかどうかは呼び出し側が見ればよい)。
+ *
+ * **`id === 'THIRD'` の決め打ちにしない。** 試合を敗者戦かどうかで見分ける
+ * `isConsolationMatch` が既にある (matchCommands.setMatchMap の検証・frontend の表彰台
+ * 導出でも使っている) ので、そちらに合わせて id の綴りに依存しないようにする。
+ */
+export function mapForThirdPlace(loaded: LoadedTournament): string | null {
+  const third = loaded.state.matches.find(isConsolationMatch);
+  if (!third) return null;
+  return loaded.state.decisions.matchMaps[third.id] ?? mapForStage(loaded, third.stage);
 }
 
 /** 試合グラフの骨組みを1本の文字列にする (結果は含めない) */
@@ -777,6 +798,7 @@ export function buildStatePayload(
     qualifierCandidates: qualifierCandidatesOf(loaded),
     qualifiersConfirmed: qualifiersConfirmedOf(loaded),
     stageMaps:    resolveStageMaps(loaded),
+    thirdPlaceMapId: mapForThirdPlace(loaded),
     stageLabels:  stageLabelsOf(loaded),
     displayView,
     autoPlay,

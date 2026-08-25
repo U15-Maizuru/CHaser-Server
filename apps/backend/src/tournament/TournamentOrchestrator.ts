@@ -11,8 +11,8 @@ import {
   TournamentError, commit, type Binding, type CommandEnv,
 } from './binding.js';
 import {
-  armMatch, cancelArm, confirmResult, discardResult, reopenMatch, setStageMap, setWalkover,
-  swapSides,
+  armMatch, cancelArm, confirmResult, discardResult, reopenMatch, setMatchMap, setStageMap,
+  setWalkover, swapSides,
 } from './matchCommands.js';
 import { confirmQualifiers, setQualifier, setQualifierExclusion } from './qualifierCommands.js';
 import { applyServerStatus } from './statusBridge.js';
@@ -186,6 +186,10 @@ export class TournamentOrchestrator {
 
   setStageMap(roomId: string, stage: number, mapCatalogId: string | null): void {
     setStageMap(this.env, this.require(roomId), stage, mapCatalogId);
+  }
+
+  setMatchMap(roomId: string, matchId: string, mapCatalogId: string | null): void {
+    setMatchMap(this.env, this.require(roomId), matchId, mapCatalogId);
   }
 
   swapSides(roomId: string, matchId: string): void {
