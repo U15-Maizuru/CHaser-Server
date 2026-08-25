@@ -4,7 +4,7 @@ import { json } from '../network/httpUtil.js';
 import { handleTournamentRequest, type TournamentRouteDeps } from '../tournament/httpRoutes.js';
 import type { RoomManager } from '../RoomManager.js';
 import { ensureCatalogDir } from '../programCatalog.js';
-import { ensureMapCatalogDir } from '../mapCatalog.js';
+import { ensureMapCatalogDir, seedDefaultMapLibrary } from '../mapCatalog.js';
 import { MUSIC_DIR, SOUND_DIR } from './paths.js';
 import { handleProgramRequest } from './programs.js';
 import { handleMapRequest } from './maps.js';
@@ -26,6 +26,7 @@ export function ensureDirectories(): void {
   fs.mkdirSync(SOUND_DIR, { recursive: true });
   ensureCatalogDir();
   ensureMapCatalogDir();
+  seedDefaultMapLibrary();
 }
 
 export function handleHttpRequest(
