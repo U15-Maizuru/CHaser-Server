@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { InlineMapData } from '@u15/ws-types';
 import {
@@ -11,7 +12,11 @@ import {
   getMapCatalogEntry,
   listMapCatalogEntries,
   mapCatalogDir,
+  seedDefaultMapLibrary,
 } from './mapCatalog.js';
+
+const DEFAULT_MAP_LIBRARY_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'assets', 'map-library');
+const DEFAULT_MAP_COUNT       = fs.readdirSync(DEFAULT_MAP_LIBRARY_DIR).length;
 
 const VALID_MAP = [
   'N:sample',
@@ -106,5 +111,33 @@ describe('mapCatalog', () => {
 
     expect(fs.existsSync(entry.mapPath)).toBe(false);
     expect(listMapCatalogEntries()).toEqual([]);
+  });
+
+  it('seedDefaultMapLibrary は同梱の過去大会マップを一括登録する', () => {
+    seedDefaultMapLibrary();
+
+    const entries = listMapCatalogEntries();
+    expect(entries).toHaveLength(DEFAULT_MAP_COUNT);
+    const names = entries.map(e => e.displayName).sort();
+    expect(names).toEqual(
+      fs.readdirSync(DEFAULT_MAP_LIBRARY_DIR).map(f => f.replace(/\.map$/, '')).sort(),
+    );
+  });
+
+  it('seedDefaultMapLibrary は2回呼んでも重複登録しない', () => {
+    seedDefaultMapLibrary();
+    seedDefaultMapLibrary();
+
+    expect(listMapCatalogEntries()).toHaveLength(DEFAULT_MAP_COUNT);
+  });
+
+  it('seedDefaultMapLibrary は削除済みの既定マップを復活させない', () => {
+    seedDefaultMapLibrary();
+    const [first] = listMapCatalogEntries();
+    deleteMapCatalogEntry(first!.id);
+
+    seedDefaultMapLibrary();
+
+    expect(listMapCatalogEntries()).toHaveLength(DEFAULT_MAP_COUNT - 1);
   });
 });

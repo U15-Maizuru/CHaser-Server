@@ -69,7 +69,7 @@
         "to": "backend/dist",
         "filter": [
           "**/*",
-          "!**/*.map"
+          "!**/*.js.map"
         ]
       },
       {

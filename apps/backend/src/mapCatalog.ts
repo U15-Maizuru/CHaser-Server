@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import type { InlineMapData, MapCatalogEntry } from '@u15/ws-types';
 import { MapObject } from '@u15/ws-types';
 import { exportMap, importMap } from './game/GameSystem.js';
@@ -13,6 +14,39 @@ const store = new JsonIndexStore<MapCatalogEntry>('server/map-catalog');
 
 export function ensureMapCatalogDir(): void {
   store.ensureDir();
+}
+
+// 既定で同梱する過去大会マップ。実行時ロケーションと同じ階層に assets/map-library を
+// 置く運用は assets/lib-templates (libTemplates.ts) と同じ。
+const DEFAULT_MAP_LIBRARY_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'assets', 'map-library');
+const SEEDED_MARKER_PATH      = () => path.join(store.dir, '.default-maps-seeded.json');
+
+/**
+ * 同梱の過去大会マップをマップライブラリへ取り込む。
+ *
+ * 導入済みかどうかはファイル名を記録した marker で判定する。index.json (実際のカタログ)
+ * ではなく marker を見るのは、運営が既定マップを削除しても次回起動で復活させないため
+ * — 削除後に index.json だけを見ると「無い = 未導入」と誤判定して再登録してしまう。
+ */
+export function seedDefaultMapLibrary(): void {
+  store.ensureDir();
+  if (!fs.existsSync(DEFAULT_MAP_LIBRARY_DIR)) return;
+
+  const markerPath = SEEDED_MARKER_PATH();
+  const seeded = new Set<string>(
+    fs.existsSync(markerPath) ? JSON.parse(fs.readFileSync(markerPath, 'utf-8')) as string[] : [],
+  );
+
+  let changed = false;
+  for (const filename of fs.readdirSync(DEFAULT_MAP_LIBRARY_DIR)) {
+    if (seeded.has(filename)) continue;
+    const tempPath = path.join(store.dir, `.seed-${filename}`);
+    fs.copyFileSync(path.join(DEFAULT_MAP_LIBRARY_DIR, filename), tempPath);
+    addMapCatalogEntry(filename.replace(/\.map$/, ''), tempPath);
+    seeded.add(filename);
+    changed = true;
+  }
+  if (changed) fs.writeFileSync(markerPath, JSON.stringify([...seeded]));
 }
 
 export function mapCatalogDir(): string {
