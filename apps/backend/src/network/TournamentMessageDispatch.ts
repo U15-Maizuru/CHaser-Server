@@ -57,6 +57,10 @@ export class TournamentMessageDispatch {
         this.tournament(ws, t =>
           t.setStageMap(roomId, msg.payload.stage, msg.payload.mapCatalogId));
         break;
+      case 'tournament_set_match_map':
+        this.tournament(ws, t =>
+          t.setMatchMap(roomId, msg.payload.matchId, msg.payload.mapCatalogId));
+        break;
       case 'tournament_swap_sides':
         this.tournament(ws, t => t.swapSides(roomId, msg.payload.matchId));
         break;

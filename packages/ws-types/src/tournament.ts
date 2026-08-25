@@ -612,6 +612,13 @@ export interface TournamentStatePayload {
    */
   stageMaps:    (string | null)[];
   /**
+   * 3位決定戦の実効マップ。3位決定戦を持たない大会では null。
+   *
+   * 決勝と同じ stage を共有するため stageMaps だけでは書き分けられない — 個別に
+   * 差し替えていなければ、決勝と同じ (= 対応する stageMaps の値) になる。
+   */
+  thirdPlaceMapId: string | null;
+  /**
    * stage ごとの表示名 (index = stage)。「予選 第1節」「準決勝」など。
    * 節数の算出を frontend に二重定義しないよう、backend が試合グラフから組み立てて配る。
    */
@@ -630,6 +637,12 @@ export interface TournamentStatePayload {
 export interface OperatorDecisions {
   /** 差し替えた回戦ごとのマップ (キーは予選込みの通し stage の10進表記) */
   stageMaps:           Record<string, string | null>;
+  /**
+   * 差し替えた試合ごとのマップ (キーは matchId)。3位決定戦は決勝と同じ stage を共有するため
+   * stageMaps だけでは両者を書き分けられない — 個別に別マップを指定したいときはこちらに置く。
+   * 未指定 (キーなし) は「同じ stage のマップに従う」。
+   */
+  matchMaps:           Record<string, string>;
   /** 差し替えた決勝進出者 (キーは `"<group>:<rank>"`)。自動判定より優先する */
   qualifiers:          Record<string, string | null>;
   /** 最終決定確認リストから削除した参加者。この人たちを除いた並びで進出者を決める */
@@ -644,7 +657,7 @@ export interface OperatorDecisions {
 }
 
 export const NO_OPERATOR_DECISIONS: OperatorDecisions = {
-  stageMaps: {}, qualifiers: {}, exclusions: [], qualifiersConfirmed: false,
+  stageMaps: {}, matchMaps: {}, qualifiers: {}, exclusions: [], qualifiersConfirmed: false,
 };
 
 /** 永続化される進行状態 (server/tournament/<id>/state.json) */

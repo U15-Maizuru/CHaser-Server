@@ -75,7 +75,7 @@ function state(
     qualifiers: null,
     qualifierCandidates: opts.candidates ?? [],
     qualifiersConfirmed: false,
-    stageMaps: ['map-1', null], stageLabels: ['BOT対戦予選', '準決勝'],
+    stageMaps: ['map-1', null], thirdPlaceMapId: null, stageLabels: ['BOT対戦予選', '準決勝'],
     displayView: 'auto',
     autoPlay: { enabled: false, loop: false, stoppedReason: null },
     armedMatchId: opts.armedMatchId ?? null, boundRoomId: 'room', updatedAt: 0,

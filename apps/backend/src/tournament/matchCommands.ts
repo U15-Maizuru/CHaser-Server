@@ -1,6 +1,7 @@
 import type { ClientType, ProcessConfig, ResolvedParticipant } from '@u15/ws-types';
 import {
-  blockedByQualifiers, doubleModeFor, groupStageCount, hasBracket, isKnockoutMatch,
+  blockedByQualifiers, doubleModeFor, groupStageCount, hasBracket, isConsolationMatch,
+  isKnockoutMatch,
 } from '@u15/ws-types';
 import { buildProcessConfig } from '../game/processConfig.js';
 import { getCatalogEntry } from '../programCatalog.js';
@@ -235,6 +236,41 @@ export function setStageMap(
     const mapId = mapForMatch(b.loaded, armed);
     if (mapId) managerOf(env, b)?.loadMap(mapId);
     else managerOf(env, b)?.generateRandomMap();
+  }
+
+  env.publish(b.roomId);
+}
+
+/**
+ * 試合ごとのマップを差し替える (3位決定戦のみ)。null で「決勝と同じマップに戻す」。
+ *
+ * 3位決定戦は決勝と同じ stage を共有するため (bracket.ts)、setStageMap では書き分けられない。
+ * それ以外の試合は「回戦ごとに同じマップ」が設計の前提なので対象外にする。
+ */
+export function setMatchMap(
+  env: CommandEnv, b: Binding, matchId: string, mapCatalogId: string | null,
+): void {
+  const match = requireMatch(b, matchId);
+  if (!isConsolationMatch(match)) {
+    throw new TournamentError('この試合はマップを個別に指定できません（決勝と同じ回戦のマップに従います）');
+  }
+
+  decide(b, d => {
+    const matchMaps = { ...d.matchMaps };
+    if (mapCatalogId === null) delete matchMaps[matchId];
+    else matchMaps[matchId] = mapCatalogId;
+    return { ...d, matchMaps };
+  });
+  saveState(b.loaded.state);
+
+  // 準備済みの試合が同じ試合なら、その場で反映する (setStageMap と同じ考え方)
+  if (b.armedMatchId === matchId) {
+    const armed = b.loaded.state.matches.find(m => m.id === matchId);
+    if (armed && armed.status === 'armed') {
+      const mapId = mapForMatch(b.loaded, armed);
+      if (mapId) managerOf(env, b)?.loadMap(mapId);
+      else managerOf(env, b)?.generateRandomMap();
+    }
   }
 
   env.publish(b.roomId);

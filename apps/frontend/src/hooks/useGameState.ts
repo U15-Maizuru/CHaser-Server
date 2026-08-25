@@ -28,6 +28,8 @@ export interface TournamentCommands {
   assignProgram: (participantId: string, catalogId: string | null) => void;
   /** 回戦ごとのマップ差し替え。null は「大会の設定に従う」 */
   setStageMap: (stage: number, mapCatalogId: string | null) => void;
+  /** 3位決定戦だけのマップ差し替え。決勝と同じ回戦を共有するため別に持つ。null は「決勝と同じ」 */
+  setMatchMap: (matchId: string, mapCatalogId: string | null) => void;
   /** 先攻・後攻の入れ替え。ready の試合だけに効く (armMatch を押す前まで) */
   swapSides: (matchId: string) => void;
   /** 決勝進出者の手動差し替え。participantId: null は「自動判定に戻す」 */
@@ -221,6 +223,8 @@ export function useGameState(wsUrl: string, roomId: string): GameStateHook {
         send({ type: 'tournament_assign_program', payload: { participantId, catalogId } }),
       setStageMap: (stage, mapCatalogId) =>
         send({ type: 'tournament_set_stage_map', payload: { stage, mapCatalogId } }),
+      setMatchMap: (matchId, mapCatalogId) =>
+        send({ type: 'tournament_set_match_map', payload: { matchId, mapCatalogId } }),
       swapSides: (matchId) => send({ type: 'tournament_swap_sides', payload: { matchId } }),
       setQualifier: (group, rank, participantId, cascade) =>
         send({ type: 'tournament_set_qualifier', payload: { group, rank, participantId, cascade } }),

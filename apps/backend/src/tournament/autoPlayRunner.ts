@@ -106,7 +106,11 @@ async function restart(env: AutoPlayEnv, b: Binding): Promise<void> {
     tournamentId: b.tournamentId,
     matches:      buildMatches(b.loaded.def),
     programs:     b.loaded.state.programs,
-    decisions:    { ...NO_OPERATOR_DECISIONS, stageMaps: b.loaded.state.decisions.stageMaps },
+    decisions:    {
+      ...NO_OPERATOR_DECISIONS,
+      stageMaps: b.loaded.state.decisions.stageMaps,
+      matchMaps: b.loaded.state.decisions.matchMaps,
+    },
     updatedAt:    Date.now(),
   };
   b.loaded = { ...b.loaded, state };
