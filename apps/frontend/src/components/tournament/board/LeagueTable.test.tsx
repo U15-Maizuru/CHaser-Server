@@ -136,6 +136,26 @@ describe('LeagueTable', () => {
     });
   });
 
+  // 同点で再試合になった試合は discardResult で status: 'ready' / result: undefined に
+  // 戻ってしまい、他の未実施のマスと同じ「・」に見えてしまう。rematchPending が立っていれば
+  // 別記号を出して見分けられるようにする
+  it('同点で再試合になったマスは ↻ を出す (未実施の ・ とは区別する)', () => {
+    const withRematch = [
+      match('L-D1M1', 'p1', 'p2', { status: 'ready', rematchPending: true }),
+      match('L-D1M2', 'p1', 'p3'),
+      match('L-D2M1', 'p2', 'p3'),
+    ];
+    render(<LeagueTable matches={withRematch} participants={participants} standings={[]} />);
+    // A×B の2セル (両方向)
+    expect(screen.getAllByText('↻')).toHaveLength(2);
+    expect(screen.getByText(/↻ 再試合待ち/)).toBeTruthy();
+  });
+
+  it('再試合待ちが無ければ凡例に ↻ を出さない', () => {
+    render(<LeagueTable matches={matches} participants={participants} standings={[]} />);
+    expect(screen.queryByText(/↻/)).toBeNull();
+  });
+
   it('これから行う試合のセルに ▶ を出す', () => {
     render(
       <LeagueTable

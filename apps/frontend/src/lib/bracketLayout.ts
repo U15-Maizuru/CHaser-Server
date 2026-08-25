@@ -35,6 +35,14 @@ export interface BracketLayoutOptions {
   gapY?:   number;
   padding?: number;
   headerH?: number;
+  /**
+   * カードごとの実際の高さ。省略時は cardH 固定。
+   *
+   * 審判裁定の注記など、内容によって縦に伸びるカード (MatchCard.matchCardHeight) が
+   * あるので、押し下げ・積み上げの計算はここで得た実際の高さを使う。固定の cardH で
+   * 計算すると、伸びたカードの下に次のカード (3位決定戦など) が重なってしまう。
+   */
+  cardHeightOf?: (m: TournamentMatch) => number;
 }
 
 const DEFAULTS = { cardW: 208, cardH: 68, gapX: 56, gapY: 16, padding: 16, headerH: 26 };
@@ -50,6 +58,7 @@ export function bracketLayout(
   matches: TournamentMatch[], opts: BracketLayoutOptions = {},
 ): BracketLayout {
   const { cardW, cardH, gapX, gapY, padding, headerH } = { ...DEFAULTS, ...opts };
+  const heightOf = opts.cardHeightOf ?? (() => cardH);
 
   if (matches.length === 0) {
     return { nodes: [], edges: [], width: 0, height: 0, columns: [] };
@@ -68,24 +77,33 @@ export function bracketLayout(
     const x = padding + col * (cardW + gapX);
     const list = byStage.get(stage)!;
 
-    list.forEach((m, i) => {
+    // 子カードを参照しない (先頭列の) カードは、前のカードの実際の高さぶんだけ
+    // 積み上げて並べる。固定 cardH で数えると、伸びたカードの下で詰まって重なる
+    let cursor = top;
+
+    list.forEach(m => {
+      const h = heightOf(m);
       // 参照している子カード (winner-of / loser-of) の中点に置く
       const childYs = [m.slotA, m.slotB]
         .map(r => (r.kind === 'winner-of' || r.kind === 'loser-of') ? pos.get(r.matchId) : undefined)
         .filter((n): n is BracketNode => !!n)
         .map(n => n.y + n.h / 2);
 
-      const y = childYs.length > 0
-        ? (Math.min(...childYs) + Math.max(...childYs)) / 2 - cardH / 2
-        : top + i * (cardH + gapY);
+      let y: number;
+      if (childYs.length > 0) {
+        y = (Math.min(...childYs) + Math.max(...childYs)) / 2 - h / 2;
+      } else {
+        y = cursor;
+        cursor += h + gapY;
+      }
 
-      pos.set(m.id, { matchId: m.id, x, y, w: cardW, h: cardH });
+      pos.set(m.id, { matchId: m.id, x, y, w: cardW, h });
     });
 
     // 同じ列で重なったカード (3位決定戦など) を下へ押し下げる
     const placed = list.map(m => pos.get(m.id)!).sort((a, b) => a.y - b.y);
     for (let i = 1; i < placed.length; i++) {
-      const min = placed[i - 1]!.y + cardH + gapY;
+      const min = placed[i - 1]!.y + placed[i - 1]!.h + gapY;
       if (placed[i]!.y < min) placed[i]!.y = min;
     }
   });

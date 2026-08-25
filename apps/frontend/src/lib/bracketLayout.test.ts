@@ -93,6 +93,26 @@ describe('bracketLayout', () => {
     expect(gap).toBeGreaterThanOrEqual(60 + 20);
   });
 
+  // 審判裁定の注記が付くと MatchCard は cardH より縦に伸びる (matchCardHeight)。
+  // 固定 cardH で押し下げを計算すると、伸びた決勝の下に3位決定戦が重なってしまう
+  it('cardHeightOf で実際の高さを渡すと、伸びたカードの下にも重ならない', () => {
+    const withThird = [
+      ...FOUR,
+      m('THIRD', 1, 1, '3位決定戦', L('SF1'), L('SF2')),
+    ];
+    const TALL_FINAL_H = 60 + 15; // 裁定の注記ぶん伸びた決勝カードの高さ
+    const l = bracketLayout(withThird, {
+      ...OPTS,
+      cardHeightOf: match => match.id === 'FINAL' ? TALL_FINAL_H : OPTS.cardH,
+    });
+    const final = l.nodes.find(n => n.matchId === 'FINAL')!;
+    const third = l.nodes.find(n => n.matchId === 'THIRD')!;
+
+    expect(final.h).toBe(TALL_FINAL_H);
+    // 実際の高さ (固定 cardH ではなく) ぶんの隙間が空いていること = 重ならない
+    expect(third.y).toBeGreaterThanOrEqual(final.y + final.h + OPTS.gapY);
+  });
+
   it('bye を含む回戦でも全カードが配置される', () => {
     const withBye = [
       m('QF1', 0, 0, '準々決勝 第1試合', P('p1'), { kind: 'bye' }),

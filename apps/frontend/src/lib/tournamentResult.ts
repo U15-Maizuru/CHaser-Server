@@ -49,9 +49,15 @@ export function isTournamentComplete(state: TournamentStatePayload | null): bool
  *
  * **不戦勝 (bye) は除く** — 対戦していないのに「終わった試合」として光ってしまうため。
  * 運営が裁定した不戦勝 (bye でない walkover) は運営の操作なので残す。
+ *
+ * **同点で再試合待ちの試合があれば null に倒す。** 再試合は必ず「以前に確定した試合」より
+ * あとに起きる出来事なので、confirmedAt がどれだけ新しくても、もう「たった今終わったもの」
+ * ではない。ここで弾かないと、観客席には「(古い試合) が終わりました」という強調表示と
+ * 「(今の試合) は再試合待ち」が同時に出て、どちらが最新の出来事か伝わらなくなる。
  */
 export function lastConfirmedMatch(state: TournamentStatePayload | null): TournamentMatch | null {
   if (!state) return null;
+  if (state.matches.some(m => m.rematchPending)) return null;
   return state.matches.reduce<TournamentMatch | null>((best, m) => {
     if (m.status !== 'done' || !m.result?.confirmedAt) return best;
     if (m.byeA || m.byeB) return best;

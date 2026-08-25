@@ -119,6 +119,17 @@ describe('lastConfirmedMatch', () => {
   it('大会を運営していなければ null', () => {
     expect(lastConfirmedMatch(null)).toBeNull();
   });
+
+  // 再試合は必ず「確定した試合」よりあとの出来事なので、confirmedAt がどれだけ新しくても
+  // もう「たった今終わったもの」ではない。強調表示を出しっぱなしにすると、観客席に
+  // 「古い試合が終わった」と「今の試合は再試合待ち」が同時に出て紛らわしくなる
+  it('同点で再試合待ちの試合があれば null (古い確定試合の強調をやめる)', () => {
+    const matches = [
+      match('SF1', 0, 'p1', 'p2', { result: done(0, 100) }),
+      match('SF2', 0, 'p3', 'p4', { status: 'ready', resolvedA: 'p3', resolvedB: 'p4', rematchPending: true }),
+    ];
+    expect(lastConfirmedMatch(state('single-elimination', matches))).toBeNull();
+  });
 });
 
 describe('winnerNameOf', () => {
