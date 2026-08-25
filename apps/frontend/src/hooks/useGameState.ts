@@ -134,6 +134,9 @@ export function useGameState(wsUrl: string, roomId: string): GameStateHook {
           break;
         case 'tournament_state':
           setTournamentState(msg.payload);
+          // 状態の更新は必ず成功した操作の結果として届く (失敗は 'error' だけで tournament_state
+          // は届かない)。前の操作の失敗理由を出しっぱなしにしないよう、ここで消してよい
+          setLastError(null);
           break;
         case 'server_status':
           setServerStatus(msg.payload);

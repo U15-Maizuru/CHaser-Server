@@ -49,15 +49,20 @@ export function LibraryBrowser<T extends Entry>({
  * 前半しか見えなくなり、似た名前のマップを区別できなくなっていた。
  */
 export function LibraryRow({
-  name, meta, children,
+  name, badge, meta, children,
 }: {
   name: string;
+  /** 名前の右に添える状態バッジ (例: 大会運営の「運営中」)。他の一覧では使わない */
+  badge?: ReactNode;
   meta?: ReactNode;
   children?: ReactNode;
 }) {
   return (
     <div style={s.row}>
-      <span style={s.name} title={name}>{name}</span>
+      <div style={s.nameRow}>
+        <span style={s.name} title={name}>{name}</span>
+        {badge}
+      </div>
       {meta && <div style={s.meta}>{meta}</div>}
       {children && <div style={s.actions}>{children}</div>}
     </div>
@@ -71,8 +76,9 @@ const s: Record<string, React.CSSProperties> = {
     display: 'flex', flexDirection: 'column', gap: 4,
     padding: '8px 10px', border: `1px solid ${BORDER_COLOR}`, borderRadius: 6,
   },
+  nameRow: { display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 },
   name: {
-    fontSize: 12, fontFamily: FONT_NUM, color: TEXT_PRIMARY,
+    fontSize: 12, fontFamily: FONT_NUM, color: TEXT_PRIMARY, minWidth: 0, flex: 1,
     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
   },
   meta: { fontSize: 10, color: TEXT_MUTED, lineHeight: 1.5 },

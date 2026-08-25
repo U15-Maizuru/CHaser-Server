@@ -3,10 +3,11 @@ import type { TournamentFormat, TournamentStatePayload, TournamentSummary } from
 import type { TournamentCommands } from '../../../hooks/useGameState';
 import { alertDialog, confirmDialog } from '../../../lib/nativeDialog';
 import { deleteTournament } from '../../../lib/api';
+import { LibraryBrowser, LibraryRow } from '../../LibraryBrowser';
 import { TournamentEditorDialog } from '../editor/TournamentEditorDialog';
 import {
-  BG_ROOT, RADIUS_SM, TEXT_SECONDARY, WIN_BASE,
-  Button, ButtonLabel, Callout, EmptyState, Hint, Section,
+  TEXT_MUTED, WIN_BASE,
+  Button, ButtonLabel, Callout, Hint, Section,
 } from '../../../ui';
 
 // 運営する大会を選ぶ・作る・持ち出す。bind の前後どちらでも使う。
@@ -133,51 +134,77 @@ export function LibraryTab({
           <Callout key={e.id} tone="warn">{e.id}: {e.message}</Callout>
         ))}
 
-        {summaries.length === 0 && <EmptyState>大会データがありません</EmptyState>}
-
-        {summaries.map(t => {
-          const active = state?.tournamentId === t.id;
-          return (
-            <div key={t.id} style={{ ...s.row, ...(active ? s.rowActive : null) }}>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={s.name}>{t.name}</div>
-                <div style={s.meta}>
-                  {FORMAT_LABEL[t.format]} ・ {t.participants}人 ・
-                  {' '}{t.progress[0]}/{t.progress[1]} 試合完了
-                </div>
-              </div>
-              <Button
-                size="sm" noShrink disabled={busy}
-                title="この大会データを .zip で書き出す (別の PC で読み込めばそのまま運営できます)"
-                onClick={() => void exportBundle(t)}
+        <LibraryBrowser
+          entries={summaries.map(t => ({ ...t, displayName: t.name }))}
+          placeholder="大会名で検索"
+          emptyText="大会データがありません"
+        >
+          {t => {
+            const active    = state?.tournamentId === t.id;
+            // この部屋で既に別の大会を運営中なら、bind すると必ず断られる —
+            // 断られてから気づかせるのではなく、ボタンの時点で押せなくしておく
+            const roomBusy  = !!state && !active;
+            return (
+              <LibraryRow
+                key={t.id}
+                name={t.name}
+                badge={
+                  active
+                    ? <span style={s.badgeActive}>運営中</span>
+                    : t.boundRoomId
+                      ? <span style={s.badgeElsewhere}>別の部屋で運営中</span>
+                      : undefined
+                }
+                meta={
+                  <>
+                    {FORMAT_LABEL[t.format]} ・ {t.participants}人 ・
+                    {' '}{t.progress[0]}/{t.progress[1]} 試合完了
+                  </>
+                }
               >
-                書き出し
-              </Button>
-              <Button
-                size="sm" noShrink disabled={!!t.boundRoomId}
-                title={t.boundRoomId ? '運営中の大会は編集できません' : '内容を編集する'}
-                onClick={() => startEdit(t)}
-              >
-                編集
-              </Button>
-              <Button
-                size="sm" variant="danger" noShrink disabled={!!t.boundRoomId}
-                title={t.boundRoomId ? '運営中の大会は削除できません' : '大会データを削除する'}
-                onClick={() => handleDelete(t)}
-              >
-                削除
-              </Button>
-              {active
-                ? <Button size="sm" variant="danger" noShrink onClick={commands.unbind}>運営を終了</Button>
-                : <Button
-                    size="sm" variant="accent" noShrink disabled={!!t.boundRoomId}
+                <Button
+                  size="sm" noShrink disabled={busy}
+                  title="この大会データを .zip で書き出す (別の PC で読み込めばそのまま運営できます)"
+                  onClick={() => void exportBundle(t)}
+                >
+                  書き出し
+                </Button>
+                <Button
+                  size="sm" noShrink disabled={!!t.boundRoomId}
+                  title={t.boundRoomId ? '運営中の大会は編集できません' : '内容を編集する'}
+                  onClick={() => startEdit(t)}
+                >
+                  編集
+                </Button>
+                <Button
+                  size="sm" variant="danger" noShrink disabled={!!t.boundRoomId}
+                  title={t.boundRoomId ? '運営中の大会は削除できません' : '大会データを削除する'}
+                  onClick={() => handleDelete(t)}
+                >
+                  削除
+                </Button>
+                {active ? (
+                  <Button size="sm" variant="danger" noShrink onClick={commands.unbind}>
+                    運営を終了
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm" variant="accent" noShrink
+                    disabled={roomBusy || !!t.boundRoomId}
+                    title={
+                      roomBusy ? '先にいまの大会の運営を終了してください'
+                        : t.boundRoomId ? '別の部屋で運営中です'
+                        : undefined
+                    }
                     onClick={() => commands.bind(t.id)}
                   >
-                    {t.boundRoomId ? '他の部屋で運営中' : 'この大会を運営'}
-                  </Button>}
-            </div>
-          );
-        })}
+                    運営開始
+                  </Button>
+                )}
+              </LibraryRow>
+            );
+          }}
+        </LibraryBrowser>
       </Section>
 
       {editing && (
@@ -193,14 +220,12 @@ export function LibraryTab({
 }
 
 const s: Record<string, React.CSSProperties> = {
-  row: {
-    display: 'flex', alignItems: 'center', gap: 8, minWidth: 0,
-    padding: '8px 10px', borderRadius: RADIUS_SM, background: BG_ROOT, flexWrap: 'wrap',
+  badgeActive: {
+    fontSize: 10, fontWeight: 700, color: '#fff', background: WIN_BASE,
+    borderRadius: 99, padding: '1px 8px', flexShrink: 0,
   },
-  rowActive: { outline: `2px solid ${WIN_BASE}` },
-  name: {
-    fontSize: 13, fontWeight: 600,
-    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  badgeElsewhere: {
+    fontSize: 10, fontWeight: 700, color: TEXT_MUTED, background: 'transparent',
+    border: `1px solid ${TEXT_MUTED}`, borderRadius: 99, padding: '1px 8px', flexShrink: 0,
   },
-  meta: { fontSize: 10, color: TEXT_SECONDARY },
 };

@@ -919,7 +919,7 @@ async function testTournamentEditor(app, page) {
     : fail('作った大会が一覧に出る');
 
   // 作ったデータでそのまま運営を始められる
-  await clickWhenReady(tw, 'この大会を運営');
+  await clickWhenReady(tw, '運営開始');
   await wait(2000);
   const paths = await tw.evaluate(() => document.querySelectorAll('svg path').length);
   paths >= 2 ? pass('作った大会のトーナメント表が描画される')
@@ -980,9 +980,10 @@ async function testTournament(app, page) {
   (await bodyText(tw)).includes('E2E杯')
     ? pass('server/tournament/ に置いた大会が一覧に出る')
     : fail('server/tournament/ に置いた大会が一覧に出る');
+  await ss(tw, 'tournament-library-tab');
 
   // 運営開始 → ブラケットが描画される
-  await clickWhenReady(tw, 'この大会を運営');
+  await clickWhenReady(tw, '運営開始');
   await wait(2000);
   await ss(tw, 'tournament-bracket');
 
@@ -1011,8 +1012,8 @@ async function testTournament(app, page) {
     standby.text.includes('まもなく開始します')
       && !standby.text.includes('対戦開始をお待ちください')
       && standby.paths >= 2
-      ? pass('「この大会を運営」で観戦画面にトーナメント表が出る')
-      : fail('「この大会を運営」で観戦画面にトーナメント表が出る', JSON.stringify(standby).slice(0, 160));
+      ? pass('「運営開始」で観戦画面にトーナメント表が出る')
+      : fail('「運営開始」で観戦画面にトーナメント表が出る', JSON.stringify(standby).slice(0, 160));
     await ss(dw, 'tournament-standby');
   }
 
