@@ -29,6 +29,13 @@ export interface ResolveContext {
   qualifierExclusions?: readonly string[];
 }
 
+/** rematchPending を落とした複製。「もう再試合待ちではない」経路 (確定・巻き戻し) で使う */
+function withoutRematchPending(m: TournamentMatch): TournamentMatch {
+  const next = { ...m };
+  delete next.rematchPending;
+  return next;
+}
+
 /** 確定済みの試合の勝者 participantId。両者棄権・bye 同士なら null */
 function winnerOf(m: TournamentMatch): string | null {
   if (m.status !== 'done' || !m.result) return null;
@@ -182,7 +189,7 @@ export function confirmResult(
       note:        patch.note       ?? m.result.note,
       confirmedAt: now,
     };
-    return { ...m, result, status: 'done' as const };
+    return withoutRematchPending({ ...m, result, status: 'done' as const });
   }), now, ctx);
 }
 
@@ -201,18 +208,29 @@ export function setWalkover(
       capturedAt:   now,
       confirmedAt:  now,
     };
-    return { ...m, result, status: 'done' as const };
+    return withoutRematchPending({ ...m, result, status: 'done' as const });
   }), now, ctx);
 }
 
-/** 結果を捨てて未実施に戻す (やり直し / 同点の再試合)。下流も巻き戻す */
+/**
+ * 結果を捨てて未実施に戻す (やり直し / 同点の再試合)。下流も巻き戻す。
+ *
+ * `isRematch` (同点によるやり直し) は結果とともに消えてしまう `status` の代わりに、
+ * 「まだ再試合が行われていない」ことをトーナメント表・リーグ表に示すための印。
+ */
 export function discardResult(
   matches: TournamentMatch[], matchId: string, rematchMapCatalogId?: string,
-  ctx: ResolveContext = {},
+  ctx: ResolveContext = {}, isRematch = false,
 ): TournamentMatch[] {
   const cleared = clearFrom(matches, matchId, true);
   return resolveMatches(cleared.map(m => (
-    m.id === matchId && rematchMapCatalogId ? { ...m, rematchMapCatalogId } : m
+    m.id === matchId
+      ? {
+          ...m,
+          ...(rematchMapCatalogId ? { rematchMapCatalogId } : {}),
+          ...(isRematch ? { rematchPending: true as const } : {}),
+        }
+      : m
   )), Date.now(), ctx);
 }
 
@@ -274,7 +292,7 @@ function clearFrom(
   return matches.map(m => {
     const target = (includeSelf && m.id === matchId) || ds.has(m.id);
     if (!target) return m;
-    const next: TournamentMatch = { ...m, status: 'pending' };
+    const next = withoutRematchPending({ ...m, status: 'pending' });
     delete next.result;
     delete next.rematchMapCatalogId;
     return next;

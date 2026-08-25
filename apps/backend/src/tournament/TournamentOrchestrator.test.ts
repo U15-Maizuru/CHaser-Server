@@ -566,6 +566,44 @@ describe('TournamentOrchestrator', () => {
       expect(matchOf('FINAL').status).toBe('pending');
       expect(matchOf('SF2').status).toBe('done'); // 無関係な枝は無傷
     });
+
+    // 同点で再試合になった試合は、結果を捨てた時点で他の未実施の試合と同じ 'ready' に
+    // 戻ってしまう。トーナメント表・リーグ表がここを見分けられるよう rematchPending を立てる
+    it('同点の再試合は rematchPending が立ち、再試合の結果が確定すると消える', () => {
+      writeCup(cupDef());
+      orch.bind(ROOM, CUP);
+      orch.setWalkover(ROOM, 'SF1', null); // 同点
+      orch.discardResult(ROOM, 'SF1');
+
+      expect(matchOf('SF1').status).toBe('ready');
+      expect(matchOf('SF1').rematchPending).toBe(true);
+
+      orch.setWalkover(ROOM, 'SF1', 0); // 再試合の結果を確定
+      expect(matchOf('SF1').rematchPending).toBeUndefined();
+    });
+
+    it('同点でないやり直しでは rematchPending は立たない', () => {
+      writeCup(cupDef({ stage: { map: { catalogId: 'fixed-map' } } }));
+      orch.bind(ROOM, CUP);
+      orch.setWalkover(ROOM, 'SF1', 0); // 勝敗あり
+
+      orch.discardResult(ROOM, 'SF1');
+      expect(matchOf('SF1').rematchPending).toBeUndefined();
+    });
+
+    it('下流の巻き戻しでも rematchPending は消える', () => {
+      writeCup(cupDef());
+      orch.bind(ROOM, CUP);
+      orch.setWalkover(ROOM, 'SF1', null);
+      orch.discardResult(ROOM, 'SF1');
+      expect(matchOf('SF1').rematchPending).toBe(true);
+
+      orch.setWalkover(ROOM, 'SF1', 0);
+      orch.setWalkover(ROOM, 'SF2', 0);
+      orch.setWalkover(ROOM, 'FINAL', 0);
+      orch.reopenMatch(ROOM, 'SF1', true); // SF1 を含めて巻き戻す
+      expect(matchOf('SF1').rematchPending).toBeUndefined();
+    });
   });
 
   describe('setStageMap (運営中の回戦マップ差し替え)', () => {

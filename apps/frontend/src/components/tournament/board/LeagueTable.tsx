@@ -2,7 +2,7 @@ import type { ResolvedParticipant, StandingRow, TournamentMatch } from '@u15/ws-
 import { FitArea } from '../../FitArea';
 import {
   BG_CARD, BG_ROOT, BORDER_COLOR, COOL_PALE, FONT_NUM, FONT_UI, GOLD_BASE, GOLD_LIGHT,
-  RADIUS_SM, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE, WIN_LIGHT,
+  HOT_COLOR, RADIUS_SM, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE, WIN_LIGHT,
 } from '../../../ui';
 
 // リーグの星取表 + 順位表。素の DOM (既存方針どおり CSS ファイルは作らない)。
@@ -74,14 +74,18 @@ export function LeagueTable({
   const upcoming = matches.find(m => m.id === upcomingMatchId) ?? null;
   const isUpcomingTeam = (id: string) =>
     !!upcoming && (upcoming.resolvedA === id || upcoming.resolvedB === id);
+  const hasRematchPending = matches.some(m => m.rematchPending);
 
   /** a から見た b との対戦結果 */
   const cellOf = (a: string, b: string): {
-    text: string; match: TournamentMatch | null; tone: 'none' | 'win' | 'loss' | 'draw';
+    text: string; match: TournamentMatch | null; tone: 'none' | 'win' | 'loss' | 'draw' | 'rematch';
   } => {
     const m = matches.find(x =>
       (x.resolvedA === a && x.resolvedB === b) || (x.resolvedA === b && x.resolvedB === a));
     if (!m) return { text: '—', match: null, tone: 'none' };
+    // 同点で再試合になった試合は、結果を捨てた時点で他の未実施のマスと同じ「・」に戻って
+    // しまう。観客・運営が「再試合待ち」だと分かるよう別の記号にする
+    if (m.rematchPending) return { text: '↻', match: m, tone: 'rematch' };
     if (m.status !== 'done' || !m.result) return { text: '・', match: m, tone: 'none' };
 
     const aIsSideA = m.resolvedA === a;
@@ -135,6 +139,7 @@ export function LeagueTable({
                         ...(c.tone === 'win'  ? { color: WIN_BASE, fontWeight: 700 } : null),
                         ...(c.tone === 'draw' ? { color: TEXT_SECONDARY } : null),
                         ...(c.tone === 'loss' ? { color: TEXT_MUTED } : null),
+                        ...(c.tone === 'rematch' ? cellRematch : null),
                         ...(isFinished ? cellFinished : null),
                         ...(isUpcoming ? cellUpcoming : null),
                         cursor: clickable ? 'pointer' : undefined,
@@ -152,7 +157,9 @@ export function LeagueTable({
         </table>
       </div>
       <div style={legend}>
-        ○ 勝ち ・ △ 引き分け ・ ● 負け{upcoming ? ' ・ ▶ 次の試合' : ''}
+        ○ 勝ち ・ △ 引き分け ・ ● 負け
+        {hasRematchPending ? ' ・ ↻ 再試合待ち' : ''}
+        {upcoming ? ' ・ ▶ 次の試合' : ''}
       </div>
     </div>
   );
@@ -315,6 +322,11 @@ const cellUpcoming: React.CSSProperties = {
 const cellFinished: React.CSSProperties = {
   background: WIN_LIGHT, fontWeight: 700,
   outline: `2px solid ${WIN_BASE}`, outlineOffset: -2,
+};
+
+// 同点で再試合待ちの試合。MatchCard の再試合バッジと同じ色で揃える
+const cellRematch: React.CSSProperties = {
+  color: HOT_COLOR, fontWeight: 700,
 };
 
 const headUpcoming: React.CSSProperties = {

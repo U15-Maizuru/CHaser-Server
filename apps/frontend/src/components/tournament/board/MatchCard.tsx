@@ -4,7 +4,7 @@ import type {
 import { slotPlaceholder } from '@u15/ws-types';
 import {
   BG_CARD, BORDER_COLOR, COOL_COLOR, COOL_PALE, FONT_NUM, FONT_UI,
-  GOLD_BASE, GOLD_LIGHT, HOT_COLOR, HOT_PALE, RADIUS_SM, SHADOW_SM,
+  GOLD_BASE, GOLD_LIGHT, HOT_COLOR, HOT_LIGHT, HOT_PALE, RADIUS_SM, SHADOW_SM,
   TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, TURN_BASE, WIN_BASE, WIN_LIGHT, WIN_PALE,
 } from '../../../ui';
 
@@ -82,6 +82,9 @@ export function MatchCard({
   ];
 
   const clickable = interactive && !!onSelect;
+  // 同点で再試合になった試合は、結果を捨てた時点で他の未実施の試合と同じ 'ready' に
+  // 戻ってしまう。観客・運営が「再試合待ち」だと分かるよう、状態バッジだけ別扱いにする
+  const rematch = !!match.rematchPending;
 
   return (
     <div
@@ -89,6 +92,9 @@ export function MatchCard({
         // 「次の試合」と「たった今終わった試合」が同時に同じカードに付くことはない
         // (確定した瞬間に準備は外れる) ので、上書き順は問題にならない
         ...card,
+        // rematch は upcoming/justFinished より弱い強調。同点で再試合待ちのまま次の準備に
+        // 入る (再試合を armMatch で準備し直す) こともあるので、その間は upcoming を優先する
+        ...(rematch ? cardRematch : null),
         ...(justFinished ? cardJustFinished : null),
         ...(upcoming ? cardUpcoming : null),
         ...(selected ? cardSelected : null),
@@ -106,8 +112,9 @@ export function MatchCard({
         <span style={
           upcoming     ? { ...badge, ...badgeUpcoming }
         : justFinished ? { ...badge, ...badgeJustFinished }
+        : rematch      ? { ...badge, ...badgeRematch }
         : { ...badge, color: STATUS_COLOR[match.status] }}>
-          {upcoming ? '対戦試合' : justFinished ? '試合終了' : STATUS_LABEL[match.status]}
+          {upcoming ? '対戦試合' : justFinished ? '試合終了' : rematch ? '再試合待ち' : STATUS_LABEL[match.status]}
         </span>
       </div>
 
@@ -172,6 +179,17 @@ const cardJustFinished: React.CSSProperties = {
 
 const badgeJustFinished: React.CSSProperties = {
   color: '#fff', background: WIN_BASE, borderRadius: 99, padding: '1px 6px',
+};
+
+// 同点で再試合待ちの試合。運営の判断が要ることを枠でも伝える (バッジと同じ HOT 色)
+const cardRematch: React.CSSProperties = {
+  border: `1px solid ${HOT_COLOR}`,
+  background: HOT_PALE,
+  boxShadow: `0 0 0 2px ${HOT_LIGHT}, ${SHADOW_SM}`,
+};
+
+const badgeRematch: React.CSSProperties = {
+  color: '#fff', background: HOT_COLOR, borderRadius: 99, padding: '1px 6px',
 };
 
 const header: React.CSSProperties = {

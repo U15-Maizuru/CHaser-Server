@@ -164,7 +164,7 @@ export function discardResult(
     throw new TournamentError('同点の再試合ではマップを変更してください (別のマップを選んでから実行してください)');
   }
 
-  commit(b, discardInGraph(b.loaded.state.matches, matchId, rematchMapCatalogId, ctxOf(b)));
+  commit(b, discardInGraph(b.loaded.state.matches, matchId, rematchMapCatalogId, ctxOf(b), wasTie));
   disarmIfCleared(b, matchId);
   env.publish(b.roomId);
 }

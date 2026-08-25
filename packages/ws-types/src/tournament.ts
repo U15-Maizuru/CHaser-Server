@@ -391,6 +391,14 @@ export interface TournamentMatch {
   result?:   TournamentMatchResult;
   /** 同点再試合で運営が選び直したマップ。次の arm で loadMap する */
   rematchMapCatalogId?: string;
+  /**
+   * 同点によるやり直しで、まだ再試合が行われていない。
+   *
+   * discardResult が同点の結果を捨てたときだけ立ち、次の captureResult (対戦成立) か
+   * clearFrom (別の巻き戻し) で消える。`status` は他の未実施の試合と同じ 'ready' に
+   * 戻ってしまうため、これが無いと「同点で再試合になった」ことが表からもう分からない。
+   */
+  rematchPending?: boolean;
 }
 
 /**
