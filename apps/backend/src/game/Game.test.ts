@@ -96,6 +96,18 @@ describe('GameSession.run — 決着処理', () => {
     // COOL は GetReady フェーズの判定は通過し、EndSharp まで進んでいる
     expect(cool.waitEndSharpCalls).toBe(1);
   });
+
+  it('時間切れ決着では、結果の turnCount が 0 になる (score-based の得点確認に使う残りターン数)', async () => {
+    const map = makeMap({ turn: 1 }); // 障害物なし・安全な移動で決着せず時間切れへ
+
+    const cool = new FakeClient({ team: 0, action: Action.WALK, rote: Rote.UP });
+    const hot  = new FakeClient({ team: 1, action: Action.WALK, rote: Rote.DOWN });
+
+    const result = await new GameSession().run([cool, hot], map);
+
+    expect(result.status.reason).toBe(Reason.SCORE); // 時間切れ (or 相打ち) 決着
+    expect(result.state.turnCount).toBe(0);
+  });
 });
 
 /** 各フェーズでサーバーから渡された around データを記録するクライアント */

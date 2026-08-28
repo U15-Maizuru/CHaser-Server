@@ -122,6 +122,8 @@ export interface GameEndPayload {
   reason: Reason;
   playerNames: [string, string];
   finalScore: [number, number];
+  /** 決着した瞬間の残りターン数。時間切れ決着では 0、それ以外の決着ではその時点の残数 */
+  remainingTurns: number;
 }
 
 // --- 2ゲーム制: ゲーム結果 ---

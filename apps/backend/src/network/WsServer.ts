@@ -211,10 +211,11 @@ export class WsServer {
       this.broadcastToRoom(roomId, {
         type: 'game_end',
         payload: {
-          winner:     result.status.winner,
-          reason:     result.status.reason,
+          winner:         result.status.winner,
+          reason:         result.status.reason,
           playerNames,
-          finalScore: [...result.state.teamScore] as [number, number],
+          finalScore:     [...result.state.teamScore] as [number, number],
+          remainingTurns: result.state.turnCount,
         },
       });
     });

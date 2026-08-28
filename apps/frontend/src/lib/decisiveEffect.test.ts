@@ -5,10 +5,11 @@ import { decisiveEffectFrom, type TeamMark } from './decisiveEffect';
 
 function makeEnd(over: Partial<GameEndPayload> = {}): GameEndPayload {
   return {
-    winner:      Winner.COOL,
-    reason:      Reason.SCORE,
-    playerNames: ['A', 'B'],
-    finalScore:  [0, 0],
+    winner:         Winner.COOL,
+    reason:         Reason.SCORE,
+    playerNames:    ['A', 'B'],
+    finalScore:     [0, 0],
+    remainingTurns: 0,
     ...over,
   };
 }

@@ -34,7 +34,7 @@ function status(phase: ServerStatusPayload['phase'], state: ClientState = 'ready
 }
 
 function gameEnd(winner: Winner, reason: Reason): GameEndPayload {
-  return { winner, reason, playerNames: ['COOL', 'HOT'], finalScore: [5, 3] };
+  return { winner, reason, playerNames: ['COOL', 'HOT'], finalScore: [5, 3], remainingTurns: 0 };
 }
 
 function turnStart(turn: number, player: number): TurnStartPayload {

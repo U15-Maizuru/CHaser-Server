@@ -238,7 +238,7 @@ describe('WsServer', () => {
         map,
         teamPos:        [map.teamFirstPoint[0], map.teamFirstPoint[1]],
         teamScore:      [5, 3] as [number, number],
-        turnCount:      0,
+        turnCount:      7,
         leaveItems:     0,
         isDisconnected: [false, false] as [boolean, boolean],
       },
@@ -249,6 +249,8 @@ describe('WsServer', () => {
     if (msg.type === 'game_end') {
       expect(msg.payload.winner).toBe(Winner.COOL);
       expect(msg.payload.finalScore).toEqual([5, 3]);
+      // 決着した瞬間の残りターン数 (得点計算の確認用)。GameResult.state.turnCount をそのまま運ぶ
+      expect(msg.payload.remainingTurns).toBe(7);
     }
     ws.close();
   });

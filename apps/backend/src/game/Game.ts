@@ -118,8 +118,9 @@ export class GameSession extends EventEmitter {
       log?.write(`-----残${state.turnCount}ターン-----\r\n`);
     }
 
-    // Turn 0: score judgment
-    const status = judgeGame({ ...state, turnCount: 0 }, TEAM_COUNT - 1);
+    // Turn 0: score judgment。while ループは turnCount を 0 まで減らしてから抜けるので、
+    // ここでの state.turnCount は既に 0 になっている。
+    const status = judgeGame(state, TEAM_COUNT - 1);
     log?.write(formatResult(status) + '\r\n');
     const result: GameResult = { status, state };
     this.emit('gameEnd', result);

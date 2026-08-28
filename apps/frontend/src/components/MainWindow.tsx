@@ -47,6 +47,13 @@ export function MainWindow({
   const turnCount  = snapshot?.turnCount     ?? 0;
   const leaveItems = snapshot?.leaveItems    ?? 0;
 
+  // フッターに出す残りターン数。ゲーム中は snapshot の値をそのまま使うが、決着後は
+  // gameEnd.remainingTurns (決着した瞬間の値) を使う。時間切れ決着はターン処理ループの
+  // 最終ラウンド中にしか stateUpdate が飛ばないため、snapshot.turnCount は最終ラウンド中の
+  // 値 (0 ではなく1) のまま止まってしまい、決着後の表示に使うと残りターン数が実際より
+  // 1多く見えてしまう。
+  const displayTurnCount = gameEnd ? gameEnd.remainingTurns : turnCount;
+
   // ステップ数ゲージの最大値 (原本の map.turn 相当): turnCount はゲーム中は単調減少するのみなので、
   // 新しいゲームの開始で値が増加した瞬間を検知して満タン値を更新する
   const maxTurnRef = useRef(0);
@@ -213,42 +220,46 @@ export function MainWindow({
               ? 'minmax(0, 1fr) auto minmax(0, 1fr)'
               : 'auto minmax(0, 1fr) auto',
           }}>
-            {/* 列1 (左): 左側プレイヤーが勝者のときだけ結果ピルを表示。それ以外は空 */}
-            {gameEnd && leftIsWinner && (
+            {/* 列1 (左): 左側プレイヤーが勝者のときは結果ピル、引き分けのときは引き分けピルを表示。
+                左側が敗者のとき (勝敗つき決着で相手が勝者) は空 */}
+            {gameEnd && (leftIsWinner || isDraw) && (
               <span style={{
                 ...s.resultPill, gridColumn: '1',
-                background: leftIdx === 0 ? COOL_LIGHT : HOT_LIGHT,
+                background: isDraw ? WIN_PALE : (leftIdx === 0 ? COOL_LIGHT : HOT_LIGHT),
                 color: TEXT_PRIMARY,
               }}>
-                {winnerText(gameEnd, gameEndNames[leftIdx])}
+                {isDraw ? drawText(gameEnd) : winnerText(gameEnd, gameEndNames[leftIdx])}
               </span>
             )}
 
-            {/* 列2 (中央): ゲーム中はターンゲージ、引き分け時のみ引き分けピル */}
-            {!gameEnd && maxTurn > 0 && (
+            {/* 列2 (中央): 残りターン数は決着後も表示し続ける。得点計算の確認に「何ターン
+                残して決着したか」が要るため。ゲーム中だけ左右にゲージバーを添え、決着後は
+                バーだけ消して数字だけ残す (勝者・引き分けの表示は列1/3の役目)。 */}
+            {maxTurn > 0 && (
               <div style={s.turnGaugeGroup}>
-                <span style={s.gaugeBarTrack}>
-                  <span style={{ ...s.gaugeBarFillLeft, width: `${gaugePercent}%` }} />
-                </span>
-                <span style={s.turnGaugeNumber}>{turnCount}</span>
-                <span style={s.gaugeBarTrack}>
-                  <span style={{ ...s.gaugeBarFillRight, width: `${gaugePercent}%` }} />
-                </span>
+                {!gameEnd && (
+                  <span style={s.gaugeBarTrack}>
+                    <span style={{ ...s.gaugeBarFillLeft, width: `${gaugePercent}%` }} />
+                  </span>
+                )}
+                <span style={s.turnGaugeNumber}>{displayTurnCount}</span>
+                {!gameEnd && (
+                  <span style={s.gaugeBarTrack}>
+                    <span style={{ ...s.gaugeBarFillRight, width: `${gaugePercent}%` }} />
+                  </span>
+                )}
               </div>
             )}
-            {gameEnd && isDraw && (
-              <span style={s.drawPill}>{drawText(gameEnd)}</span>
-            )}
 
-            {/* 列3 (右): 右側プレイヤーが勝者のときだけ結果ピルを表示。列1と対称構造
-                (アクションボタンは BottomBar.tsx が別途担当するため、ここでは扱わない) */}
-            {gameEnd && rightIsWinner && (
+            {/* 列3 (右): 列1と対称構造 (アクションボタンは BottomBar.tsx が別途担当するため、
+                ここでは扱わない) */}
+            {gameEnd && (rightIsWinner || isDraw) && (
               <span style={{
                 ...s.resultPill, gridColumn: '3',
-                background: rightIdx === 0 ? COOL_LIGHT : HOT_LIGHT,
+                background: isDraw ? WIN_PALE : (rightIdx === 0 ? COOL_LIGHT : HOT_LIGHT),
                 color: TEXT_PRIMARY,
               }}>
-                {winnerText(gameEnd, gameEndNames[rightIdx])}
+                {isDraw ? drawText(gameEnd) : winnerText(gameEnd, gameEndNames[rightIdx])}
               </span>
             )}
           </div>
@@ -371,7 +382,8 @@ const s: Record<string, React.CSSProperties> = {
   // ステップ数ゲージ (原本の TimeBar_A/B 相当): 画面中央に数値を置き、その左右を
   // 独立した2本のゲージバーで挟む。残ターン数が減ると各バーが中央側から先に埋まった
   // ぶんだけ外側から縮んでいき、中央に向かって縮む見た目になる。
-  // ゲーム終了時は非表示にして結果ピルに切り替わる。
+  // ゲーム終了時はバーだけ非表示にし、数値は得点確認用にそのまま残す
+  // (勝者/引き分けの表示は列1/3の結果ピルに切り替わる)。
   // 幅は 100% にして、親の中央カラム (試合中は bottomCard の gridTemplateColumns 側で
   // 1fr に切り替わり残り幅を全て取る) いっぱいまで広げる。
   turnGaugeGroup: {
@@ -396,17 +408,6 @@ const s: Record<string, React.CSSProperties> = {
     fontFamily: FONT_NUM, fontWeight: 800, color: TURN_BASE,
     fontSize: 'clamp(0.9rem, 1.8vw, 1.6rem)', lineHeight: 1,
     minWidth: '2.2em', textAlign: 'center',
-  },
-  // 引き分け専用ピル (中央列、ターンゲージと排他表示)
-  drawPill: {
-    gridColumn: '2',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    height: FOOTER_ROW_H, boxSizing: 'border-box',
-    minWidth: 0, maxWidth: '100%', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
-    textAlign: 'center', fontWeight: 700,
-    fontSize: 'clamp(0.5rem, 0.8vw, 0.85rem)',
-    padding: '0 10px', borderRadius: 99, letterSpacing: '0.02em',
-    background: WIN_PALE, color: TEXT_PRIMARY,
   },
   waiting: {
     display: 'flex', alignItems: 'center', justifyContent: 'center',
