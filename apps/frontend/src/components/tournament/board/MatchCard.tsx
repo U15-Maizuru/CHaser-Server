@@ -5,13 +5,14 @@ import { slotPlaceholder } from '@u15/ws-types';
 import {
   BG_CARD, BORDER_COLOR, COOL_COLOR, COOL_PALE, FONT_NUM, FONT_UI,
   GOLD_BASE, GOLD_LIGHT, HOT_COLOR, HOT_LIGHT, HOT_PALE, RADIUS_SM, SHADOW_SM,
-  TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, TURN_BASE, WIN_BASE, WIN_LIGHT, WIN_PALE,
+  TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE, WIN_LIGHT, WIN_PALE,
 } from '../../../ui';
+import { MATCH_STATUS_LABEL, MATCH_STATUS_COLOR, UPCOMING_KEYFRAMES } from './matchStatusStyle';
 
 // 1試合 (公式ルールの「試合」= 2ゲーム) のカード。
 // control / display / 専用ウィンドウの3画面で共用する。操作の有無は interactive で切り替える。
 
-export const CARD_W = 208;
+const CARD_W = 208;
 
 // カードの高さに関わる寸法。ここが唯一の値の出所で、下の style オブジェクト
 // (card/header/row/note) もこの定数を直に使って描画する。CARD_H/NOTE_H をこれらと
@@ -26,35 +27,16 @@ const ROW_PAD_V   = 2;  // 対戦者1行の padding 上下 (それぞれ)
 const ROW_H       = ROW_LINE_H + ROW_PAD_V * 2;
 const NOTE_LINE_H = 12; // 裁定の注記のテキストの高さ
 
-export const CARD_H = CARD_PAD_V * 2 + HEADER_H + CARD_GAP + ROW_H + CARD_GAP + ROW_H;
+const CARD_H = CARD_PAD_V * 2 + HEADER_H + CARD_GAP + ROW_H + CARD_GAP + ROW_H;
 
-// 審判裁定の注記 (裁定: ...) が付く試合は1行分だけ縦に伸びる。トーナメント表の座標計算
-// (bracketLayout.ts) が押し下げに使う高さと実際の描画がずれるとカード同士が重なるため、
-// 「その行があるかどうか」を高さの計算式ごと1箇所にまとめておく (MatchCard 自身もこれで描画する)。
+// 審判裁定の注記 (裁定: ...) が付く試合は1行分だけ縦に伸びる。「その行があるかどうか」を
+// 高さの計算式ごと1箇所にまとめておき、実際の描画 (下の card.height) もこれで決め打ちする
 const NOTE_H = CARD_GAP + NOTE_LINE_H;
 
-/** そのカードが実際に必要とする高さ。bracketLayout に渡して重なりを防ぐ */
-export function matchCardHeight(match: TournamentMatch): number {
+/** そのカードが実際に必要とする高さ。overflow:hidden の下端が見切れないよう描画に使う */
+function matchCardHeight(match: TournamentMatch): number {
   return match.result?.decidedBy === 'manual' ? CARD_H + NOTE_H : CARD_H;
 }
-
-const STATUS_LABEL: Record<TournamentMatch['status'], string> = {
-  pending:          '勝者待ち',
-  ready:            '対戦確定',
-  armed:            '準備完了',
-  in_progress:      '対戦中',
-  awaiting_confirm: '結果確認',
-  done:             '試合終了',
-};
-
-const STATUS_COLOR: Record<TournamentMatch['status'], string> = {
-  pending:          TEXT_MUTED,
-  ready:            TURN_BASE,
-  armed:            COOL_COLOR,
-  in_progress:      HOT_COLOR,
-  awaiting_confirm: GOLD_BASE,
-  done:             WIN_BASE,
-};
 
 export interface MatchCardProps {
   match:        TournamentMatch;
@@ -138,8 +120,8 @@ export function MatchCard({
           upcoming     ? { ...badge, ...badgeUpcoming }
         : justFinished ? { ...badge, ...badgeJustFinished }
         : rematch      ? { ...badge, ...badgeRematch }
-        : { ...badge, color: STATUS_COLOR[match.status] }}>
-          {upcoming ? '対戦試合' : justFinished ? '試合終了' : rematch ? '再試合待ち' : STATUS_LABEL[match.status]}
+        : { ...badge, color: MATCH_STATUS_COLOR[match.status] }}>
+          {upcoming ? '対戦試合' : justFinished ? '試合終了' : rematch ? '再試合待ち' : MATCH_STATUS_LABEL[match.status]}
         </span>
       </div>
 
@@ -161,11 +143,9 @@ export function MatchCard({
 }
 
 // height は matchCardHeight() で決め打ちする (minHeight ではなく固定)。
-// bracketLayout.ts の押し下げ計算がカードの高さを前提にしているため、実際の描画が
-// それより伸びると下のカード (3位決定戦など) に重なってしまう。
 // **この固定が意味を持つのは、中身の各行 (header/row/note) の高さがブラウザ既定の行高に
 // 頼らず lineHeight で決め打ちされているときだけ。** どちらかだけ直すと、指定した高さより
-// 実際の中身が高くなって下端が見切れる (これで一度事故った)
+// 実際の中身が高くなって下端が見切れる (これで一度事故った — "E2E-B" の行が欠けて見えた不具合)
 const card: React.CSSProperties = {
   width: CARD_W, boxSizing: 'border-box', overflow: 'hidden',
   background: BG_CARD, border: `1px solid ${BORDER_COLOR}`,
@@ -181,13 +161,7 @@ const cardSelected: React.CSSProperties = {
 };
 
 // これから行う試合。観客席から一目で分かるよう、枠を金色にして脈打たせる。
-// アニメーションはインラインの <style> で入れる (ManualControls と同じやり方)。
-const UPCOMING_KEYFRAMES = `
-@keyframes u15-upcoming {
-  0%,100% { box-shadow: 0 0 0 2px ${GOLD_BASE}, 0 0 10px 2px rgba(221,170,34,0.35) }
-  50%     { box-shadow: 0 0 0 3px ${GOLD_BASE}, 0 0 20px 6px rgba(221,170,34,0.65) }
-}`;
-
+// アニメーション本体 (UPCOMING_KEYFRAMES) は matchStatusStyle.ts で共有する。
 const cardUpcoming: React.CSSProperties = {
   // card と同じ border ショートハンドで上書きする (borderColor だけ足すと
   // 「ショートハンドと混ぜるな」と React に警告される)

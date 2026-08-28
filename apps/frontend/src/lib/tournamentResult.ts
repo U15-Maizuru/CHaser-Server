@@ -124,7 +124,7 @@ function leaguePodium(state: TournamentStatePayload): PodiumRow[] {
 }
 
 /** 決勝 = 3位決定戦でない試合のうち最も後の回戦のもの */
-function finalMatchOf(matches: TournamentMatch[]): TournamentMatch | null {
+export function finalMatchOf(matches: TournamentMatch[]): TournamentMatch | null {
   return [...matches]
     .filter(m => !isConsolationMatch(m))
     .sort((a, b) => b.stage - a.stage || a.order - b.order)[0] ?? null;
