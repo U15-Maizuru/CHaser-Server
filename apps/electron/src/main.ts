@@ -3,6 +3,10 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import { killTree } from './killTree';
 
+// package.json の name (@u15/electron) を app.getName() 既定値にすると
+// userData のフォルダ名もスコープ付きパッケージ名のままになってしまうため明示する
+app.setName('CHaser Server');
+
 const isDev = process.env['NODE_ENV'] === 'development';
 
 let backendProcess: ChildProcess | null = null;
