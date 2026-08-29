@@ -98,6 +98,29 @@ Electron アプリとして1台のPCで動かす**ローカルモード**に加�
 
 ---
 
+## 配布版の入手とインストール
+
+配布版（インストーラー）は [GitHub Releases](https://github.com/U15-Maizuru/CHaser-Server/releases) から入手します。Assets から OS に合わせたファイルをダウンロードしてください。
+
+| OS | ファイル |
+|---|---|
+| Windows 10/11 | `CHaser Server Setup <version>.exe` |
+| macOS (Apple Silicon) | `CHaser Server-<version>-arm64.dmg` |
+
+**Windows**: ダウンロードした `.exe` を実行し、ウィザードの指示に従ってください。
+
+**macOS**: ダウンロードした `.dmg` を開き、「CHaser Server」を「Applications」フォルダへドラッグしてください。
+
+> macOS 版は Apple Developer 証明書での署名・notarization を行っていません。
+> 初回起動時に Gatekeeper が「開発元を確認できません」と表示してブロックするため、
+> Finder でアプリを右クリック→「開く」を選ぶか、
+> システム設定→プライバシーとセキュリティ の下部にある「このまま開く」から起動してください（初回のみ）。
+
+インストール後の使い方・アンインストール方法は
+[docs/user-manual.md](docs/user-manual.md#2-ローカルモード--electron-アプリ) を参照してください。
+
+---
+
 ## クイックスタート
 
 ```bash
@@ -185,11 +208,6 @@ pnpm --filter @u15/electron build:win
 # macOS インストーラー (Python 同梱、apps/electron/release/ に生成。Apple Silicon のみ)
 pnpm --filter @u15/electron build:mac
 ```
-
-> macOS 版は Apple Developer 証明書での署名・notarization を行っていません。
-> 初回起動時に Gatekeeper が「開発元を確認できません」と表示してブロックするため、
-> Finder でアプリを右クリック→「開く」を選ぶか、
-> システム設定→プライバシーとセキュリティ の下部にある「このまま開く」から起動してください。
 
 ---
 
