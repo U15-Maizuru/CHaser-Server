@@ -72,8 +72,10 @@
 │  │   display           │   │    control               │    │
 │  └──────────────────────┘   └──────────────────────────┘    │
 │  ┌──────────────────────────────────────────────────────┐    │
-│  │ 手動操作ウィンドウ (COOL/HOT 独立、必要時のみ)          │    │
-│  │ ?room=local&mode=manual&slot=0|1                       │    │
+│  │ 必要時のみ開く3種 (いずれも `*:openWindow` IPC)        │    │
+│  │ ?room=local&mode=manual&slot=0|1   COOL/HOT 独立      │    │
+│  │ ?room=local&mode=tournament        大会運営           │    │
+│  │ ?room=local&mode=mapEditor&mapId=  マップエディタ      │    │
 │  └──────────────────────────────────────────────────────┘    │
 └──────┬──────────────────────────────────┬───────────────────┘
        │  child_process.spawn             │
@@ -90,10 +92,27 @@
 └─────────────────────────────────────────────────────────────┘
 ```
 
-手動操作ウィンドウは、コントロールウィンドウがいずれかのスロットを `clientType='manual'` に
-設定すると `manual:openWindow` IPC 経由で自動的に開く (`apps/electron/src/main.ts` の
-`createManualWindow`)。COOL/HOT それぞれ独立したウィンドウで、`ManualControls.tsx` の
-矢印キー操作またはボタンで `manual_action` メッセージを送信する。
+起動時に開くのは対戦表示とコントロールの2つで、残る3種はコントロール画面からの IPC で開く。
+ウィンドウの生成は `apps/electron/src/main.ts` の `createAppWindow` 1箇所に集約してあり、
+`openDisplayWindow` / `openControlWindow` / `openManualWindow` / `openTournamentWindow` /
+`openMapEditorWindow` はサイズなどの `WindowSpec` を渡すだけ。**個別に書くと preload の配線や
+「既に開いていたら focus」のガードが片方だけ抜ける。**
+
+| ウィンドウ | 開く契機 | `openWindows` のキー | サイズ |
+|---|---|---|---|
+| 対戦表示 | 起動時 | `display` | 1280×800 |
+| コントロール | 起動時 (閉じるとアプリ終了) | `control` | 1280×800 |
+| 手動操作 | スロットを `clientType='manual'` にすると `manual:openWindow` | `manual:0` / `manual:1` | 360×560 |
+| 大会運営 | フッターの「大会運営」→ `tournament:openWindow` | `tournament` | 1440×900 |
+| マップエディタ | マップ管理の「編集」「新規作成」→ `mapEditor:openWindow` | `mapEditor:<mapId>` / `mapEditor:new` | 720×640 |
+
+マップエディタだけウィンドウをマップごとに分けるのは、room の対戦状態と無関係 (HTTP のみ) で
+複数枚開いても困らないため。同じマップを指定した場合は既存ウィンドウを focus するだけで、
+中身を勝手に差し替えない。**ブラウザ (`U15_MODE=web`) には `electronAPI` が無いので、
+大会運営とマップエディタは別タブで開く** (`App.tsx` が分岐する)。
+
+手動操作ウィンドウは COOL/HOT それぞれ独立していて、`ManualControls.tsx` の矢印キー操作
+またはボタンで `manual_action` メッセージを送信する。
 
 対戦表示ウィンドウの全画面化は、コントロール画面の `⛶` から `display:toggleFullscreen` IPC で行う。
 全画面中は切り替え元のボタンが裏に隠れるため、`main.ts` の `enableFullscreenEscape` が
@@ -133,6 +152,8 @@ U15-server-maizuru/
 │   │       ├── RoomManager.ts      部屋ライフサイクル管理
 │   │       ├── programCatalog.ts   対戦用プログラムライブラリ (CRUD カタログ、全ルーム共通)
 │   │       ├── programName.ts      プログラムのソースから名乗るプレイヤー名を読み取る
+│   │       ├── playerName.ts       プレイヤー名の正規化。TCP 由来 (TcpClient) と
+│   │       │                       ソース由来 (programName.ts) の両方がここを通る
 │   │       ├── mapCatalog.ts       マップライブラリ (CRUD カタログ、全ルーム共通)。
 │   │       │                       起動時に assets/map-library/ の既定マップを取り込む
 │   │       ├── libTemplates.ts     既定ライブラリ (pyCHaser 等) を各ルームの libs/ に配置
@@ -153,6 +174,9 @@ U15-server-maizuru/
 │   │       │   ├── MapManager.ts       マップ状態管理
 │   │       │   ├── RoundController.ts  フェーズ・ゲーム制御
 │   │       │   ├── roundResult.ts      1ゲームの結果から RoundResult を組み立てる
+│   │       │   ├── processConfig.ts    CatalogEntry → ProcessConfig の変換 (libPath の規約はここだけ)
+│   │       │   ├── localSettingsStore.ts  ローカルモードの唯一の room だけが使う設定の永続化
+│   │       │   │                          (server/local-settings.json)
 │   │       │   └── inlineMap.ts        InlineMapData ⇄ GameMap の相互変換
 │   │       ├── catalog/
 │   │       │   └── JsonIndexStore.ts   「ディレクトリ + index.json」で永続化するカタログの土台
@@ -175,13 +199,16 @@ U15-server-maizuru/
 │   │           ├── LobbyRouter.ts          ロビー系メッセージ (create/join/list/destroy_room) を処理
 │   │           ├── GameMessageDispatch.ts  ルーム内ゲームメッセージを対応する ServerManager へディスパッチ
 │   │           ├── TournamentMessageDispatch.ts  ルーム内の大会運営メッセージを転送
+│   │           ├── httpUtil.ts             http/router.ts と各ルートモジュールが共有する下ごしらえ
+│   │           │                           (JSON 応答・multipart 受け)。router 側に置くと循環参照になる
 │   │           └── localIp.ts               LAN から到達できる自分の IPv4 アドレス
 │   │
 │   ├── frontend/
 │   │   ├── public/
 │   │   │   └── favicon.ico      ブラウザのタブ用アイコン (icon.ico と同じ絵。dist の直下へコピーされる)
 │   │   └── src/
-│   │       ├── App.tsx             ?room=/?mode= に応じて画面を分岐 (Lobby/Display/Control/Tournament/Manual)
+│   │       ├── App.tsx             ?room=/?mode= に応じて画面を分岐
+│   │       │                       (Lobby/Display/Control/Tournament/Manual/MapEditor)
 │   │       ├── ui/                 画面共通の見た目 (tokens / Button / Card / Dialog / Field / Tabs)
 │   │       ├── assets/
 │   │       │   ├── Image/          テーマ別の盤面テクスチャ (Jewel / Light / Heavy / RPG)
@@ -193,7 +220,12 @@ U15-server-maizuru/
 │   │       │   ├── MapLibraryDialog.tsx     マップライブラリの管理モーダル (追加・DL・削除のみ。選択はしない)
 │   │       │   ├── MapSourceSection.tsx     使うマップの選択 (ライブラリ/ランダム生成/エディタ) — マップ列にインライン展開
 │   │       │   ├── MapEditorDialog.tsx      Canvas ベースのマップ編集 (現在のマップを起点に編集し、適用/ライブラリ保存/ダウンロードを分離)
+│   │       │   ├── MapEditorMode.tsx        ?mode=mapEditor のルート。編集の中身は MapEditorDialog の
+│   │       │   │                            MapEditorPanel を共用し、ここは窓としての枠だけを持つ
 │   │       │   ├── MapThumbnail.tsx         マップの縮小プレビュー (マップ列・待機画面で使用。flip で第2ゲームの反転表示)
+│   │       │   ├── MapPreview.tsx           これから戦うマップの枠つきプレビュー (待機画面・マップ列)
+│   │       │   ├── LibraryBrowser.tsx       登録済みライブラリの検索つき一覧 (マップ/プログラムで共用)
+│   │       │   ├── FileDropZone.tsx         ドラッグ&ドロップのアップロード枠
 │   │       │   ├── FitArea.tsx              中身を親の空きいっぱいまで拡大・縮小して中央に置く入れ物 (観戦画面・大会の表)
 │   │       │   ├── MainWindow.tsx      盤面・スコア・進行状況の表示 (対戦表示/コントロール共用)
 │   │       │   ├── GameBoardCanvas.tsx 盤面描画 (テクスチャ・探索範囲・決着演出・ダーク幕)
@@ -216,9 +248,12 @@ U15-server-maizuru/
 │   │       │   ├── useSound.ts           SE の読込と再生 (同梱 + server/sounds での差し替え)
 │   │       │   ├── useTextures.ts        テーマ別テクスチャの読込
 │   │       │   ├── useCurrentMap.ts      今出ているマップの取得 (コントロール窓と観戦窓で共用)
+│   │       │   ├── useMapCatalogPreview.ts  ライブラリの1件を room に紐付けずプレビューする
 │   │       │   ├── useFitScale.ts        空き領域に合わせた表示倍率の算出 (FitArea の中身)
 │   │       │   ├── useBgm.ts             場面に応じた BGM 再生
+│   │       │   ├── useSceneTransition.ts 場面の切り替えに暗転を挟む (BGM のクロスフェードと同じ長さ)
 │   │       │   ├── useStartCountdown.ts  ゲーム開始カウントダウンの表示制御
+│   │       │   ├── useFrozenTournamentState.ts  結果確定の直後だけ tournamentState を凍結する
 │   │       │   ├── useBoardLayout.ts     盤面のセルサイズ・サイドパネル幅・スコアバー寸法の導出
 │   │       │   ├── useFitCorrection.ts   中身が高さに収まる最大の拡大率を二分探索で求める
 │   │       │   └── ...
@@ -231,6 +266,10 @@ U15-server-maizuru/
 │   │       │   ├── roundRow.ts        2ゲーム制サイドパネルの明細1行の組み立て
 │   │       │   ├── resultText.ts      決着理由・勝敗の文言
 │   │       │   ├── decisiveEffect.ts   決着理由 → 盤面演出 (勝者の 👑・敗者の暗転・敗因バッジ/リング) の変換
+│   │       │   ├── koryuDisplay.ts    得点の内訳をどちらのルールの式で見せるかの判定 (ruleSet + 予選/決勝)
+│   │       │   ├── tournamentResult.ts 配信済みの状態だけから表彰台を求める純関数
+│   │       │   ├── nativeDialog.ts    confirm/alert のあとに Electron のキーボード入力が
+│   │       │   │                      戻らない問題を避けるための包み (main.ts の window:refocus)
 │   │       │   └── ...
 │   │       └── ...
 │   │
@@ -239,24 +278,33 @@ U15-server-maizuru/
 │       │   ├── icon.ico    Windows 版アイコン (ウィンドウ・タスクバー・インストーラー・exe で共用)
 │       │   └── icon.icns   macOS 版アイコン (icon.ico から sips/iconutil で生成)
 │       └── src/
-│           └── main.ts   バックエンド起動 → /api/default-room から roomId を取得 → 対戦表示/コントロール
-│                          ウィンドウを開く。手動操作ウィンドウは manual:openWindow IPC で必要時に開く
+│           ├── main.ts        バックエンド起動 → /api/default-room から roomId を取得 → 対戦表示/コントロール
+│           │                  ウィンドウを開く。手動操作・大会運営・マップエディタの各ウィンドウは
+│           │                  `*:openWindow` IPC で必要時に開く
+│           ├── preload.ts     contextBridge で `window.electronAPI` を公開する
+│           ├── electronApi.ts その API の型 (`ElectronAPI`)。preload と
+│           │                  frontend/src/types/electron.d.ts の両方がこの1ファイルを参照する
+│           │                  ため、片側だけの変更は型エラーになる
+│           └── killTree.ts    プロセスを木ごと落とす (3章)
 │
 ├── packages/
 │   └── ws-types/
 │       └── src/
 │           ├── protocol.ts       基本型・enum・共有の既定値 (依存なし)
-│           ├── scoring.ts        競技ルールの得点・勝敗判定の純関数と係数
-│           ├── messages.ts       WS メッセージ union
-│           ├── tournament.ts     大会運営の型と純関数
-│           ├── tournamentFlow.ts 試合グラフを読む述語
-│           └── index.ts          re-export の集約点
+│           ├── scoring.ts        舞鶴大会ルールの得点・勝敗判定の純関数と係数 (→ protocol)
+│           ├── koryuScoring.ts   交流大会ルールの得点・勝敗判定 (→ protocol, scoring)
+│           ├── tournament.ts     大会運営の型と純関数 (→ protocol, scoring)
+│           ├── tournamentFlow.ts 試合グラフを読む述語 (→ tournament)
+│           ├── messages.ts       WS メッセージ union (→ protocol, tournament)
+│           └── index.ts          re-export の集約点 (ここから値を import し返さないこと)
 │
 ├── server/
 │   ├── program-catalog/            プログラムライブラリ (CRUD カタログ、全ルーム共通)
 │   ├── map-catalog/                マップライブラリ (CRUD カタログ、全ルーム共通)
 │   ├── music/                      BGM ファイル (全ルーム共通)
 │   ├── sounds/                     SE の差し替えファイル (全ルーム共通)
+│   ├── tournament/<大会id>/        大会データと進行状態 (13-2。ルームには紐づけない)
+│   ├── local-settings.json         ローカルモードの唯一の room の設定 (localSettingsStore.ts)
 │   └── rooms/<roomId>/
 │       ├── programs/cool/          COOL プレイヤーのアップロードプログラム
 │       ├── programs/hot/
@@ -270,7 +318,7 @@ U15-server-maizuru/
 
 > 上記に加えて、大会運営機能のファイルがある (詳細は [13章](#13-大会運営-トーナメント--リーグ--予選リーグ)):
 > `apps/backend/src/tournament/` (試合グラフ・永続化・オーケストレータ) /
-> `apps/frontend/src/components/tournament/` + `lib/bracketLayout.ts` (トーナメント表) /
+> `apps/frontend/src/components/tournament/` + `lib/centeredBracketLayout.ts` (トーナメント表の座標計算) /
 > `packages/ws-types/src/{protocol,scoring,tournament,tournamentFlow,messages}.ts` (共有型と純関数) /
 > 実行時データは `server/tournament/<大会id>/`。
 
@@ -513,15 +561,25 @@ class WsServer {
 **モード分岐 (App.tsx)**
 
 ```typescript
-const ROOM_ID = new URLSearchParams(window.location.search).get('room');
-const MODE    = new URLSearchParams(window.location.search).get('mode') ?? 'display';
-
 export default function App() {
-  if (!ROOM_ID) return <Lobby wsUrl={WS_URL} />;           // ロビー (Web モード)
-  if (MODE === 'display') return <DisplayMode wsUrl={WS_URL} roomId={ROOM_ID} />;
-  return <ControlApp roomId={ROOM_ID} />;
+  const { roomId, mode, slot, mapId } = readAppLocation(window.location.search);
+
+  if (!roomId) return <Lobby wsUrl={WS_URL} />;   // room 指定なし = ロビー (Web モード)
+
+  switch (mode) {
+    case 'display':    return <DisplayMode ... />;
+    case 'manual':     return <ManualMode slot={slot} ... />;
+    case 'tournament': return <TournamentMode ... />;
+    case 'mapEditor':  return <MapEditorMode mapId={mapId} ... />;
+    default:           return <ControlApp ... />;   // 'control'
+  }
 }
 ```
+
+クエリの解釈は `lib/appMode.ts` の `readAppLocation` に閉じている (`mode` の既定値は
+`display`)。**`mode` の語彙は3箇所で揃える**こと — Electron 側の `WindowMode`
+(`apps/electron/src/main.ts`)、`AppMode` (`appMode.ts`)、`url().includes('mode=...')` で
+ウィンドウを特定している E2E (`apps/electron/test-e2e.mjs`)。
 
 **Lobby** — ロビー画面 (Web モード専用)
 
@@ -603,6 +661,7 @@ ws.onopen = () => {
 | エンドポイント | メソッド | 説明 |
 |---|---|---|
 | `/api/default-room` | GET | ローカルモード用: `{roomId: "local", ports: [2009, 2010]}` を返す |
+| `/api/display-prefs?room=<id>` | GET | 指定ルームの表示設定 (今はテーマのみ)。**WS を持たない画面のための HTTP 経路** — マップエディタウィンドウは room の対戦状態と無関係にしてあるので、テーマだけをここで一度取りに行く |
 | `/api/upload/program?slot=0\|1&room=<id>` | POST | AI プログラム (.py/.exe) をルームのスロットへ直接アップロード |
 | `/api/programs` | POST | プログラムライブラリへの新規アップロード (.py/.exe) — 全ルーム共通、`programCatalog.ts` |
 | `/api/programs` | GET | プログラムライブラリの一覧 (`CatalogEntry[]`) |
@@ -613,6 +672,7 @@ ws.onopen = () => {
 | `/api/libs/:filename?slot=0\|1&room=<id>` | DELETE | ライブラリ削除 |
 | `/api/maps` | POST | マップライブラリへの新規アップロード (.map) — 全ルーム共通、`mapCatalog.ts` |
 | `/api/maps` | GET | マップライブラリの一覧 (`MapCatalogEntry[]`) |
+| `/api/maps/:id` | GET | ライブラリ内のマップ1件を room に紐付けず返す (`{data: InlineMapData, displayName}`)。大会 standby のプレビュー・マップ管理のプレビューに使う |
 | `/api/maps/:id` | DELETE | マップライブラリからの削除 |
 | `/api/maps/:id/download` | GET | ライブラリ内マップのダウンロード (Content-Disposition 付き) |
 | `/api/maps/current?room=<id>` | GET | 指定ルームの現在のマップ (`InlineMapData`)。エディタ起点・現在マップ表示に使用 |
@@ -848,7 +908,7 @@ App.tsx (ErrorBoundary でラップ)
 ├── DisplayMode.tsx         (?room=xxx&mode=display)
 │   │                       displayScene() が出す画面を決め、BGM もその場面から選ぶ
 │   ├── SetupWaiting        (waiting = 接続待ち)
-│   │   ├── MapPreview (SetupWaiting 内) これから戦うマップ。第2ゲーム前は盤面と同じ向きに反転
+│   │   ├── MapPreview.tsx              これから戦うマップ。第2ゲーム前は盤面と同じ向きに反転
 │   │   └── BracketView / LeagueTable    大会運営中の勝ち上がり (fit で空きいっぱいに拡大)
 │   ├── TournamentStandby   (standby = 大会運営中で次の試合が未準備。表だけを大きく見せる)
 │   ├── TournamentFinale    (award   = 全試合が確定したあとの表彰)
@@ -873,8 +933,11 @@ App.tsx (ErrorBoundary でラップ)
 │   ├── BracketView / LeagueTable / QualifyingView   左: 大会の表
 │   └── TournamentPanel                              右: 今やること + 大会/進行/設定タブ
 │
-└── ManualMode.tsx           (?room=xxx&mode=manual&slot=0|1 — 手動操作ウィンドウ)
-    └── ManualControls.tsx
+├── ManualMode.tsx           (?room=xxx&mode=manual&slot=0|1 — 手動操作ウィンドウ)
+│   └── ManualControls.tsx
+│
+└── MapEditorMode.tsx        (?room=xxx&mode=mapEditor&mapId=<id> — マップエディタウィンドウ)
+    └── MapEditorPanel       編集の中身は MapEditorDialog と共用 (窓とモーダルで同じ絵)
 ```
 
 **画面共通の見た目は `src/ui/` に集約する。** 色トークン (`tokens.ts`) と、
@@ -909,6 +972,9 @@ App.tsx (ErrorBoundary でラップ)
 | `useFitScale(max, min)` | 入れ物と中身を実測して表示倍率を出す。`FitArea` 経由で使う |
 | `useBgm(httpBase, track, muted, enabled)` | BGM の再生・停止。鳴らす曲は呼び出し側が場面から決める。Audio は常に 1 つだけ持つ |
 | `useStartCountdown(phase, turnInfo)` | ゲーム開始カウントダウンの表示制御 |
+| `useSceneTransition(scene)` | 場面が変わっても即座に差し替えず、暗転 → 差し替え → 明転と進める。`useBgm` のクロスフェードと同じ長さ (`SCENE_FADE_MS`) |
+| `useMapCatalogPreview(httpBase, mapId)` | ライブラリの1件を room に紐付けずプレビュー (`GET /api/maps/:id` 相当)。大会 standby のマップ枠とマップ管理で共用 |
+| `useFrozenTournamentState(state, trackLive)` | `trackLive` が false の間、`tournamentState` を最後に true だった値に凍結する (13-6) |
 | `useFileUpload()` | XHR multipart アップロード |
 
 ### 設定の分類と置き場所 (重要)
@@ -1139,8 +1205,11 @@ pnpm --filter @u15/backend test
 | ServerManager の分割クラス | `game/ServerManager.test.ts`, `game/MapManager.test.ts`, `game/SlotManager.test.ts` |
 | ネットワーク | `network/TcpClient.test.ts`, `network/WsServer.test.ts`, `http/router.test.ts` |
 | ルーム・カタログ | `RoomManager.test.ts`, `programCatalog.test.ts`, `programName.test.ts`, `mapCatalog.test.ts`, `libTemplates.test.ts` |
-| クライアント | `clients/ProcessClient.test.ts` |
-| 大会運営 | `tournament/bracket.test.ts`, `league.test.ts`, `standings.test.ts`, `progress.test.ts`, `definition.test.ts`, `TournamentStore.test.ts`, `TournamentOrchestrator.test.ts`, `zip.test.ts`, `exporter.test.ts`, `httpRoutes.test.ts` |
+| クライアント | `clients/ProcessClient.test.ts`, `clients/ManualClient.test.ts` |
+| 大会運営 — 試合グラフの生成 (純関数) | `tournament/bracket.test.ts`, `league.test.ts`, `groupStage.test.ts`, `botStage.test.ts` |
+| 大会運営 — 進行と順位 (純関数) | `tournament/progress.test.ts`, `standings.test.ts`, `qualifiers.test.ts`, `autoPlay.test.ts`, `tournamentFlow.test.ts` |
+| 大会運営 — 永続化と入出力 | `tournament/definition.test.ts`, `TournamentStore.test.ts`, `zip.test.ts`, `bundle.test.ts`, `exporter.test.ts` |
+| 大会運営 — 配信と HTTP | `tournament/TournamentOrchestrator.test.ts`, `httpRoutes.test.ts` |
 
 大会運営のテストは実ファイルシステム (`server/tournament`, `server/program-catalog`) と
 TCP ポートを共有するため、`apps/backend/vitest.config.ts` で `fileParallelism: false` にしている。
@@ -1158,10 +1227,32 @@ pnpm --filter @u15/frontend test
 
 | 範囲 | ファイル |
 |---|---|
-| フック | `hooks/useTextures.test.ts`, `hooks/useGamePhaseSound.test.ts`, `hooks/usePersistedState.test.ts` |
-| 得点・演出のロジック | `lib/decisiveEffect.test.ts`, `lib/roundRow.test.ts`, `lib/resultText.test.ts`<br>競技ルールそのものは `packages/ws-types/src/scoring.test.ts` |
-| 大会運営のロジック | `lib/bracketLayout.test.ts`, `lib/bracketSlots.test.ts` |
-| コンポーネント | `components/PlayerSidePanel.test.tsx`, `components/tournament/TournamentEditorDialog.test.tsx` |
+| フック | `hooks/useTextures.test.ts`, `hooks/useGamePhaseSound.test.ts`, `hooks/usePersistedState.test.ts`, `hooks/useFitCorrection.test.ts` |
+| 画面の分岐 | `lib/appMode.test.ts` |
+| 得点・演出のロジック | `lib/decisiveEffect.test.ts`, `lib/roundRow.test.ts`, `lib/resultText.test.ts`<br>競技ルールそのものは `packages/ws-types` 側 (下記) |
+| 大会運営のロジック | `lib/centeredBracketLayout.test.ts`, `lib/bracketSlots.test.ts`, `lib/tournamentResult.test.ts` |
+| コンポーネント (対戦) | `components/PlayerSidePanel.test.tsx` |
+| コンポーネント (大会の表) | `components/tournament/board/` の `LeagueTable` / `QualifyingView` / `BotStageBoard` / `TournamentStandby` / `TournamentFinale` |
+| コンポーネント (運営パネル) | `components/tournament/panel/` の `TournamentPanel` / `NextActionCard` / `ProgressTab`、`qualifier/BotQualifierSection`、`editor/TournamentEditorDialog` |
+
+大会運営のテストは `test/tournamentFixture.ts` を雛形にする。形式ごとに意味のある既定値が
+入った `StageRules` を1箇所で組んであり、各テストは違いのある項目だけを上書きする。
+**形式を1つ足したらここにも既定値を足す** — 足さないと、新形式のテストだけが
+生の `StageRules` を手書きすることになる。
+
+### 単体テスト (Vitest) — ws-types
+
+```bash
+pnpm --filter @u15/ws-types test
+```
+
+| 範囲 | ファイル |
+|---|---|
+| 舞鶴大会ルールの得点・勝敗 | `src/scoring.test.ts` |
+| 交流大会ルールの得点・勝敗 | `src/koryuScoring.test.ts` |
+
+**競技ルールそのものの回帰テストはここにしかない。** バックエンドとフロントエンドは
+どちらもこの純関数を呼ぶので、式を変えるときはまずここを直す。
 
 `vite.config.ts` は `globals` を有効にしていないため、React Testing Library の**自動 cleanup は動かない**。
 1つのテストファイルで複数回 `render` する場合は `afterEach(cleanup)` を自分で書くこと
@@ -1462,8 +1553,11 @@ ZIP を書く実装 (`zip.writeZip`) は元々テスト用ヘルパー (`test/bu
 
 | ファイル | 役割 |
 |---|---|
-| `lib/bracketLayout.ts` | 【純関数】試合グラフ → カード座標と接続線のパス |
+| `lib/centeredBracketLayout.ts` | 【純関数】試合グラフ → カード座標と接続線のパス。決勝から winner-of / loser-of を逆に辿って左右2つの山に分け、決勝を中央の列に置く |
 | `lib/bracketSlots.ts` | 【純関数】組み合わせ編集のスロット操作 (`autoSlots` / `fitSlots` / 試合数の見積り) |
+| `lib/tournamentResult.ts` | 【純関数】配信済みの `TournamentStatePayload` だけから表彰台を求める |
+| `lib/koryuDisplay.ts` | 【純関数】得点の内訳をどちらのルールの式で見せるかの判定 (`ruleSet` + その試合が予選か決勝か) |
+| `hooks/useFrozenTournamentState.ts` | 結果確定の直後だけ `tournamentState` を凍結する。確定と同時に `armedMatchId` が消えるため、対策なしだと表示名や得点式が一瞬だけ切り替わって見える |
 | `components/FitArea.tsx` | 中身を親の空きいっぱいまで拡大・縮小して中央に置く入れ物 (`useFitScale`) |
 | `ui/` | 画面共通の見た目 (色トークン・Button / Card / Dialog / Field / Tabs)。生の色や幕を各画面で書き起こさない |
 | `components/tournament/TournamentMode.tsx` | `?mode=tournament` のルート。**大会運営の唯一の入口** |
@@ -1484,6 +1578,9 @@ ZIP を書く実装 (`zip.writeZip`) は元々テスト用ヘルパー (`test/bu
 | `board/QualifyingView.tsx` | 予選の表 ⇄ 決勝トーナメント表の切り替え。観戦画面の出し分け (`displayQualifyingPhase`) もここ。**位相の判断は予選リーグ / BOT対戦予選で共通** |
 | `board/BotStageBoard.tsx` | BOT対戦予選の表。エントリーリスト + 順位リスト (終わった人だけ載る) |
 | `board/MatchCard.tsx` | 1試合のカード。3画面で共用 (`interactive` で操作の有無を切替) |
+| `board/PlayerCard.tsx` | トーナメント表の1枠 (1試合の片側 = 1人)。名前と得点だけを持つ |
+| `board/MatchInfoCard.tsx` | 対になる2枚の `PlayerCard` の間に挟む「対戦」そのものの情報 (試合ラベル・状態バッジ・裁定注記)。**1試合につきカードは3枚** — 試合単位の情報を対戦者ごとに重複させないため |
+| `board/matchStatusStyle.ts` | 試合状態の日本語ラベルと色。`MatchCard` と `MatchInfoCard` の唯一の情報源 |
 | `board/TournamentStandby.tsx` / `TournamentFinale.tsx` | 観客席の待機画面と表彰画面 |
 | `panel/TournamentPanel.tsx` | 運営パネルの骨格。「今やること」を固定し、下をタブで切り替える |
 | `panel/NextActionCard.tsx` | 「今やること」1枚。`nextOperatorAction` の返り値をそのまま描く |
@@ -1491,6 +1588,11 @@ ZIP を書く実装 (`zip.writeZip`) は元々テスト用ヘルパー (`test/bu
 | `panel/ResultConfirmDialog.tsx` | 結果確定。同点時の3択を出す |
 | `qualifier/QualifierSection.tsx` | 決勝進出者の一覧と差し替え (予選リーグ。`QualifierPicker` は表のカードからも使う) |
 | `qualifier/BotQualifierSection.tsx` | 決勝進出者の最終決定確認リスト (BOT対戦予選。多めに出して削る) |
+| `editor/TournamentEditorDialog.tsx` | 大会データ作成・編集フォームの骨格 (13-7) |
+| `editor/draft.ts` | 【純関数】フォームの下書き ⇄ `TournamentDefinition` の変換。形式を切り替えても入力が消えないよう全形式ぶんを平坦に持ち、**保存するときだけ**その形式が意味を持つ項目を `StageRules` に組み直す |
+| `editor/ParticipantEditor.tsx` | 参加者の名簿。**上から順が選手番号**で、番号の小さい方が第1ゲームで先攻 |
+| `editor/FormatRulesEditor.tsx` | 対戦のルール。出す欄を形式で分ける (`StageRules` の判別共用体と1対1) |
+| `editor/PairingEditor.tsx` | 1回戦の組み合わせ (トーナメントのみ)。既定は標準シード配置の自動生成 |
 
 **運営パネルは「今やること」を1枚だけ出す。** 状況に対して押すべきものは
 `nextOperatorAction` (`@u15/ws-types`) で1つに定まるので、パネルはそれを描くだけで
@@ -1506,7 +1608,7 @@ ZIP を書く実装 (`zip.writeZip`) は元々テスト用ヘルパー (`test/bu
 
 **観客に見せるための拡大 (`fit`)**: `BracketView` / `LeagueTable` に `fit` を渡すと、
 `FitArea` (= `useFitScale`) が親の空きに合わせて図ごと `transform: scale()` する。
-文字サイズだけを上げないのは、カード幅・接続線・余白との比率が崩れ `bracketLayout` の
+文字サイズだけを上げないのは、カード幅・接続線・余白との比率が崩れ `centeredBracketLayout` の
 座標計算にも手を入れることになるため。**`fit` の親は高さの決まった箱にすること** —
 中身を絶対配置で流れから外すので、親が `height:auto` だと高さ 0 になって何も見えない。
 `transform` はレイアウトサイズに影響しないので「拡大 → 再測定 → さらに拡大」の循環は起きない。
@@ -1810,7 +1912,7 @@ id は予選が `G1-D1M1` (Gリーグ番号-D節-M試合)、決勝が `SF1` / `F
 場面 (組み合わせを見て気づく) があり、そこで観客席が予選表へ戻ると混乱するため。
 
 **表彰画面は決勝トーナメントだけを出す** (`TournamentFinale`)。予選の試合を混ぜると
-`bracketLayout` が節ごとに列を作り、列見出しが「Aリーグ」になって表が壊れる。
+`centeredBracketLayout` が節ごとに列を作り、列見出しが「Aリーグ」になって表が壊れる。
 予選の最終結果は運営パネルから `'groups'` を選べばいつでも出せる。
 
 ##### リーグ表の並べ方

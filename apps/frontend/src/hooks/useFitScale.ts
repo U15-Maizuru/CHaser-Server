@@ -4,7 +4,7 @@ import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 // トーナメント表・リーグ表をプロジェクタで読ませるために使う。
 //
 // 文字サイズだけを上げるのではなく transform: scale() で図ごと拡大する。
-// カード幅・接続線・余白との比率が崩れず、bracketLayout の座標計算にも手を入れずに済むため。
+// カード幅・接続線・余白との比率が崩れず、centeredBracketLayout の座標計算にも手を入れずに済むため。
 //
 // 循環しない理由: transform はレイアウトサイズに影響しないので、拡大しても
 // content の offsetWidth/Height は変わらない。「拡大 → 再測定 → さらに拡大」に入らない。
