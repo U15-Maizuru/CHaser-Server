@@ -402,7 +402,7 @@ type StageRules =
   | { format: 'bot-then-bracket';   map; thirdPlaceMatch; bot; advanceCount }
 
 // 進行状態 (state.json)
-interface TournamentState { tournamentId, matches, programs, decisions, updatedAt }
+interface TournamentState { tournamentId, startedAt, matches, programs, decisions, updatedAt }
 interface OperatorDecisions { stageMaps, qualifiers, exclusions, qualifiersConfirmed }
 
 // 試合グラフを読む述語 (tournamentFlow.ts)
@@ -1540,9 +1540,87 @@ argparse の `--name` の `default` の順に見る。Python はパースせず�
 
 **シード配置の共有**: 「手動で指定する」の初期値は、サーバーが自動生成するのと
 寸分違わぬ並びでなければならない。そのため `seedOrder` / `bracketSizeFor` / `stageCountFor` /
-`stageLabel` / `autoGroupAssign` / `groupLabel` / `slotPlaceholder` は
+`stageLabel` / `balanceBracketHalves` / `autoGroupAssign` / `groupLabel` / `slotPlaceholder` は
 `@u15/ws-types` (`tournament.ts`) に置き、
 `apps/backend/src/tournament/bracket.ts` はそこから re-export している。二重定義すると必ずズレる。
+
+**配置の優先順位**: ①シード配置を守る ②左右のバランスを取る ③崩れるときは左
+(同じブロックなら上) を多くする ④勝ち残っている人の消化試合数の差を小さくする —
+の順に強い。自動生成の並びは `seedOrder` → `pointSymmetricBracketOrder` →
+`balanceBracketHalves` の順に通す。**この順序を入れ替えると右山だけ「下が多い」並びになる。**
+
+- `pointSymmetricBracketOrder`: 向かい合うブロックは線対称ではなく**点対称**
+  (第1シードが左上なら第2シードは右下)。最上位の左右だけでなく、その下のサブブロック
+  同士にも再帰的に効く。各ブロックの下半分のカードの順を反転するだけなので、
+  誰と誰が当たるかは変わらない。
+- `balanceBracketHalves`: bye は上位シードの対面に入るため、bye の数によっては上 (左) だけが
+  1人少なくなる (7人なら 左3/右4)。**各階層のブロックで**再帰的に上下を入れ替えて揃える。
+  これも鏡像なのでシード配置は無傷。代わりに第1シードが右山へ来ることがある。
+
+**運営が手で組んだ並び (`bracket.slots`) にはどちらも適用しない。**
+
+**順序は3種類あるので混ぜない**: ①表示位置 = `TournamentMatch.order` (表の縦の並び。
+`centeredBracketLayout` / `finalMatchOf`) ②実施順 = `compareByPlayOrder` (運営パネルの
+試合一覧・結果CSV・`nextReadyMatch`) ③依存順 = stage 昇順 (`resolveMatches` /
+`downstreamOf`)。**実施順の定義は `compareByPlayOrder` の1箇所だけ**に置く。
+
+**試合番号** (`TournamentMatch.no`): 表示位置とは別物で、`matchNumbers` (`bracket.ts`) が
+①**大会開始時に両者が決まっているカードを先に** ②その中は「そのカードに入る**弱いほうの
+選手**が弱い順」で振る。8人なら①が一様なので 第1試合=1位-8位、第2試合=2位-7位、
+第3試合=3位-6位、第4試合=4位-5位。想定出場者は「シード上位が勝ち上がる」
+前提で解くので実際の勝敗を見ず、大会前に全試合の番号が決まる。配置が再帰的点対称なので
+番号付けも再帰的点対称になる (16人なら表の上から 1 8 5 4 3 6 7 2)。
+
+①が効くのは、不戦で上がった者どうしのカードと下の回戦の勝者を待つカードが同じ段に
+混ざるとき。bye は1回戦にしか無いので**実質2回戦だけ**で、9人の2回戦
+「1位-(8位/9位の勝者)」「2位-7位」「3位-6位」「4位-5位」なら後ろ3つを先に消化する
+(②だけだと8位-9位を戦ったばかりの選手が連戦になる)。その段では番号と表の位置の
+再帰的点対称な対応は崩れるが、**番号 = 実施順**の関係のほうを優先している。
+
+**不戦の枠は「試合」として扱わない** (`isByeMatch`): 試合番号を消費せず (ラベルは回戦名だけ)、
+運営パネルの試合一覧・完了カウントにも出さない。5人なら実戦は 4位-5位 の1試合だけなので
+それが第1試合になる。**結果CSVにだけは記録として残す** (`(不戦)` / 決め手「不戦勝」) —
+一覧は運営の作業リスト、CSV は記録、と役割が違うので揃えないこと。
+
+**不戦勝が確定するのは「運営開始」の瞬間** (`TournamentState.startedAt`):
+作った直後の大会は `startedAt` が null で、`buildMatches` は
+`ResolveContext.started = false` で解くため bye に結果を入れない。大会一覧の進行が
+0/7 ではなく 3/7 から始まってしまうため。`TournamentOrchestrator.bind` (運営開始) が
+時刻を入れて解き直し、そこで初めて `walkover` が立つ。時刻は最初の bind で固定され
+(bind し直しても動かない)、`resetTournamentState` で null に戻る。
+**開始前でも不戦で上がる選手は次の回戦に現れる** — 誰が上がるかは対戦を待たずに
+決まっているので、`resolveSlot` が確定前でも解く (`walkoverWinnerOf`)。
+組み合わせ表としては先に見せてよく、立たないのは結果と `done` だけ。
+デモの作り直し (`autoPlayRunner.restart`) は運営中なので開始済みのまま組み直す。
+不戦まわりの先攻・後攻は2段階に分かれる。**不戦の枠そのもの** (`assignWalkoverSides`) は
+上がる選手を常に先攻に固定 (対戦しないので固定したほうが読みやすい。1ゲーム制でも同じ)。
+**不戦通過者の次の回戦** (`assignSidesAfterWalkover`) は1回戦を免除された選手が必ず
+1ゲーム目の先攻 (不戦通過者同士のカードは上位シードが先攻・下位シードが後攻)。
+この2つで「**対戦相手が最初から決まっているカードは、どの回戦でも上位シードが先攻**」に
+揃う — 1回戦は `seedOrder` の並びがそのまま上位シード = slotA なので、足りないのは
+不戦通過者同士のカードだけ (bye は1回戦にしか無いので実質2回戦だけ)。
+相手が勝ち上がり待ちのカードは、誰が来るか決まっていないので対象外。
+さらに **表示位置を先攻・後攻に合わせる** (`alignDisplayToSides`: 先攻側の子カードを上、
+後攻側を下。こうしないと接続線が交差する)。後ろ2つは**2ゲーム制だけ** — 1ゲーム制は
+「試合ごとに `sideCoin` でランダム」の仕様のままで、表の位置と先攻・後攻は無関係に扱う
+(位置を追従させると大会ごとに並びが変わり、点対称もバランスも崩れる)。
+いずれも `maybeSwapSides` のあとに上書きする。`assignSidesAfterWalkover` が入れ替えるのは
+不戦の枠を子に持つ親 (= 2回戦のカード) だけなので、**実戦のカード同士が入れ替わることは
+無い** — 動くのは必ず不戦のカード (非表示) との間で、実戦のカードの相対順序は保たれる
+(絶対位置は1段ずれることがある)。
+
+**試合順** (`nextReadyMatch`): ①回戦順 ②消化試合数の少ない人がいるカードを先に
+(2人のうち少ないほうで比較) ③実施順 (`compareByPlayOrder` = 試合番号の昇順)。
+3位決定戦が決勝より先になるのは、そちらのほうが弱い選手を含むため (THIRD の `no` は 0)。
+②を③に任せることはできない — 番号はシード前提で振ってあり、14人の準々決勝は上から
+4人/3人/4人/3人 のブロックになるので、番号だけで決めると遅れている人を追い越す。
+「開始時に両者が決まっているカードを先に」は②ではなく**番号の側**に入れてある —
+②は `min` なので、勝ち上がり待ち (0試合と1試合) と開始時確定 (0試合と0試合) は
+どちらも 0 で並んでしまい、決着は③に落ちるため。
+
+なお消化試合数の差は**高々2が理論値**で、試合順では下がらない。初期位置 (初めて対戦する段)
+を e とすると差の上界は `e_max - e_min + 1` で、bye がある限り e ∈ {1,2} だから2。
+全員の試合数を揃えたいなら予選リーグ形式を使う。
 
 **回戦ごとのマップ**: 「ルール」欄の下に回戦ぶんのセレクトを出し、`stage.map.bracketStages`
 (`null` は大会の設定に従う) として保存する。回戦数はトーナメントなら参加者数
