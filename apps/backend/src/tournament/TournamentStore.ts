@@ -78,8 +78,15 @@ function sha256(file: string): string {
 
 // ── 試合グラフの構築 ────────────────────────────────────────────────────────
 
+/**
+ * 定義から試合グラフを組み立てる。**まだ運営を開始していない状態**で返す
+ * (bye の不戦勝を確定させない — `TournamentState.startedAt` / `ResolveContext.started`)。
+ * 開始のタイミングで確定させるのは `TournamentOrchestrator.bind`。
+ */
 export function buildMatches(def: TournamentDefinition): TournamentMatch[] {
   const stage = def.stage;
+  // 全形式でこの1つを使う。started: false が「まだ運営を開始していない」を表す
+  const fresh = contextOf(def, {}, [], false);
   // 決勝トーナメントの先攻/後攻は、1ゲーム制のときだけ大会ごとに決定的なコイントスで決める
   // (2ゲーム制は今まで通り無変更。第2ゲームで自動的に先後が入れ替わるため元々問題にならない)
   const bracketSideSeed = def.match.doubleMode ? undefined : def.id;
@@ -91,7 +98,7 @@ export function buildMatches(def: TournamentDefinition): TournamentMatch[] {
         balanceSides:     !def.match.doubleMode,
       };
       if (def.schedule?.pairs) opts.pairs = def.schedule.pairs;
-      return resolveMatches(buildLeague(def.participants, opts));
+      return resolveMatches(buildLeague(def.participants, opts), Date.now(), fresh);
     }
     case 'group-then-bracket': {
       const built = buildGroupStage(def.participants, {
@@ -103,7 +110,7 @@ export function buildMatches(def: TournamentDefinition): TournamentMatch[] {
         bracketSideSeed,
         groupScheduleMode: stage.groupScheduleMode,
       });
-      return resolveMatches(built, Date.now(), contextOf(def, {}));
+      return resolveMatches(built, Date.now(), fresh);
     }
     case 'bot-then-bracket': {
       const built = buildBotStage(def.participants, {
@@ -112,14 +119,14 @@ export function buildMatches(def: TournamentDefinition): TournamentMatch[] {
         thirdPlaceMatch: stage.thirdPlaceMatch,
         bracketSideSeed,
       });
-      return resolveMatches(built, Date.now(), contextOf(def, {}));
+      return resolveMatches(built, Date.now(), fresh);
     }
     case 'single-elimination': {
       const opts: Parameters<typeof buildBracket>[1] = {
         thirdPlaceMatch: stage.thirdPlaceMatch, sideSeed: bracketSideSeed,
       };
       if (def.bracket?.slots) opts.slots = def.bracket.slots;
-      return resolveMatches(buildBracket(def.participants, opts));
+      return resolveMatches(buildBracket(def.participants, opts), Date.now(), fresh);
     }
   }
 }
@@ -153,14 +160,16 @@ function contextOf(
   def: TournamentDefinition,
   overrides: Record<string, string | null>,
   exclusions: readonly string[] = [],
+  started = true,
 ): ResolveContext {
-  if (!hasQualifying(def.stage.format)) return {};
+  if (!hasQualifying(def.stage.format)) return { started };
   return {
     groups:              groupsOf(def),
     leaguePoints:        leaguePointsOf(def),
     qualifierOverrides:  overrides,
     rankBy:              rankByOf(def),
     qualifierExclusions: exclusions,
+    started,
   };
 }
 
@@ -171,7 +180,7 @@ export function leaguePointsOf(def: TournamentDefinition): LeaguePoints {
 
 export function resolveContextOf(loaded: LoadedTournament): ResolveContext {
   const { qualifiers, exclusions } = loaded.state.decisions;
-  return contextOf(loaded.def, qualifiers, exclusions);
+  return contextOf(loaded.def, qualifiers, exclusions, loaded.state.startedAt !== null);
 }
 
 /**
@@ -431,6 +440,7 @@ function readState(id: string): TournamentState | null {
     return {
       ...raw,
       tournamentId: id,
+      startedAt:    raw.startedAt ?? null,
       programs:     raw.programs ?? {},
       decisions:    { ...NO_OPERATOR_DECISIONS, ...raw.decisions },
     };
@@ -466,17 +476,21 @@ export function loadTournament(id: string): LoadedTournament | null {
   let state: TournamentState;
   if (prev && stateMatchesDefinition(def, prev)) {
     const decisions = sanitizeDecisions(def, prev.decisions);
+    const startedAt = prev.startedAt ?? null;
     state = {
       ...prev,
+      startedAt,
       programs,
       decisions,
       matches: resolveMatches(
-        prev.matches, Date.now(), contextOf(def, decisions.qualifiers, decisions.exclusions),
+        prev.matches, Date.now(),
+        contextOf(def, decisions.qualifiers, decisions.exclusions, startedAt !== null),
       ),
     };
   } else {
     state = {
       tournamentId: id,
+      startedAt:    null,
       matches:      buildMatches(def),
       programs,
       decisions:    NO_OPERATOR_DECISIONS,
@@ -537,6 +551,8 @@ export function resetTournamentState(id: string): LoadedTournament | null {
   if (!loaded) return null;
   const state: TournamentState = {
     tournamentId: id,
+    // 進行だけでなく「運営を開始した」も取り消す (bye も未対戦に戻る)
+    startedAt:    null,
     matches:      buildMatches(loaded.def),
     programs:     loaded.state.programs,
     decisions:    NO_OPERATOR_DECISIONS,

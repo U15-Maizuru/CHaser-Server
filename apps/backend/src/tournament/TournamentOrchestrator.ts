@@ -7,9 +7,7 @@ import type {
 } from '@u15/ws-types';
 import { hasQualifying } from '@u15/ws-types';
 import type { RoomManager } from '../RoomManager.js';
-import {
-  TournamentError, commit, type Binding, type CommandEnv,
-} from './binding.js';
+import { TournamentError, commit, resolveFor, type Binding } from './binding.js';
 import {
   armMatch, cancelArm, confirmResult, discardResult, reopenMatch, setMatchMap, setStageMap,
   setWalkover, swapSides,
@@ -20,6 +18,7 @@ import { clearTimer, scheduleNext, type AutoPlayEnv } from './autoPlayRunner.js'
 import { DEFAULT_AUTO_PLAY_DELAYS_MS, type AutoPlayDelaysMs } from './autoPlay.js';
 import {
   assignProgram, buildStatePayload, loadTournament, mapForStage, scanTournaments,
+  type LoadedTournament,
 } from './TournamentStore.js';
 
 // 大会の進行と ServerManager の橋渡し。
@@ -88,8 +87,15 @@ export class TournamentOrchestrator {
     const room = this.deps.rm.getRoom(roomId);
     if (!room) throw new TournamentError('ルームが見つかりません');
 
-    const loaded = loadTournament(tournamentId);
-    if (!loaded) throw new TournamentError('大会が見つかりません');
+    const found = loadTournament(tournamentId);
+    if (!found) throw new TournamentError('大会が見つかりません');
+
+    // **ここが「大会運営の開始」。** 開始するまでは bye も未対戦のままにしてあるので、
+    // この時点で startedAt を入れ、下の resolveMatches で不戦勝を確定させる
+    // (2回目以降の bind では既に入っているので、時刻は最初の1回で固定される)
+    const loaded: LoadedTournament = found.state.startedAt !== null
+      ? found
+      : { ...found, state: { ...found.state, startedAt: Date.now() } };
 
     // armed / in_progress はスロット割り当てというプロセス内の状態と対になっている。
     // 前回の運営が中断したまま保存されているとカードが永久に「準備中」で詰まるので、
@@ -114,7 +120,8 @@ export class TournamentOrchestrator {
     };
     this.byRoom.set(roomId, binding);
     this.roomOfCup.set(tournamentId, roomId);
-    commit(binding, revived);
+    // 文脈は binding の startedAt を見るので、ここで初めて bye が不戦勝になる
+    commit(binding, resolveFor(binding, revived));
 
     // 大会運営中はデモ・リピートと排他 (自動進行が勝手に次の対戦を始めてしまうため)
     room.manager.setDemoMode(false);

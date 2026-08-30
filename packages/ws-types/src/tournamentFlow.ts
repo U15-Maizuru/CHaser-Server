@@ -73,7 +73,9 @@ export function nextReadyMatch(matches: TournamentMatch[]): TournamentMatch | nu
   const behind = (m: TournamentMatch) => Math.min(playedOf(m.resolvedA), playedOf(m.resolvedB));
 
   return [...matches]
-    .filter(m => m.status === 'ready')
+    // 不戦は「試合」ではないので案内しない。開始前 (startedAt が null) の大会では
+    // まだ確定していないぶんが 'ready' で残るため、状態ではなく枠の形で弾く
+    .filter(m => m.status === 'ready' && !isByeMatch(m))
     .sort((a, b) => {
       if (a.stage !== b.stage) return a.stage - b.stage;
       const ba = behind(a), bb = behind(b);

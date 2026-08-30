@@ -81,6 +81,28 @@ describe('resolveMatches', () => {
     expect([final.resolvedA, final.resolvedB]).toContain('p01');
   });
 
+  it('運営を開始していない大会 (started=false) では bye を確定させない', () => {
+    // 開始前の大会を「もう1試合終わっている」ことにしないため。
+    // 大会一覧の進行が 0/3 ではなく 1/3 から始まってしまう
+    const ms = resolveMatches(buildBracket(people(3), OPTS), Date.now(), { started: false });
+
+    const byeMatch = ms.find(m => m.byeA || m.byeB)!;
+    expect(byeMatch.status).not.toBe('done');
+    expect(byeMatch.result).toBeUndefined();
+    expect(ms.filter(m => m.status === 'done')).toHaveLength(0);
+
+    // それでも「誰が上がるか」は対戦を待たずに決まっているので、次の回戦には顔が出る
+    // (組み合わせ表として先に見せてよい。立たないのは結果と done だけ)
+    const final = ms.find(m => m.id === 'FINAL')!;
+    expect([final.resolvedA, final.resolvedB]).toContain('p01');
+  });
+
+  it('開始すれば (既定) 同じ試合グラフから bye が確定する', () => {
+    const before = resolveMatches(buildBracket(people(3), OPTS), Date.now(), { started: false });
+    const after  = resolveMatches(before);
+    expect(after.find(m => m.byeA || m.byeB)!.status).toBe('done');
+  });
+
   it('armed / in_progress はオーケストレータの管理下なので上書きしない', () => {
     const ms = resolveMatches(buildBracket(people(4), OPTS));
     const armed = resolveMatches(ms.map(m =>

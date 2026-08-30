@@ -8,7 +8,7 @@ import type {
 } from '@u15/ws-types';
 import { isGroupStageDone } from '@u15/ws-types';
 import type { RoomManager } from '../RoomManager.js';
-import { downstreamOf, type ResolveContext } from './progress.js';
+import { downstreamOf, resolveMatches, type ResolveContext } from './progress.js';
 import { resolveContextOf, saveState, type LoadedTournament } from './TournamentStore.js';
 
 // 「ある部屋で運営中の大会」1つぶんの状態と、それを書き換える最小の操作。
@@ -65,9 +65,19 @@ export function nameOf(b: Binding, participantId: string): string {
   return b.loaded.def.participants.find(p => p.id === participantId)?.name ?? participantId;
 }
 
-/** group-rank を解くための文脈 (予選を持たない大会では空) */
+/** group-rank と「運営を開始したか」を解くための文脈 */
 export function ctxOf(b: Binding): ResolveContext {
   return resolveContextOf(b.loaded);
+}
+
+/**
+ * その大会の文脈で試合グラフを解き直す。
+ *
+ * **運営中の経路はこれを通すこと。** 文脈を渡し忘れると予選の順位が解けず、
+ * `started` も落ちて bye が未確定のまま残る (デモが完走しない・不戦勝が立たない)。
+ */
+export function resolveFor(b: Binding, matches: TournamentMatch[]): TournamentMatch[] {
+  return resolveMatches(matches, Date.now(), ctxOf(b));
 }
 
 /**

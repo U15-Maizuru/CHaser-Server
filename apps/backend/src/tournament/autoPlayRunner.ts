@@ -1,6 +1,6 @@
 import type { TournamentState } from '@u15/ws-types';
 import { NO_OPERATOR_DECISIONS, isGroupStageDone } from '@u15/ws-types';
-import { managerOf, type Binding, type CommandEnv } from './binding.js';
+import { managerOf, resolveFor, type Binding, type CommandEnv } from './binding.js';
 import {
   delayFor, nextAutoPlayAction, type AutoPlayAction, type AutoPlayDelaysMs,
 } from './autoPlay.js';
@@ -104,7 +104,10 @@ async function run(env: AutoPlayEnv, b: Binding, action: AutoPlayAction): Promis
 async function restart(env: AutoPlayEnv, b: Binding): Promise<void> {
   const state: TournamentState = {
     tournamentId: b.tournamentId,
-    matches:      buildMatches(b.loaded.def),
+    // 運営中の作り直しなので「開始済み」のまま。buildMatches は未開始の graph を返すので、
+    // 解き直して bye を不戦勝に戻す (未確定のままだとデモが最後まで進まない)
+    startedAt:    Date.now(),
+    matches:      resolveFor(b, buildMatches(b.loaded.def)),
     programs:     b.loaded.state.programs,
     decisions:    {
       ...NO_OPERATOR_DECISIONS,

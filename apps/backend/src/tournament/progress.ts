@@ -27,6 +27,17 @@ export interface ResolveContext {
   rankBy?:             StandingsRankBy;
   /** 運営が最終決定確認リストから削除した参加者。順位表から除いて繰り上げる */
   qualifierExclusions?: readonly string[];
+  /**
+   * 大会運営を開始しているか (`TournamentState.startedAt !== null`)。**省略時は true。**
+   *
+   * false の間は bye の不戦勝を確定させない — 開始前の大会を「もう3試合終わっている」
+   * ことにしないため。上がる選手が次の回戦に現れること自体は変わらない
+   * (`resolveSlot` が不戦の枠を確定前でも解く)。
+   *
+   * 既定を true にしてあるのは**運営中の経路がすべて既定側**だから。開始前の状態を
+   * 作るのは `buildMatches` (新規作成・リセット) だけなので、そこだけが false を渡す。
+   */
+  started?:             boolean;
 }
 
 /** rematchPending を落とした複製。「もう再試合待ちではない」経路 (確定・巻き戻し) で使う */
@@ -34,6 +45,24 @@ function withoutRematchPending(m: TournamentMatch): TournamentMatch {
   const next = { ...m };
   delete next.rematchPending;
   return next;
+}
+
+/** 枠を解いた結果。`known` が false なら「まだ分からない」(下流は pending のまま) */
+interface Resolved { id: string | null; bye: boolean; known: boolean }
+
+const UNKNOWN: Resolved = { id: null, bye: false, known: false };
+
+/**
+ * 対戦を行わずに決まる勝者。不戦の枠 (片側が bye) でだけ返り、それ以外は null。
+ *
+ * `winnerOf` と違って**確定 (`status === 'done'`) を要求しない** — 相手がいないので
+ * 誰が上がるかは組み合わせが決まった時点で分かっている。運営開始前 (`started=false`) の
+ * 大会でトーナメント表の次の回戦を埋めるのに使う。
+ */
+function walkoverWinnerOf(m: TournamentMatch): Resolved | null {
+  if (!m.byeA && !m.byeB) return null;
+  if (m.byeA && m.byeB)   return { id: null, bye: true, known: true };
+  return { id: m.byeA ? m.resolvedB : m.resolvedA, bye: false, known: true };
 }
 
 /** 確定済みの試合の勝者 participantId。両者棄権・bye 同士なら null */
@@ -52,8 +81,6 @@ function loserOf(m: TournamentMatch): string | null {
   return null;
 }
 
-interface Resolved { id: string | null; bye: boolean; known: boolean }
-
 function resolveSlot(
   ref: MatchSlotRef, byId: Map<string, TournamentMatch>, ctx: ResolveContext,
 ): Resolved {
@@ -66,7 +93,7 @@ function resolveSlot(
       const groupIds = ctx.groups?.[ref.group];
       // 文脈が無いなら「まだ分からない」に倒す。空配列として扱うと参加者0人と読めてしまい、
       // 不戦勝として勝手に確定してしまう (文脈を渡し忘れた経路で静かに大会が壊れる)
-      if (groupIds === undefined) return { id: null, bye: false, known: false };
+      if (groupIds === undefined) return UNKNOWN;
       // **byId から取ること。** 引数の matches をそのまま見ると、このパスで bye が
       // 自動確定したぶんや、まだ resolvedA/B が埋まっていない組み立て直後の状態を読んでしまう。
       // 予選の stage は決勝トーナメントより必ず前なので、ここに来た時点で
@@ -81,14 +108,17 @@ function resolveSlot(
     }
     case 'winner-of': {
       const src = byId.get(ref.matchId);
-      if (!src || src.status !== 'done') return { id: null, bye: false, known: false };
+      if (!src) return UNKNOWN;
+      // 不戦の枠は対戦を待たずに上がる人が決まっている。運営を開始していない大会では
+      // まだ確定させていない (started=false) が、次の回戦の顔ぶれとしては見せてよい
+      if (src.status !== 'done') return walkoverWinnerOf(src) ?? UNKNOWN;
       const w = winnerOf(src);
       // 勝者がいない (両者棄権/bye同士) 場合は、この枠自体が bye として下流へ伝わる
       return { id: w, bye: w === null, known: true };
     }
     case 'loser-of': {
       const src = byId.get(ref.matchId);
-      if (!src || src.status !== 'done') return { id: null, bye: false, known: false };
+      if (!src || src.status !== 'done') return UNKNOWN;
       const l = loserOf(src);
       return { id: l, bye: l === null, known: true };
     }
@@ -125,8 +155,9 @@ export function resolveMatches(
 
     const bothKnown = ra.known && rb.known;
 
-    if (!m.result && bothKnown && (m.byeA || m.byeB)) {
+    if (!m.result && bothKnown && (m.byeA || m.byeB) && ctx.started !== false) {
       // 不戦勝。相手がいないので対戦は行わず、その場で確定させる
+      // (運営を開始していない大会では確定させない — ResolveContext.started)
       const winnerSide: 0 | 1 | null =
         m.byeA && m.byeB ? null : m.byeA ? 1 : 0;
       m.result = {

@@ -94,6 +94,38 @@ describe('TournamentOrchestrator', () => {
       expect(orch.boundRoomOf(CUP)).toBe(ROOM);
     });
 
+    it('bind して初めて「運営開始」になり、不戦勝がそこで確定する', () => {
+      // 3人 = サイズ4・bye1つ。開始前の大会を「もう1試合終わっている」ことにしない
+      writeCup(cupDef({ participants: cupDef().participants.slice(0, 3) }));
+
+      const before = loadTournament(CUP)!;
+      expect(before.state.startedAt).toBeNull();
+      const byeBefore = before.state.matches.find(m => m.byeA || m.byeB)!;
+      expect(byeBefore.status).not.toBe('done');
+      expect(byeBefore.result).toBeUndefined();
+      // それでも「誰が上がるか」は決まっているので、次の回戦には顔が出る
+      const final = before.state.matches.find(m => m.id === 'FINAL')!;
+      expect([final.resolvedA, final.resolvedB]).toContain('p1');
+
+      orch.bind(ROOM, CUP);
+
+      const after = loadTournament(CUP)!;
+      expect(after.state.startedAt).not.toBeNull();
+      const byeAfter = after.state.matches.find(m => m.id === byeBefore.id)!;
+      expect(byeAfter.status).toBe('done');
+      expect(byeAfter.result?.decidedBy).toBe('walkover');
+    });
+
+    it('開始時刻は最初の bind で固定される (bind し直しても動かない)', () => {
+      writeCup(cupDef({ participants: cupDef().participants.slice(0, 3) }));
+      orch.bind(ROOM, CUP);
+      const first = loadTournament(CUP)!.state.startedAt;
+
+      orch.unbind(ROOM);
+      orch.bind(ROOM, CUP);
+      expect(loadTournament(CUP)!.state.startedAt).toBe(first);
+    });
+
     it('bind するとデモ・リピートが強制的に切られる', () => {
       writeCup(cupDef());
       const manager = rm.getRoom(ROOM)!.manager;

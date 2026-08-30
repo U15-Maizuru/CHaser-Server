@@ -751,6 +751,19 @@ export const NO_OPERATOR_DECISIONS: OperatorDecisions = {
 /** 永続化される進行状態 (server/tournament/<id>/state.json) */
 export interface TournamentState {
   tournamentId: string;
+  /**
+   * 大会運営を開始した時刻。まだ開始していなければ null。
+   *
+   * **不戦勝の自動確定をここで待たせる。** 開始前の大会は「まだ1試合も行われていない」の
+   * ままにしておきたい (大会一覧の進行が 0/7 ではなく 3/7 から始まってしまう)。
+   * 運営開始 (部屋への bind) で時刻が入り、以降 `resolveMatches` が bye を確定させる。
+   * 進行状態のリセットで null に戻る。
+   *
+   * 開始前でも**不戦で上がる選手はトーナメント表の次の回戦に現れる** — 誰が上がるかは
+   * 対戦を待たずに決まっているので、組み合わせ表としては先に見せてよい。
+   * 立たないのは結果 (`result`) と `status: 'done'` だけ。
+   */
+  startedAt:    number | null;
   matches:      TournamentMatch[];
   /** participantId → プログラムライブラリのエントリ */
   programs:     Record<string, { catalogId: string; sha256: string } | undefined>;
