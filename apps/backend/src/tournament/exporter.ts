@@ -1,5 +1,5 @@
 import type { StandingRow, TournamentMatch } from '@u15/ws-types';
-import { groupLabel, hasBotStage } from '@u15/ws-types';
+import { compareByPlayOrder, groupLabel, hasBotStage } from '@u15/ws-types';
 import { computeStandings } from './standings.js';
 import {
   groupStandingsOf, leaguePointsOf, qualifiersOf, rankByOf, resolveParticipants,
@@ -60,7 +60,8 @@ export function matchesCsv(loaded: LoadedTournament): string {
 
   const rows: unknown[][] = [header];
 
-  for (const m of [...loaded.state.matches].sort((a, b) => a.stage - b.stage || a.order - b.order)) {
+  // 行の並びは実施順。運営が当日の進行をそのまま追える
+  for (const m of [...loaded.state.matches].sort(compareByPlayOrder)) {
     const r    = m.result;
     const set  = r?.set ?? null;
     const win  = r?.winnerSide;

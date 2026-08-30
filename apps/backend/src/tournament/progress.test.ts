@@ -199,10 +199,11 @@ describe('downstreamOf / reopenMatch', () => {
     expect(re.find(m => m.id === 'SF2')!.status).toBe('done');
   });
 
-  it('16人では1回戦が R1M* になる', () => {
+  it('16人では1回戦が R1M* になる (番号は表示位置ではなくシードで決まる)', () => {
     const ms = buildBracket(people(16), OPTS);
-    expect(ms.filter(m => m.stage === 0).map(m => m.id).slice(0, 3))
-      .toEqual(['R1M1', 'R1M2', 'R1M3']);
+    // 第N試合 = 「弱いほうの選手が N 番目に弱い」カード。表の上から見ると飛び飛びになる
+    expect(ms.filter(m => m.stage === 0).map(m => m.id))
+      .toEqual(['R1M1', 'R1M8', 'R1M5', 'R1M4', 'R1M3', 'R1M6', 'R1M7', 'R1M2']);
     expect(downstreamOf(ms, 'R1M1')).toContain('FINAL');
   });
 

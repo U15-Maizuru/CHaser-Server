@@ -3,10 +3,11 @@ import { finalMatchOf } from './tournamentResult';
 
 // 中央収束型トーナメント表の座標計算 (純関数)。
 //
-// 1人 (1側) = 1カードとして描く。決勝の slotA が指す試合の子孫はすべて「左山」、
-// slotB が指す試合の子孫はすべて「右山」— この2つは buildBracket (apps/backend) が
-// 二分木として組む時点で完全に独立しているので、決勝から逆向きに winner-of/loser-of の
-// 参照を辿るだけで山を分けられる (詳細は各関数のコメント)。
+// 1人 (1側) = 1カードとして描く。決勝の slotA が指す試合の子孫と slotB が指す試合の子孫は、
+// buildBracket (apps/backend) が二分木として組む時点で完全に独立しているので、決勝から
+// 逆向きに winner-of/loser-of の参照を辿るだけで2つの山に分けられる (詳細は各関数のコメント)。
+// どちらを左山にするかは試合番号 (order) の小さいほうで決める — 先に実施する山が
+// 常に左に来るようにするため。
 //
 // 左山は左→右 (1回戦が一番外側)、右山は右→左 (同じく1回戦が一番外側) に並べ、
 // 決勝はその中央の列に置く。3位決定戦は決勝と同じ stage を持つので、同じ中央列に積む。
@@ -117,9 +118,18 @@ export function centeredBracketLayout(
     return { nodes: [], matchNodes: [], edges: [], columns: [], width: 0, height: 0 };
   }
 
-  // 決勝の slotA/slotB から逆向きに辿って、左山・右山に属する試合をそれぞれ集める
-  const leftMatches  = collectAncestors(final.slotA, byId);
-  const rightMatches = collectAncestors(final.slotB, byId);
+  // 決勝の slotA/slotB から逆向きに辿って、2つの山に属する試合をそれぞれ集める
+  const branchA = collectAncestors(final.slotA, byId);
+  const branchB = collectAncestors(final.slotB, byId);
+  // どちらを左山にするかは**表示位置 (order) で決める。slotA/slotB をそのまま使わないこと** —
+  // 1ゲーム制では bracket.ts の sideCoin が決勝の slotA/slotB を大会 id 由来のコイントスで
+  // 入れ替えるので、そのまま左右に割り当てると大会のおよそ半分で表が丸ごと左右反転する。
+  // order は buildBracket が表の上から順に振るので、直接の子 (準決勝相当) の order が
+  // 小さいほうを左に置けば、その山の試合はすべて反対側より上に来る。
+  // (実施順は order ではなく試合番号 `no` で決まる。compareByPlayOrder を参照)
+  const flipped = (branchB[0]?.order ?? 0) < (branchA[0]?.order ?? 0);
+  const leftMatches  = flipped ? branchB : branchA;
+  const rightMatches = flipped ? branchA : branchB;
   const leftIds  = new Set(leftMatches.map(m => m.id));
   const rightIds = new Set(rightMatches.map(m => m.id));
   // 決勝そのものと、どちらの山にも属さない試合 (3位決定戦) を中央列にまとめる

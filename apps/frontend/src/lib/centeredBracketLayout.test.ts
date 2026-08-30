@@ -51,7 +51,7 @@ describe('centeredBracketLayout', () => {
     expect(l.matchNodes).toHaveLength(3);
   });
 
-  it('決勝の slotA 側の子孫は左、slotB 側の子孫は右に置かれる', () => {
+  it('試合番号の小さい山が左、大きい山が右に置かれる', () => {
     const l = centeredBracketLayout(FOUR, OPTS);
     const sf1 = nodesOf(l, 'SF1').side0;
     const sf2 = nodesOf(l, 'SF2').side0;
@@ -68,6 +68,22 @@ describe('centeredBracketLayout', () => {
     expect(info.x).toBe(side0.x);
     expect(info.y).toBe(side0.y + side0.h);
     expect(side1.y).toBe(info.y + info.h);
+  });
+
+  it('決勝の slotA/slotB が入れ替わっていても、左右の山は入れ替わらない', () => {
+    // 1ゲーム制では bracket.ts の sideCoin が決勝の先攻・後攻をコイントスで決めるため、
+    // FINAL の slotA が SF2 を指すことがある。これで表が左右反転すると、試合番号順に
+    // 進める運営 (compareByPlayOrder) が右山から始まってしまう
+    const swapped = [
+      FOUR[0]!, FOUR[1]!,
+      m('FINAL', 1, 0, '決勝', W('SF2'), W('SF1')),
+    ];
+    const l = centeredBracketLayout(swapped, OPTS);
+    const sf1 = nodesOf(l, 'SF1').side0;
+    const sf2 = nodesOf(l, 'SF2').side0;
+    const final = nodesOf(l, 'FINAL').side0;
+    expect(sf1.x).toBeLessThan(final.x);
+    expect(final.x).toBeLessThan(sf2.x);
   });
 
   it('決勝は左右の準決勝の中点に置かれる', () => {

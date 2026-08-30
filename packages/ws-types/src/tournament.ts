@@ -239,6 +239,70 @@ export function seedOrder(size: number): number[] {
   return order;
 }
 
+/** カードの順だけを反転する。カードの中 (先攻・後攻) は動かさない */
+function reverseCards<T>(slots: T[]): T[] {
+  const out: T[] = [];
+  for (let i = slots.length - 2; i >= 0; i -= 2) out.push(slots[i]!, slots[i + 1]!);
+  return out;
+}
+
+/**
+ * 1回戦の並びを、中央収束型のトーナメント表に描くとおりの順 (どのブロックも上から下) に直す。
+ *
+ * **向かい合うブロック同士は線対称ではなく点対称** (180°回転)。第1シードが左上なら
+ * 第2シードは右上ではなく右下に来る。**これは最上位の左右だけでなく、その下の
+ * サブブロック同士にも再帰的に効く** — 各ブロックの中でも、上のサブブロックは
+ * 一番強いシードが上に、下のサブブロックは一番強いシードが下に来る。
+ *
+ * `seedOrder` が返すのは線対称の並びなので、各ブロックの下半分のカードの順を
+ * 再帰的に反転する。反転はそのブロックの中の鏡像でしかないので、
+ * **誰と誰が当たるかは一切変わらない** (カードの対 (0,1)(2,3)… は反転しても同じ
+ * 組み合わせのまま入れ替わるだけ)。動くのは表の中での位置と試合番号だけ。
+ *
+ * これを通したあとの配列は「表の上から下」そのものなので、バランス取り
+ * (`balanceBracketHalves`) はどのブロックでも「配列の前半 = 表示上の上」として
+ * 同じ規則で書ける。
+ */
+export function pointSymmetricBracketOrder<T>(slots: T[]): T[] {
+  const half = slots.length / 2;
+  // 2枠 = 1カード。回転しても自分自身なので、ここで止める
+  if (slots.length < 4 || !Number.isInteger(half)) return slots;
+  const upper = pointSymmetricBracketOrder(slots.slice(0, half));
+  const lower = pointSymmetricBracketOrder(slots.slice(half));
+  return [...upper, ...reverseCards(lower)];
+}
+
+/**
+ * 1回戦の並びのバランスを取る。**ブロックごとに再帰的に**、実参加者が少ないほうを
+ * 後ろへ回す。`pointSymmetricBracketOrder` を通した並びでは配列の順 = 表の上から下
+ * なので、「後ろ」は表の右山・同じ山の中なら下にあたる。
+ *
+ * 標準シード順は bye を上位シードの対面へ入れるため、bye の数によっては表の左半分だけが
+ * 1人少なくなる (7人なら 左3/右4、3人なら 左1/右2)。表は左山から順に実施するので、
+ * 空いているほうを先に消化する形になって見た目にも進行にも締まりがない。同じことが
+ * 山の中の小ブロックでも起きるので、最上位だけでなく各階層で揃える。
+ *
+ * 入れ替えは**そのブロック内の鏡像**なので、誰と誰が当たるかは一切変わらない。
+ * シード配置の性質 (第1シードと第2シードが決勝まで当たらない、bye は上位シードから得る) は
+ * 完全に保たれ、上の階層から見た人数も変わらない — 動くのは表の中での位置と試合番号だけ。
+ *
+ * **運営が手で組んだ並び (`TournamentDefinition.bracket.slots`) には適用しないこと** —
+ * 実行委員会が決めた組み合わせを勝手に鏡像にすることになる。
+ */
+export function balanceBracketHalves<T>(slots: T[], isEmpty: (slot: T) => boolean): T[] {
+  const half = slots.length / 2;
+  // 2枠 = 1カード。この中の入れ替えは先攻・後攻の話なのでここでは触らない
+  if (slots.length < 4 || !Number.isInteger(half)) return slots;
+
+  // 先に各ブロックの中を整える。中を鏡像にしても人数は変わらないので、
+  // このブロックの左右判定は後から行っても結果は同じ
+  const left  = balanceBracketHalves(slots.slice(0, half), isEmpty);
+  const right = balanceBracketHalves(slots.slice(half), isEmpty);
+
+  const filled = (list: T[]) => list.filter(s => !isEmpty(s)).length;
+  return filled(left) < filled(right) ? [...right, ...left] : [...left, ...right];
+}
+
 /** 参加者数を収める最小の2の冪。これにより bye 同士のカードが構造的に発生しない */
 export function bracketSizeFor(n: number): number {
   let size = 1;
@@ -369,7 +433,23 @@ export interface TournamentMatch {
   id:        string;   // 'R1M1' / 'SF1' / 'FINAL' / 'THIRD' / 'L-D1M2' / 'G1-D1M2'
   stage:     number;   // トーナメント: 回戦 (0始まり)  リーグ: 節 (0始まり)
   label:     string;   // '1回戦 第1試合' / '準決勝' / '3位決定戦' / '第2節 第1試合'
-  order:     number;   // 同一 stage 内の表示順
+  order:     number;   // 同一 stage 内の表示順 (表の上から下)
+  /**
+   * 試合番号 (1始まり)。**表示順 (`order`) とは別物。**
+   *
+   * 決勝トーナメントでは「そのカードの**弱いほうの選手**が弱い順」に振る
+   * (8人なら 第1試合=1位-8位、第2試合=2位-7位、…、第4試合=4位-5位)。
+   * 実施はこの番号の昇順 = 最も弱い選手を含むカードから。3位決定戦が決勝より先に
+   * なるのも、3位決定戦のほうが弱い選手を含むことから自動的に決まる。
+   *
+   * **ただし「大会開始時に両者が決まっているカード」が先。** 不戦で上がった者どうしの
+   * カードと、下の回戦の勝者を待つカードが同じ段に混ざるとき (bye は1回戦にしか無いので
+   * 実質2回戦だけ) は前者から番号を振る — そうしないと直前に戦った選手が連戦になる。
+   * 番号の付け方は bracket.ts の `matchNumbers` に1箇所だけ置いてある。
+   *
+   * 省略時は `order + 1` (予選リーグなど、表を持たない形式)。
+   */
+  no?:       number;
   /**
    * 予選の試合だけが持つ予選グループ番号 (0始まり)。
    * 決勝トーナメントの試合と、予選を持たない形式の試合は undefined。
@@ -405,24 +485,32 @@ export interface TournamentMatch {
  * 敗者同士の試合 (3位決定戦)。
  *
  * 勝者戦 (決勝) と同じ stage に置かれるが、参照するのは前の stage の敗者なので
- * 依存関係は無く、どちらを先に実施してもよい。実施順は compareByPlayOrder が決める。
+ * 依存関係は無く、どちらを先に実施してもよい。実施順は compareByPlayOrder が決める
+ * (通常は試合番号で決まり、`no` を持たない形式でだけこの述語が効く)。
  */
 export function isConsolationMatch(m: TournamentMatch): boolean {
   return m.slotA.kind === 'loser-of' || m.slotB.kind === 'loser-of';
 }
 
 /**
- * 実施順の比較。stage → (敗者戦が先) → order の昇順。
+ * **実施順の唯一の定義。** stage → 試合番号 (`no`) の昇順。
  *
- * **3位決定戦は決勝より先に実施する。** 決勝を大会の締めくくりにするための運営順で、
- * 両者に依存関係が無いから選べる順序でもある。
+ * `no` は「そのカードの弱いほうの選手が弱い順」に振ってある (`bracket.ts` の
+ * `matchNumbers`)。**3位決定戦が決勝より先に実施される**のもここで決まる —
+ * 3位決定戦のほうが弱い選手を含むので `no` が小さい (THIRD は 0)。
  *
- * `order` を入れ替えないのは、それが「同一 stage 内の表示順」だから —
- * トーナメント表では決勝が上、3位決定戦がその下に来るのが通例で、
- * 実施順と表示順は別物として扱う。
+ * **`order` を使わないこと。** それは「同一 stage 内の表示順」で、トーナメント表の
+ * 縦の並び (決勝が上・3位決定戦が下) を決めるもの。実施順と表示順は別物。
+ *
+ * 試合一覧 (運営パネル)・結果CSV・次の試合の選定 (`nextReadyMatch`) は
+ * すべてこれを通すこと。**別々に並べ替えを書くと必ずズレる。**
+ *
+ * `no` を持たない試合 (予選リーグなど、表を持たない形式) は従来どおり
+ * 「敗者戦が先 → order の昇順」に落とす。
  */
 export function compareByPlayOrder(a: TournamentMatch, b: TournamentMatch): number {
   if (a.stage !== b.stage) return a.stage - b.stage;
+  if (a.no !== undefined && b.no !== undefined) return a.no - b.no;
   const ca = isConsolationMatch(a) ? 0 : 1;
   const cb = isConsolationMatch(b) ? 0 : 1;
   if (ca !== cb) return ca - cb;

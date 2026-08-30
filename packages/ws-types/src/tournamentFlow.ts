@@ -9,9 +9,64 @@ import { compareByPlayOrder, hasBracket, hasQualifying } from './tournament.js';
 // バックエンドの進行管理・自動進行と、運営パネルの「今やること」が同じ規則で動くよう、
 // 判定はすべてここに置く。状態を持たず、試合の配列だけを見る。
 
-/** 次に実施すべき試合 (ready のうち実施順が最も早いもの。3位決定戦は決勝より先) */
+/**
+ * 各参加者が**実際に対戦した**試合数。不戦勝 (bye・運営裁定) は数えない。
+ *
+ * 「消化試合数の少ない人がいるカードを先に」の材料 (`nextReadyMatch`)。
+ */
+export function playedCountOf(matches: TournamentMatch[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const m of matches) {
+    if (m.status !== 'done' || !m.result || m.result.decidedBy === 'walkover') continue;
+    for (const id of [m.resolvedA, m.resolvedB]) {
+      if (id !== null) counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
+/**
+ * 次に実施すべき試合。
+ *
+ * 1. **回戦順** — 表は下の段から
+ * 2. **消化試合数の少ない人がいるカードを先に** — カードの2人のうち少ないほう (`min`) で比較
+ * 3. **実施順 (`compareByPlayOrder`) — 試合番号の昇順**
+ *
+ * 3 は `compareByPlayOrder` に委ねる — 実施順の定義はそこ1箇所だけに置く。
+ * 試合番号は「そのカードの**弱いほうの選手**が弱い順」なので、最も弱い選手を含む
+ * カードから順に消化することになる (8人なら 1位-8位 → 2位-7位 → 3位-6位 → 4位-5位)。
+ * 3位決定戦が決勝より先になるのも同じ規則から出る。
+ *
+ * **「大会開始時に両者が決まっているカードを先に」も番号の側に入っている** —
+ * `nextReadyMatch` に鍵を足していないのはそのため。2 は `min` なので、勝ち上がり待ちの
+ * カード (片方が 0 試合、もう片方が 1 試合) と開始時確定のカード (両方 0 試合) は
+ * どちらも 0 で並び、決着は 3 に落ちる。
+ *
+ * 番号は表示位置 (`order`) とは別物なので、**進行は表の上から順とは限らない。**
+ *
+ * **2 を 3 に任せることはできない。** 番号は「シード上位が勝ち上がる」前提で振ってあり、
+ * 実際の消化試合数の偏りとは別の軸。14人の準々決勝は上から 4人/3人/4人/3人 の
+ * ブロックになるので、番号だけで決めると遅れている人を追い越す。
+ *
+ * 予選 (`group` を持つ試合) は `no` を持たないので、組んだ順のまま。
+ *
+ * **消化試合数の差を1以内に収める規則ではない** — bye がある限り差2は構造的に起きる
+ * (差の上界 = 初期位置の差 + 1)。
+ */
 export function nextReadyMatch(matches: TournamentMatch[]): TournamentMatch | null {
-  return [...matches].filter(m => m.status === 'ready').sort(compareByPlayOrder)[0] ?? null;
+  const played = playedCountOf(matches);
+  const playedOf = (id: string | null) => (id === null ? 0 : played.get(id) ?? 0);
+  /** そのカードで最も消化試合数が少ない人の消化数 */
+  const behind = (m: TournamentMatch) => Math.min(playedOf(m.resolvedA), playedOf(m.resolvedB));
+
+  return [...matches]
+    .filter(m => m.status === 'ready')
+    .sort((a, b) => {
+      if (a.stage !== b.stage) return a.stage - b.stage;
+      const ba = behind(a), bb = behind(b);
+      if (ba !== bb) return ba - bb;
+      return compareByPlayOrder(a, b);
+    })[0] ?? null;
 }
 
 /**

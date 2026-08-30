@@ -4,8 +4,8 @@ import { autoSlots, fitSlots, matchCountOf, slotPairs } from './bracketSlots';
 const ids = (n: number) => Array.from({ length: n }, (_, i) => `p${i + 1}`);
 
 describe('autoSlots', () => {
-  it('8人は標準シード順に並ぶ (第1シードと第2シードが決勝まで当たらない)', () => {
-    expect(autoSlots(ids(8))).toEqual(['p1', 'p8', 'p4', 'p5', 'p2', 'p7', 'p3', 'p6']);
+  it('8人は標準シード順に並ぶ (左右は点対称なので第2シードは右下)', () => {
+    expect(autoSlots(ids(8))).toEqual(['p1', 'p8', 'p4', 'p5', 'p3', 'p6', 'p2', 'p7']);
   });
 
   it('5人はサイズ8になり、余りが bye になる', () => {
@@ -18,6 +18,25 @@ describe('autoSlots', () => {
     for (let n = 2; n <= 33; n++) {
       const pairs = slotPairs(autoSlots(ids(n)));
       expect(pairs.some(([a, b]) => a === null && b === null)).toBe(false);
+    }
+  });
+
+  it('7人は左右を入れ替えて左山を多くする (buildBracket と同じ並び)', () => {
+    expect(autoSlots(ids(7))).toEqual(['p3', 'p6', 'p2', 'p7', 'p4', 'p5', 'p1', null]);
+  });
+
+  it('どのブロックでも上 (左) の人数が下 (右) を下回らない', () => {
+    const count = (list: (string | null)[]) => list.filter(s => s !== null).length;
+    for (let n = 2; n <= 33; n++) {
+      const walk = (slots: (string | null)[], path: string) => {
+        if (slots.length < 4) return;
+        const half = slots.length / 2;
+        const up = slots.slice(0, half), down = slots.slice(half);
+        expect({ n, path, ok: count(up) >= count(down) }).toEqual({ n, path, ok: true });
+        walk(up, path + '上');
+        walk(down, path + '下');
+      };
+      walk(autoSlots(ids(n)), '');
     }
   });
 });

@@ -1,4 +1,6 @@
-import { bracketSizeFor, seedOrder } from '@u15/ws-types';
+import {
+  balanceBracketHalves, bracketSizeFor, pointSymmetricBracketOrder, seedOrder,
+} from '@u15/ws-types';
 
 // 大会データ作成 UI の「組み合わせを手動で指定する」ための純関数。
 //
@@ -7,10 +9,18 @@ import { bracketSizeFor, seedOrder } from '@u15/ws-types';
 // 配置の規則そのもの (seedOrder / bracketSizeFor) は @u15/ws-types にあり、
 // バックエンドの自動生成と同一のものを使う。
 
-/** シード順 (= 参加者の並び順) から既定のスロット配置を作る */
+/**
+ * シード順 (= 参加者の並び順) から既定のスロット配置を作る。
+ *
+ * **buildBracket の自動生成と寸分違わぬ並びにすること。** 点対称化
+ * (pointSymmetricBracketOrder) とバランス取り (balanceBracketHalves) まで含めて
+ * 同じものを同じ順に通す — ここがズレると、エディタで見せた組み合わせと
+ * 実際に組まれる組み合わせが違うことになる。
+ */
 export function autoSlots(participantIds: string[]): (string | null)[] {
-  const size = bracketSizeFor(participantIds.length);
-  return seedOrder(size).map(seedNo => participantIds[seedNo - 1] ?? null);
+  const size  = bracketSizeFor(participantIds.length);
+  const slots = seedOrder(size).map(seedNo => participantIds[seedNo - 1] ?? null);
+  return balanceBracketHalves(pointSymmetricBracketOrder(slots), id => id === null);
 }
 
 /**
