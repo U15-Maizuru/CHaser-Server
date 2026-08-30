@@ -10,6 +10,19 @@ import { compareByPlayOrder, hasBracket, hasQualifying } from './tournament.js';
 // 判定はすべてここに置く。状態を持たず、試合の配列だけを見る。
 
 /**
+ * 不戦の枠か (片側でも不在で、対戦が行われない/行われなかった)。
+ *
+ * **これは「試合」ではない。** 人数の都合で表の形を保つためだけに存在する枠なので、
+ * 運営パネルの試合一覧・完了カウント・試合番号のいずれからも外す。
+ * トーナメント表でもカードごと隠している (`MatchInfoCard` / `PlayerCard`)。
+ *
+ * 一方**結果CSVには残す** — あちらは記録なので「誰が不戦勝で上がったか」は要る。
+ */
+export function isByeMatch(m: TournamentMatch): boolean {
+  return m.byeA || m.byeB;
+}
+
+/**
  * 各参加者が**実際に対戦した**試合数。不戦勝 (bye・運営裁定) は数えない。
  *
  * 「消化試合数の少ない人がいるカードを先に」の材料 (`nextReadyMatch`)。

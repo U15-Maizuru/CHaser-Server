@@ -1,5 +1,5 @@
 import type { TournamentMatch, TournamentStatePayload } from '@u15/ws-types';
-import { compareByPlayOrder, hasQualifying } from '@u15/ws-types';
+import { compareByPlayOrder, hasQualifying, isByeMatch } from '@u15/ws-types';
 import type { TournamentCommands } from '../../../hooks/useGameState';
 import { confirmDialog } from '../../../lib/nativeDialog';
 import { BotQualifierSection } from '../qualifier/BotQualifierSection';
@@ -18,7 +18,10 @@ export interface ProgressTabProps {
 }
 
 export function ProgressTab({ state, httpBase, commands }: ProgressTabProps) {
-  const done = state.matches.filter(m => m.status === 'done').length;
+  // 不戦の枠は対戦ではないので一覧にも完了カウントにも入れない。
+  // 人数の都合で表の形を保つためだけに存在する枠で、運営がすることは何も無い
+  const played = state.matches.filter(m => !isByeMatch(m));
+  const done   = played.filter(m => m.status === 'done').length;
 
   const download = (format: string) => {
     const a = document.createElement('a');
@@ -45,12 +48,12 @@ export function ProgressTab({ state, httpBase, commands }: ProgressTabProps) {
         />
       )}
 
-      <Section title={`試合 (${done}/${state.matches.length} 完了)`}>
+      <Section title={`試合 (${done}/${played.length} 完了)`}>
         <Hint>
           確定した結果は取り消せます。取り消すとその試合より後の結果も一緒に消えるので、
           聞かれたら内容を確認してから進めてください。
         </Hint>
-        {[...state.matches].sort(compareByPlayOrder).map(m => (
+        {[...played].sort(compareByPlayOrder).map(m => (
           <MatchRow key={m.id} state={state} match={m} commands={commands} />
         ))}
       </Section>
