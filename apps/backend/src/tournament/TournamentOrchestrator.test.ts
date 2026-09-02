@@ -772,18 +772,26 @@ describe('TournamentOrchestrator', () => {
       }
     };
 
-    it('既定では切れていて、enabled と loop は別々に設定できる', () => {
+    it('既定では切れていて、enabled / loop / announce は別々に設定できる', () => {
       writeCup(soloCup());
       orch.bind(ROOM, CUP);
-      expect(lastState()!.autoPlay).toEqual({ enabled: false, loop: false, stoppedReason: null });
+      expect(lastState()!.autoPlay)
+        .toEqual({ enabled: false, loop: false, announce: false, stoppedReason: null });
 
-      // 切ったまま繰り返しの設定だけ入れられる (パネルのボタンが2つに分かれているため)
+      // 切ったまま繰り返しの設定だけ入れられる (パネルのボタンが分かれているため)
       orch.setAutoPlay(ROOM, false, true);
-      expect(lastState()!.autoPlay).toEqual({ enabled: false, loop: true, stoppedReason: null });
+      expect(lastState()!.autoPlay)
+        .toEqual({ enabled: false, loop: true, announce: false, stoppedReason: null });
 
-      // loop を省略した呼び出しは今の設定を巻き戻さない
+      // 合間のアナウンスも他の設定を巻き戻さずに入れられる
+      orch.setAutoPlay(ROOM, false, undefined, true);
+      expect(lastState()!.autoPlay)
+        .toEqual({ enabled: false, loop: true, announce: true, stoppedReason: null });
+
+      // 省略した項目は今の設定を巻き戻さない
       orch.setAutoPlay(ROOM, false);
       expect(lastState()!.autoPlay.loop).toBe(true);
+      expect(lastState()!.autoPlay.announce).toBe(true);
     });
 
     it('準備・開始・確定を代行して最後まで進め、終わると自動で切れる', async () => {

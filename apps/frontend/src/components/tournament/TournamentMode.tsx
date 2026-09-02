@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { hasQualifying } from '@u15/ws-types';
+import { hasQualifying, NO_ANNOUNCEMENT } from '@u15/ws-types';
 import { useGameState } from '../../hooks/useGameState';
 import { BracketView } from './board/BracketView';
 import { QualifyingView } from './board/QualifyingView';
@@ -104,6 +104,8 @@ export function TournamentMode({ wsUrl, roomId, httpBase }: TournamentModeProps)
           commands={state.tournament}
           lastError={state.lastError}
           clearError={state.clearError}
+          announcement={state.serverStatus?.announcement ?? NO_ANNOUNCEMENT}
+          setAnnouncement={state.setAnnouncement}
         />
       </aside>
     </div>

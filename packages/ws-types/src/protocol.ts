@@ -181,7 +181,34 @@ export interface ServerStatusPayload {
    * 対戦設定 (mapSource) には影響しない、一時的な表示切り替え専用の状態。永続化しない。
    */
   previewMapId: string | null;
+  /** 観客席に出す運営アナウンス (休憩・再開時刻の案内など) */
+  announcement: AnnouncementState;
 }
+
+/**
+ * 試合の合間に観客席へ出す運営アナウンス。
+ *
+ * **文面と「今出しているか」を分けて持つ。** 休憩のたびに同じ文面を打ち直さずに済むよう、
+ * `visible` を false に戻しても `title`/`body` は残す (文面だけディスクに永続化し、
+ * `visible` は永続化しない — アプリを開き直した直後にアナウンスが出ていては困る)。
+ *
+ * 大会運営専用ではなく ServerManager が持つ一時状態 (previewMapId と同じ層)。
+ * 観客席の画面は待機中 (対戦カードを組む前・結果を確定したあと) にだけこれを出す。
+ */
+export interface AnnouncementState {
+  /** 見出し (「休憩」など)。空なら見出しを出さない */
+  title:   string;
+  /** 本文 (「10分間の休憩にします」など)。改行はそのまま行として出る */
+  body:    string;
+  /** 今、観客席に出しているか */
+  visible: boolean;
+}
+
+export const NO_ANNOUNCEMENT: Readonly<AnnouncementState> = {
+  title:   '',
+  body:    '',
+  visible: false,
+};
 
 /**
  * 観戦画面 (display window / ブラウザ観戦) の表示・音まわりの設定。

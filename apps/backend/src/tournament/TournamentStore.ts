@@ -795,7 +795,9 @@ export function qualifiersConfirmedOf(loaded: LoadedTournament): boolean {
 export function buildStatePayload(
   loaded: LoadedTournament, boundRoomId: string, armedMatchId: string | null,
   displayView: TournamentDisplayView = 'auto',
-  autoPlay: TournamentAutoPlay = { enabled: false, loop: false, stoppedReason: null },
+  autoPlay: TournamentAutoPlay = {
+    enabled: false, loop: false, announce: false, stoppedReason: null,
+  },
 ): TournamentStatePayload {
   const participants = resolveParticipants(loaded);
   return {

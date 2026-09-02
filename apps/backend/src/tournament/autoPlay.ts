@@ -18,6 +18,11 @@ import { hasQualifying, isKnockoutMatch, nextReadyMatch } from '@u15/ws-types';
 export interface AutoPlayDelaysMs {
   /** 直前の結果を表で見せてから、次の対戦カードを組むまで */
   arm:        number;
+  /**
+   * 直前の結果を表で見せてから、アナウンス画面に切り替えるまで。
+   * **アナウンスを見せる時間は次の `arm` の待機時間**になる (アナウンス → 次の対戦カード)
+   */
+  announce:   number;
   /** 対戦カードとマップを見せてから、ゲームを開始するまで */
   start:      number;
   /** 第1ゲームの結果を見せてから、第2ゲームへ進むまで */
@@ -32,6 +37,7 @@ export interface AutoPlayDelaysMs {
 
 export const DEFAULT_AUTO_PLAY_DELAYS_MS: AutoPlayDelaysMs = {
   arm:         6_000,
+  announce:    6_000,
   start:       5_000,
   nextRound:   6_000,
   confirm:     8_000,
@@ -41,6 +47,8 @@ export const DEFAULT_AUTO_PLAY_DELAYS_MS: AutoPlayDelaysMs = {
 
 export type AutoPlayAction =
   | { kind: 'arm';        matchId: string }
+  /** 次の試合を準備する前に、観客席へ運営アナウンスを出す */
+  | { kind: 'announce' }
   | { kind: 'start' }
   | { kind: 'next-round' }
   | { kind: 'confirm';    matchId: string }
@@ -57,15 +65,18 @@ export interface AutoPlayInput {
   format:              TournamentFormat;
   qualifiersConfirmed: boolean;
   groupStageDone:      boolean;
-  /** ServerManager の今の状態 (フェーズ・接続状況・消化したゲーム数) */
+  /** ServerManager の今の状態 (フェーズ・接続状況・消化したゲーム数・アナウンス) */
   status:              ServerStatusPayload;
   loop:                boolean;
+  /** 次の試合を準備する前にアナウンス画面を挟むか (自動進行中は試合ごとに選べないので一律) */
+  announce:            boolean;
 }
 
 /** その操作の前に置く待機時間 */
 export function delayFor(kind: AutoPlayAction['kind'], delays: AutoPlayDelaysMs): number {
   switch (kind) {
     case 'arm':                return delays.arm;
+    case 'announce':           return delays.announce;
     case 'start':              return delays.start;
     case 'next-round':         return delays.nextRound;
     case 'confirm':            return delays.confirm;
@@ -125,9 +136,18 @@ export function nextAutoPlayAction(i: AutoPlayInput): AutoPlayAction | null {
     return { kind: 'confirm-qualifiers' };
   }
 
-  // ④ 次の試合を準備する
+  // ④ 次の試合を準備する。アナウンスを挟む設定なら、その前に観客席へ出す。
+  //    出したあとは status.announcement.visible が立つのでここを素通りし、次の呼び出しで
+  //    arm に落ちる (armMatch がアナウンスを消すので、次の試合ではまた出る)。
+  //    **文面が空なら挟まない** — 真っ白な画面を数秒出すだけになるため
   const next = nextReadyMatch(i.matches);
-  if (next) return { kind: 'arm', matchId: next.id };
+  if (next) {
+    const st = i.status.announcement;
+    if (i.announce && !st.visible && (st.title !== '' || st.body !== '')) {
+      return { kind: 'announce' };
+    }
+    return { kind: 'arm', matchId: next.id };
+  }
 
   // ⑤ 全試合が終わった
   if (i.matches.every(m => m.status === 'done')) {

@@ -54,7 +54,7 @@ function state(
     stage: stageRulesFor(format),
     participants, matches, standings, groups: null, qualifiers: null, qualifierCandidates: null, stageMaps: [], thirdPlaceMapId: null, stageLabels: [],
     qualifiersConfirmed: false,
-    displayView: 'auto', autoPlay: { enabled: false, loop: false, stoppedReason: null },
+    displayView: 'auto', autoPlay: { enabled: false, loop: false, announce: false, stoppedReason: null },
     armedMatchId: null, boundRoomId: 'room', updatedAt: 0,
   };
 }

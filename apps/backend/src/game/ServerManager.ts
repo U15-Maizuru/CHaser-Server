@@ -17,6 +17,7 @@ import type { BaseClient } from '../network/BaseClient.js';
 import { pickRandomPair } from '../programCatalog.js';
 import { getMapCatalogEntry } from '../mapCatalog.js';
 import type {
+  AnnouncementState,
   ClientType,
   DisplayPrefs,
   InlineMapData,
@@ -26,7 +27,7 @@ import type {
   ServerStatusPayload,
   Reason,
 } from '@u15/ws-types';
-import { DEFAULT_DISPLAY_PREFS } from '@u15/ws-types';
+import { DEFAULT_DISPLAY_PREFS, NO_ANNOUNCEMENT } from '@u15/ws-types';
 
 // デモモード (無人自動進行) で、各フェーズ完了から次の操作を自動実行するまでの待機時間
 export interface DemoDelaysMs {
@@ -51,6 +52,8 @@ export class ServerManager extends EventEmitter {
   private displayPrefs: DisplayPrefs = { ...DEFAULT_DISPLAY_PREFS };
   // マップ管理画面からの手動プレビュー (対戦画面の一時的な表示切り替え)。永続化しない
   private previewMapId: string | null = null;
+  // 観客席に出す運営アナウンス。文面 (title/body) だけ永続化し、visible は永続化しない
+  private announcement: AnnouncementState = { ...NO_ANNOUNCEMENT };
   private demoTimer: ReturnType<typeof setTimeout> | null = null;
   private logDir = DEFAULT_LOG_DIR;
   private roomId = 'local';
@@ -95,6 +98,11 @@ export class ServerManager extends EventEmitter {
       const saved = loadLocalSettings(this.localSettingsPath);
       if (saved.darkMode !== undefined) this.darkMode = saved.darkMode;
       if (saved.displayPrefs) this.displayPrefs = { ...this.displayPrefs, ...saved.displayPrefs };
+      // 文面だけを復元する。visible は常に false で始める — アプリを開いた直後に
+      // 前回の休憩の案内が観客席へ出ていては困る
+      if (saved.announcement) {
+        this.announcement = { ...this.announcement, ...saved.announcement, visible: false };
+      }
       // setDoubleMode() 等のセッターは canStart() ゲートや randomizeFromCatalog() 等の副作用を
       // 持つため、初期化はフィールドへの直接代入にする
       if (saved.doubleMode !== undefined) this.round.doubleMode = saved.doubleMode;
@@ -115,6 +123,7 @@ export class ServerManager extends EventEmitter {
     saveLocalSettings(this.localSettingsPath, {
       darkMode:     this.darkMode,
       displayPrefs: this.displayPrefs,
+      announcement: { title: this.announcement.title, body: this.announcement.body },
       doubleMode:   this.round.doubleMode,
       repeatMode:   this.round.repeatMode,
       demoMode:     this.round.demoMode,
@@ -251,6 +260,19 @@ export class ServerManager extends EventEmitter {
     this.emitStatus();
   }
 
+  /**
+   * 観客席に出す運営アナウンス。差分で受けるので「出したまま文面を直す」
+   * 「文面を残したまま消す」のどちらもできる。
+   *
+   * 出るのは待機中の画面だけ (対戦中・結果表示・表彰には割り込まない)。
+   * 大会運営中は「この試合を準備」した時点で自動的に消える (armMatch)。
+   */
+  setAnnouncement(patch: Partial<AnnouncementState>): void {
+    this.announcement = { ...this.announcement, ...patch };
+    this.persistIfEnabled();
+    this.emitStatus();
+  }
+
   getCurrentMapData(): InlineMapData {
     return this.mapManager.getCurrentMapData();
   }
@@ -263,6 +285,8 @@ export class ServerManager extends EventEmitter {
 
     this.round.phase = 'playing';
     this.previewMapId = null;
+    // 付けっぱなしのアナウンスが対戦後の待機画面に戻ってこないよう、開始時に消す
+    this.announcement = { ...this.announcement, visible: false };
     this.emitStatus();
 
     const clients     = this.slots.buildClients();
@@ -385,6 +409,7 @@ export class ServerManager extends EventEmitter {
       mapSource:    this.mapManager.sourceInfo,
       displayPrefs: this.displayPrefs,
       previewMapId: this.previewMapId,
+      announcement: this.announcement,
     };
   }
 

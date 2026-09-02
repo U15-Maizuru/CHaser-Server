@@ -59,6 +59,7 @@ function plan(b: Binding): AutoPlayAction | null {
     groupStageDone:      isGroupStageDone(b.loaded.state.matches),
     status:              b.lastStatus,
     loop:                b.autoPlay.loop,
+    announce:            b.autoPlay.announce,
   });
 }
 
@@ -77,6 +78,9 @@ async function run(env: AutoPlayEnv, b: Binding, action: AutoPlayAction): Promis
   try {
     switch (action.kind) {
       case 'arm':                await armMatch(env, b, action.matchId); break;
+      // 文面は運営が入れたものをそのまま使う (自動進行では出す/出さないだけを選ぶ)。
+      // armMatch が visible を false に戻すので、次の試合でまた出る
+      case 'announce':           manager.setAnnouncement({ visible: true }); break;
       // requestStart は対戦が終わるまで返らない。その間の進行は status イベントが動かす
       case 'start':              await manager.requestStart(); break;
       case 'next-round':         await manager.requestNextRound(); break;

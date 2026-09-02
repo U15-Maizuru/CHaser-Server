@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { DisplayPrefs } from '@u15/ws-types';
+import type { AnnouncementState, DisplayPrefs } from '@u15/ws-types';
 
 /**
  * ローカルモード (Electron) の唯一の room に限って永続化する設定。
@@ -9,6 +9,11 @@ import type { DisplayPrefs } from '@u15/ws-types';
 export interface LocalSettings {
   darkMode:     boolean;
   displayPrefs: DisplayPrefs;
+  /**
+   * 観客席アナウンスの**文面だけ**。`visible` は持たない — 表示状態まで復元すると、
+   * アプリを開き直した直後に前回の休憩の案内が観客席へ出てしまう
+   */
+  announcement: Pick<AnnouncementState, 'title' | 'body'>;
   doubleMode:   boolean;
   repeatMode:   boolean;
   demoMode:     boolean;

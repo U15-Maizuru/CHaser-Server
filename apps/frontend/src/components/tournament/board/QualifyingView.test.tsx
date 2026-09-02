@@ -79,7 +79,7 @@ function state(
     qualifiersConfirmed: opts.confirmed ?? false,
     stageMaps: [null, null], thirdPlaceMapId: null, stageLabels: ['予選 第1節', '決勝'],
     displayView: opts.displayView ?? 'auto',
-    autoPlay: { enabled: false, loop: false, stoppedReason: null },
+    autoPlay: { enabled: false, loop: false, announce: false, stoppedReason: null },
     armedMatchId: null, boundRoomId: 'room', updatedAt: 0,
   };
 }

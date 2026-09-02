@@ -83,6 +83,23 @@ export function SettingsTab({ state, maps, commands }: SettingsTabProps) {
             デモモード（繰り返す）
           </Button>
         </ChipRow>
+        <ChipRow>
+          <Button
+            variant="choice" size="sm"
+            selected={state.autoPlay.announce}
+            onClick={() =>
+              commands.setAutoPlay(state.autoPlay.enabled, undefined, !state.autoPlay.announce)}
+          >
+            試合の間にアナウンスを挟む
+          </Button>
+        </ChipRow>
+        {state.autoPlay.announce && (
+          <Hint>
+            次の試合を準備する前に、<strong>毎回</strong>「合間のアナウンス」の文面を観客席へ出します。
+            自動進行中は試合ごとに選べないので、出すか出さないかだけの設定です
+            (文面が空のときは何も挟みません)。
+          </Hint>
+        )}
         {state.autoPlay.loop && (
           <Hint>
             全試合が終わると表彰画面をしばらく出したあと、

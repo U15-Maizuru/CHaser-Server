@@ -35,7 +35,7 @@ function state(over: Partial<TournamentStatePayload> = {}): TournamentStatePaylo
     standings: null, groups: null, qualifiers: null, qualifierCandidates: null,
     qualifiersConfirmed: false,
     displayView: 'auto',
-    autoPlay: { enabled: false, loop: false, stoppedReason: null },
+    autoPlay: { enabled: false, loop: false, announce: false, stoppedReason: null },
     stageMaps: [], thirdPlaceMapId: null, stageLabels: [],
     armedMatchId: null, boundRoomId: 'room', updatedAt: 0,
     ...over,

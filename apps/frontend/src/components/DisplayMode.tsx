@@ -1,8 +1,11 @@
 import { useMemo, useRef } from 'react';
 import type {
-  DisplayPrefs, InlineMapData, ServerPhase, ServerStatusPayload, TournamentStatePayload,
+  AnnouncementState, DisplayPrefs, InlineMapData, ServerPhase, ServerStatusPayload,
+  TournamentStatePayload,
 } from '@u15/ws-types';
-import { DEFAULT_DISPLAY_PREFS, hasQualifying, idxForSide, roundPointsFor, SCENE_FADE_MS } from '@u15/ws-types';
+import {
+  DEFAULT_DISPLAY_PREFS, hasQualifying, idxForSide, NO_ANNOUNCEMENT, roundPointsFor, SCENE_FADE_MS,
+} from '@u15/ws-types';
 import { useGameState } from '../hooks/useGameState';
 import { useMuteOverride } from '../hooks/useMuteOverride';
 import { useGamePhaseSound } from '../hooks/useGamePhaseSound';
@@ -14,6 +17,7 @@ import { useMapCatalogPreview } from '../hooks/useMapCatalogPreview';
 import { MainWindow } from './MainWindow';
 import { FitArea } from './FitArea';
 import { MapPreview } from './MapPreview';
+import { AnnouncementScreen } from './AnnouncementScreen';
 import { sourceLabel } from './MapSourceSection';
 import { BracketView } from './tournament/board/BracketView';
 import { QualifyingView, displayQualifyingPhase } from './tournament/board/QualifyingView';
@@ -48,18 +52,27 @@ import {
 // 予選ありの大会では「予選表 / 決勝表 のどちらを出すか」を運営パネルが決める
 // (運営席の表示とは連動しない)。全工程が終わったうえで決勝側を見ていれば表彰画面。
 
-type DisplayScene = 'award' | 'standby' | 'waiting' | 'playing' | 'result' | 'preview';
+type DisplayScene =
+  'award' | 'standby' | 'waiting' | 'playing' | 'result' | 'preview' | 'announce';
 
 function displayScene(
   phase:         ServerPhase,
   tournament:    TournamentStatePayload | null | undefined,
   groupPhase:    QualifyingPhase,
   previewMapId:  string | null,
+  announcement:  AnnouncementState,
 ): DisplayScene {
   const base = baseDisplayScene(phase, tournament, groupPhase);
-  // 運営がマップ管理画面から手動プレビューを出している間は、対戦の空き時間 (waiting/standby)
-  // をそのプレビューで置き換える。対戦中・結果表示・表彰中は割り込まない
-  if (previewMapId && (base === 'waiting' || base === 'standby')) return 'preview';
+  // 運営が出している割り込み (アナウンス / 手動マッププレビュー) は、対戦の空き時間
+  // (waiting/standby) だけを置き換える。対戦中・結果表示・表彰中は割り込まない
+  if (base !== 'waiting' && base !== 'standby') return base;
+  // アナウンスのほうが強い。休憩の案内を出したいのに、消し忘れたプレビューが
+  // 残っているせいで出ない、という取りこぼしを作らない。
+  // 文面が空なら出さない (真っ白な画面になる)
+  if (announcement.visible && (announcement.title !== '' || announcement.body !== '')) {
+    return 'announce';
+  }
+  if (previewMapId) return 'preview';
   return base;
 }
 
@@ -88,11 +101,13 @@ const BGM_OF_SCENE: Record<DisplayScene, (p: DisplayPrefs, round: 0 | 1) => stri
   playing: (p, round) => round === 1 ? p.bgmTrack1 : p.bgmTrack0,
   result:  p => p.bgmTrackResult,
   preview: p => p.bgmTrackWait,
+  // 運営アナウンス中も「次の対戦を待つ場面」なので待機中と同じ曲
+  announce: p => p.bgmTrackWait,
 };
 
 // 画面の暗転はこの単位で判定する。playing と result は同じ MainWindow をそのまま出し続ける
 // (盤面の上に結果を重ねるだけ) ので、両者の間に切り替えは無く暗転もしない。
-type VisualGroup = 'award' | 'standby' | 'waiting' | 'match' | 'preview';
+type VisualGroup = 'award' | 'standby' | 'waiting' | 'match' | 'preview' | 'announce';
 
 function visualGroupOf(scene: DisplayScene): VisualGroup {
   return scene === 'playing' || scene === 'result' ? 'match' : scene;
@@ -119,12 +134,14 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
   // 自動で null に戻る、永続化しない一時状態)
   const previewMapId = serverStatus?.previewMapId ?? null;
 
+  // 運営が観客席へ出している休憩・再開時刻などの案内 (文面は残したまま出し入れできる)
+  const announcement = serverStatus?.announcement ?? NO_ANNOUNCEMENT;
 
   // いま観客に出すべき画面。BGM の曲選び (BGM_OF_SCENE) と awarding 判定は、鳴らす音を
   // 即座に切り替えるためこの値をそのまま見る。描画だけは下の displayedGroup (暗転を挟んで
   // 遅れて切り替わる方) を見る — 条件を増やすと画面と音の食い違いが起きるので、
   // 「画面用に何を出すか」と「音用に何を鳴らすか」は常にこの scene 一つから決める
-  const scene = displayScene(phase, tournamentState, groupView.phase, previewMapId);
+  const scene = displayScene(phase, tournamentState, groupView.phase, previewMapId, announcement);
 
   // 画面の切り替え自体は即座にせず、BGM のクロスフェードと同じ長さの暗転を挟む
   // (useSceneTransition のコメント参照)。以下の出し分けは displayedGroup だけを見る
@@ -188,6 +205,8 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
         holdingGroupResult={groupView.holdingResult}
       />
     );
+  } else if (displayedGroup === 'announce') {
+    content = <AnnouncementScreen announcement={announcement} displayTitle={prefs.displayTitle} />;
   } else if (displayedGroup === 'preview') {
     content = manualPreview ? (
       <div style={sw.previewRoot}>

@@ -85,7 +85,8 @@ export class TournamentMessageDispatch {
         this.tournament(ws, t => t.setDisplayView(roomId, msg.payload.view));
         break;
       case 'tournament_set_auto_play':
-        this.tournament(ws, t => t.setAutoPlay(roomId, msg.payload.enabled, msg.payload.loop));
+        this.tournament(ws, t =>
+          t.setAutoPlay(roomId, msg.payload.enabled, msg.payload.loop, msg.payload.announce));
         break;
       case 'tournament_rescan':
         this.tournament(ws, t => t.rescan(roomId));

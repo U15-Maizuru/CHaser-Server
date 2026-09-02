@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
+  AnnouncementState,
   ClientType,
   DisplayPrefs,
   FrontendMessage,
@@ -43,10 +44,10 @@ export interface TournamentCommands {
   /** 観戦画面に出すものの切り替え (運営席の表示とは連動しない) */
   setDisplayView: (view: TournamentDisplayView) => void;
   /**
-   * 自動進行の切り替え。`loop` を省略するとサーバー側の今の設定を保つ
-   * (「自動で進める」と「繰り返す」を別々のボタンにしても互いを巻き戻さない)
+   * 自動進行の切り替え。`loop` / `announce` を省略するとサーバー側の今の設定を保つ
+   * (「自動で進める」「繰り返す」「アナウンスを挟む」を別々のボタンにしても互いを巻き戻さない)
    */
-  setAutoPlay: (enabled: boolean, loop?: boolean) => void;
+  setAutoPlay: (enabled: boolean, loop?: boolean, announce?: boolean) => void;
   rescan:   () => void;
 }
 
@@ -84,6 +85,8 @@ export interface GameStateHook {
   setMapParams:     (params: MapParams) => void;
   loadMapData:      (data: InlineMapData) => void;
   previewMap:       (mapId: string | null) => void;
+  /** 観客席に出す運営アナウンス。差分で送る (文面だけ・表示だけ、どちらも直せる) */
+  setAnnouncement:  (patch: Partial<AnnouncementState>) => void;
   tournament:       TournamentCommands;
 }
 
@@ -212,6 +215,7 @@ export function useGameState(wsUrl: string, roomId: string): GameStateHook {
     setMapParams:     (params)                     => send({ type: 'set_map_params',    payload: params }),
     loadMapData:      (data)                       => send({ type: 'load_map_data',     payload: data }),
     previewMap:       (mapId)                      => send({ type: 'preview_map',       payload: { mapId } }),
+    setAnnouncement:  (patch)                      => send({ type: 'set_announcement',  payload: patch }),
     tournament: {
       bind:     (tournamentId)        => send({ type: 'tournament_bind',           payload: { tournamentId } }),
       unbind:   ()                    => send({ type: 'tournament_unbind' }),
@@ -237,8 +241,8 @@ export function useGameState(wsUrl: string, roomId: string): GameStateHook {
         send({ type: 'tournament_confirm_qualifiers', payload: { confirmed } }),
       setDisplayView: (view) =>
         send({ type: 'tournament_set_display_view', payload: { view } }),
-      setAutoPlay: (enabled, loop) =>
-        send({ type: 'tournament_set_auto_play', payload: { enabled, loop } }),
+      setAutoPlay: (enabled, loop, announce) =>
+        send({ type: 'tournament_set_auto_play', payload: { enabled, loop, announce } }),
       rescan:   ()                    => send({ type: 'tournament_rescan' }),
     },
   };

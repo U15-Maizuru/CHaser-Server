@@ -1,4 +1,6 @@
-import type { CSSProperties, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react';
+import type {
+  CSSProperties, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes,
+} from 'react';
 import {
   BG_CARD, BG_ROOT, BORDER_COLOR, COOL_COLOR, FONT_NUM, FONT_UI,
   RADIUS_PILL, RADIUS_SM, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, TURN_BASE,
@@ -28,6 +30,11 @@ export function TextInput({ style, ...rest }: InputHTMLAttributes<HTMLInputEleme
 /** 数値入力。等幅フォントで桁を揃える */
 export function NumberInput({ style, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
   return <input type="number" {...rest} style={{ ...s.input, ...s.number, ...style }} />;
+}
+
+/** 複数行の入力。改行をそのまま持つ文字列 (観客席アナウンスの本文など) に使う */
+export function TextArea({ style, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return <textarea {...rest} style={{ ...s.input, ...s.textarea, ...style }} />;
 }
 
 export function Select({ style, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
@@ -78,6 +85,7 @@ const s: Record<string, CSSProperties> = {
     color: TEXT_PRIMARY, fontSize: 12, fontFamily: FONT_UI, boxSizing: 'border-box',
   },
   number: { width: 72, fontFamily: FONT_NUM, textAlign: 'right' },
+  textarea: { width: '100%', resize: 'vertical', lineHeight: 1.6 },
   select: { background: BG_CARD, cursor: 'pointer' },
   check:  { width: 16, height: 16, cursor: 'pointer', accentColor: COOL_COLOR, flexShrink: 0 },
   chipRow: { display: 'flex', gap: 6, flexWrap: 'wrap' },

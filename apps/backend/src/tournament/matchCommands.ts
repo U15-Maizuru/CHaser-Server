@@ -61,6 +61,8 @@ export async function armMatch(env: CommandEnv, b: Binding, matchId: string): Pr
 
   manager.setDemoMode(false);
   manager.setRepeatMode(false);
+  // 対戦カードが決まったらアナウンスは役目を終える。文面は次の休憩のために残す
+  manager.setAnnouncement({ visible: false });
 
   await manager.requestReset();
   manager.setDoubleMode(doubleModeFor(b.loaded.def, match));

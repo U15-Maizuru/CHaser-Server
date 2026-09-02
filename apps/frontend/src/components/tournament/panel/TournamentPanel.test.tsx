@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { NO_ANNOUNCEMENT } from '@u15/ws-types';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { TournamentCommands } from '../../../hooks/useGameState';
 import { TournamentPanel } from './TournamentPanel';
@@ -70,6 +71,7 @@ async function renderPanel() {
   render(
     <TournamentPanel
       state={null} httpBase={HTTP} commands={commands} lastError={null} clearError={() => {}}
+      announcement={NO_ANNOUNCEMENT} setAnnouncement={() => {}}
     />,
   );
   await screen.findByText('春季カップ');

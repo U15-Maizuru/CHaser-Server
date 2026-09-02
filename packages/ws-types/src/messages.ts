@@ -2,6 +2,7 @@
 // protocol.ts / tournament.ts の型を参照するので、依存の順は protocol → tournament → messages。
 
 import type {
+  AnnouncementState,
   ClientType,
   DisplayPrefs,
   GameEndPayload,
@@ -40,6 +41,11 @@ export type FrontendMessage =
   | { type: 'request_repeat' }
   | { type: 'set_dark_mode';     payload: { enabled: boolean } }
   | { type: 'set_display_prefs'; payload: Partial<DisplayPrefs> }
+  /**
+   * 観客席に出す運営アナウンス。文面 (title/body) と表示 (visible) を別々に送れる
+   * ように差分で受ける — 出したまま文面だけ直す・文面を残したまま消す、の両方をするため
+   */
+  | { type: 'set_announcement';  payload: Partial<AnnouncementState> }
   | { type: 'manual_action';     payload: { slot: 0 | 1; action: number; rote: number } }
   | { type: 'create_room' }
   | { type: 'join_room';         payload: { roomId: string } }
@@ -75,10 +81,11 @@ export type FrontendMessage =
   /** 観戦画面に出すものを切り替える (運営席の表示とは連動しない) */
   | { type: 'tournament_set_display_view'; payload: { view: TournamentDisplayView } }
   /**
-   * 自動進行の切り替え。`loop` は「全試合が終わったら最初からやり直す」(デモモード)。
-   * `loop` を省略したら今の設定を保つ (どちらか一方だけを押せるようにするため)
+   * 自動進行の切り替え。`loop` は「全試合が終わったら最初からやり直す」(デモモード)、
+   * `announce` は「次の試合を準備する前にアナウンス画面を挟む」。
+   * 省略した項目は今の設定を保つ (どれか1つだけを押せるようにするため)
    */
-  | { type: 'tournament_set_auto_play';   payload: { enabled: boolean; loop?: boolean } }
+  | { type: 'tournament_set_auto_play';   payload: { enabled: boolean; loop?: boolean; announce?: boolean } }
   | { type: 'tournament_rescan' };
 
 // --- Room / lobby ---

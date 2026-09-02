@@ -71,6 +71,9 @@ export class GameMessageDispatch {
       case 'set_display_prefs':
         manager.setDisplayPrefs(msg.payload);
         break;
+      case 'set_announcement':
+        manager.setAnnouncement(msg.payload);
+        break;
       case 'set_turn_delay':
         manager.setTurnDelay(msg.payload.ms);
         break;

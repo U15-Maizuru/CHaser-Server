@@ -22,7 +22,7 @@ import { ManualMode }      from './components/ManualMode';
 import { ErrorBoundary }   from './components/ErrorBoundary';
 import { Lobby }           from './components/Lobby';
 import type { ClientStatusPayload, InlineMapData, MapCatalogEntry, SoundKey } from '@u15/ws-types';
-import { DEFAULT_DISPLAY_PREFS, MapObject } from '@u15/ws-types';
+import { DEFAULT_DISPLAY_PREFS, MapObject, NO_ANNOUNCEMENT } from '@u15/ws-types';
 import type { EditableMap } from './components/MapEditorDialog';
 import { Splash } from './ui';
 
@@ -361,4 +361,5 @@ const defaultStatus = {
   mapSource:    { kind: 'random' as const },
   displayPrefs: DEFAULT_DISPLAY_PREFS,
   previewMapId: null,
+  announcement: NO_ANNOUNCEMENT,
 };

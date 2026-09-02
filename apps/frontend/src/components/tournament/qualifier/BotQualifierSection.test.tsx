@@ -42,7 +42,7 @@ function state(
     qualifiersConfirmed: confirmed,
     stageMaps: [], thirdPlaceMapId: null, stageLabels: [],
     displayView: 'auto',
-    autoPlay: { enabled: false, loop: false, stoppedReason: null },
+    autoPlay: { enabled: false, loop: false, announce: false, stoppedReason: null },
     armedMatchId: null, boundRoomId: 'room', updatedAt: 0,
   };
 }

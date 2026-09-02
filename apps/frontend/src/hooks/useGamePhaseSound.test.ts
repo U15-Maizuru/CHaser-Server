@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
-import { DEFAULT_DISPLAY_PREFS, Winner, Reason } from '@u15/ws-types';
+import { DEFAULT_DISPLAY_PREFS, NO_ANNOUNCEMENT, Reason, Winner } from '@u15/ws-types';
 import type { ServerStatusPayload, GameEndPayload, TurnStartPayload } from '@u15/ws-types';
 import { useGamePhaseSound, type GamePhaseSoundInput } from './useGamePhaseSound';
 
@@ -30,6 +30,7 @@ function status(phase: ServerStatusPayload['phase'], state: ClientState = 'ready
     mapSource: { kind: 'random' },
     displayPrefs: DEFAULT_DISPLAY_PREFS,
     previewMapId: null,
+    announcement: NO_ANNOUNCEMENT,
   };
 }
 

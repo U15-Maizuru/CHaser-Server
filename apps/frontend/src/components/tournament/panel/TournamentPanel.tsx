@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import type {
-  CatalogEntry, MapCatalogEntry, TournamentStatePayload, TournamentSummary,
+  AnnouncementState, CatalogEntry, MapCatalogEntry, TournamentStatePayload, TournamentSummary,
 } from '@u15/ws-types';
 import type { TournamentCommands } from '../../../hooks/useGameState';
 import { NextActionCard } from './NextActionCard';
+import { AnnouncementCard } from './AnnouncementCard';
 import { LibraryTab } from './LibraryTab';
 import { ProgressTab } from './ProgressTab';
 import { SettingsTab } from './SettingsTab';
@@ -28,10 +29,13 @@ export interface TournamentPanelProps {
   commands:   TournamentCommands;
   lastError:  string | null;
   clearError: () => void;
+  /** 観客席に出す運営アナウンス (大会ではなくルームの状態なので commands とは別に受ける) */
+  announcement:    AnnouncementState;
+  setAnnouncement: (patch: Partial<AnnouncementState>) => void;
 }
 
 export function TournamentPanel({
-  state, httpBase, commands, lastError, clearError,
+  state, httpBase, commands, lastError, clearError, announcement, setAnnouncement,
 }: TournamentPanelProps) {
   const [summaries,  setSummaries]  = useState<TournamentSummary[]>([]);
   const [scanErrors, setScanErrors] = useState<{ id: string; message: string }[]>([]);
@@ -77,6 +81,12 @@ export function TournamentPanel({
       {lastError && <Callout tone="error" onDismiss={clearError}>{lastError}</Callout>}
 
       <NextActionCard state={state} commands={commands} programs={programs} />
+
+      {/* 試合の合間だけ出す。対戦カードが決まったら観客席は対戦画面に入るので、
+          出しっぱなしを消せるよう表示中だけカードを残す */}
+      {(!state?.armedMatchId || announcement.visible) && (
+        <AnnouncementCard announcement={announcement} onChange={setAnnouncement} />
+      )}
 
       <Tabs tabs={tabs} active={tab} onSelect={setTab} />
 

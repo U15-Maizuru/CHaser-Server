@@ -36,7 +36,9 @@ export { TournamentError } from './binding.js';
 /** bind 中はこの間隔でルームを touch し、TTL (30分) で消えるのを防ぐ */
 const KEEPALIVE_MS = 60_000;
 
-const AUTO_PLAY_OFF: TournamentAutoPlay = { enabled: false, loop: false, stoppedReason: null };
+const AUTO_PLAY_OFF: TournamentAutoPlay = {
+  enabled: false, loop: false, announce: false, stoppedReason: null,
+};
 
 export interface OrchestratorDeps {
   rm:        RoomManager;
@@ -237,12 +239,18 @@ export class TournamentOrchestrator {
   /**
    * 自動進行 (オートプレイ) を入れる / 切る。
    *
-   * `loop` を省略すると今の設定を保つ — パネルの2つのボタン (自動で進める / 繰り返す) が
-   * 互いの設定を巻き戻さないようにするため。入れ直しは停止理由も消す。
+   * `loop` / `announce` を省略すると今の設定を保つ — パネルのボタン (自動で進める /
+   * 繰り返す / アナウンスを挟む) が互いの設定を巻き戻さないようにするため。
+   * 入れ直しは停止理由も消す。
    */
-  setAutoPlay(roomId: string, enabled: boolean, loop?: boolean): void {
+  setAutoPlay(roomId: string, enabled: boolean, loop?: boolean, announce?: boolean): void {
     const b = this.require(roomId);
-    b.autoPlay = { enabled, loop: loop ?? b.autoPlay.loop, stoppedReason: null };
+    b.autoPlay = {
+      enabled,
+      loop:     loop     ?? b.autoPlay.loop,
+      announce: announce ?? b.autoPlay.announce,
+      stoppedReason: null,
+    };
     if (!enabled) clearTimer(b);
     this.publish(roomId);   // publish の中で次の一手を予約する
   }

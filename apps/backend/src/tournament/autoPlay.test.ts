@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type {
   ClientStatusPayload, RoundResult, ServerStatusPayload, TournamentMatch,
 } from '@u15/ws-types';
-import { DEFAULT_DISPLAY_PREFS, Reason, Winner } from '@u15/ws-types';
+import { DEFAULT_DISPLAY_PREFS, NO_ANNOUNCEMENT, Reason, Winner } from '@u15/ws-types';
 import { DEFAULT_AUTO_PLAY_DELAYS_MS, delayFor, nextAutoPlayAction } from './autoPlay.js';
 import type { AutoPlayInput } from './autoPlay.js';
 
@@ -32,6 +32,7 @@ function status(over: Partial<ServerStatusPayload> = {}): ServerStatusPayload {
     mapSource:    { kind: 'random' },
     displayPrefs: DEFAULT_DISPLAY_PREFS,
     previewMapId: null,
+    announcement: NO_ANNOUNCEMENT,
     ...over,
   };
 }
@@ -56,6 +57,7 @@ function input(over: Partial<AutoPlayInput> = {}): AutoPlayInput {
     groupStageDone:      false,
     status:              status(),
     loop:                false,
+    announce:            false,
     ...over,
   };
 }
@@ -172,6 +174,39 @@ describe('nextAutoPlayAction', () => {
     const ms = [match({ status: 'pending' })];
     expect(nextAutoPlayAction(input({ matches: ms }))).toBeNull();
   });
+
+  // --- 合間のアナウンス ---
+
+  it('アナウンスを挟む設定なら、次の試合を準備する前に出す', () => {
+    const st = status({ announcement: { title: '休憩', body: '10分間の休憩にします', visible: false } });
+    expect(nextAutoPlayAction(input({ announce: true, status: st })))
+      .toEqual({ kind: 'announce' });
+  });
+
+  it('出したあとは準備へ進む (同じアナウンスを出し続けない)', () => {
+    const st = status({ announcement: { title: '休憩', body: '', visible: true } });
+    expect(nextAutoPlayAction(input({ announce: true, status: st })))
+      .toEqual({ kind: 'arm', matchId: 'SF1' });
+  });
+
+  it('文面が空なら挟まない (真っ白な画面を出さない)', () => {
+    const st = status({ announcement: { title: '', body: '', visible: false } });
+    expect(nextAutoPlayAction(input({ announce: true, status: st })))
+      .toEqual({ kind: 'arm', matchId: 'SF1' });
+  });
+
+  it('設定が切なら、文面があっても挟まない', () => {
+    const st = status({ announcement: { title: '休憩', body: '', visible: false } });
+    expect(nextAutoPlayAction(input({ announce: false, status: st })))
+      .toEqual({ kind: 'arm', matchId: 'SF1' });
+  });
+
+  it('確定待ちの試合があるうちはアナウンスより結果の確定が先', () => {
+    const ms = [match({ status: 'awaiting_confirm', result: result(0) })];
+    const st = status({ announcement: { title: '休憩', body: '', visible: false } });
+    expect(nextAutoPlayAction(input({ matches: ms, announce: true, status: st })))
+      .toEqual({ kind: 'confirm', matchId: 'SF1' });
+  });
 });
 
 describe('delayFor', () => {
@@ -181,7 +216,10 @@ describe('delayFor', () => {
   });
 
   it('画面が切り替わる操作には視認のための間がある', () => {
-    for (const kind of ['arm', 'start', 'next-round', 'confirm', 'confirm-qualifiers', 'restart'] as const) {
+    const kinds = [
+      'arm', 'announce', 'start', 'next-round', 'confirm', 'confirm-qualifiers', 'restart',
+    ] as const;
+    for (const kind of kinds) {
       expect(delayFor(kind, DEFAULT_AUTO_PLAY_DELAYS_MS)).toBeGreaterThanOrEqual(3_000);
     }
   });
