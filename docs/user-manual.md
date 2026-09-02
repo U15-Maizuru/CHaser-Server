@@ -55,14 +55,37 @@ OFF のときは1ゲームだけを行い、そのゲームの結果がそのま
 
 ## 2. ローカルモード — Electron アプリ
 
+### 入手とインストール
+
+配布版は [GitHub Releases](https://github.com/U15-Maizuru/CHaser-Server/releases) から取得します。Assets の一覧から OS に合わせたファイルをダウンロードしてください。
+
+| OS | ファイル |
+|---|---|
+| Windows 10/11 | `CHaser Server Setup <version>.exe` |
+| macOS (Apple Silicon) | `CHaser Server-<version>-arm64.dmg` |
+
+**Windows**: ダウンロードした `.exe` をダブルクリックし、ウィザードの指示に従ってください。インストール先フォルダは途中の画面で変更できます。完了するとデスクトップとスタートメニューにショートカットが作られます。
+
+**macOS**: ダウンロードした `.dmg` をダブルクリックしてマウントし、開いたウィンドウで「CHaser Server」を「Applications」フォルダへドラッグしてください。
+
+> **macOS の初回起動時の注意**: 配布版は Apple Developer 証明書での署名・notarization を行っていません。初回起動時に Gatekeeper が「開発元を確認できません」と表示してブロックします。Finder でアプリを右クリック→「開く」を選ぶか、システム設定→プライバシーとセキュリティ の下部にある「このまま開く」から起動してください（この操作は初回のみ必要です）。
+
 ### 起動方法
 
-インストーラーから実行する場合はアイコンをダブルクリックするだけで起動します。
+インストーラーから導入した場合はアイコンをダブルクリックするだけで起動します。
 
 開発モードで起動する場合:
 ```bash
 pnpm --filter @u15/electron dev
 ```
+
+### アンインストール
+
+**Windows**: 設定 →「アプリ」→「インストールされているアプリ」から「CHaser Server」を選び、「アンインストール」を押します。インストール先フォルダにある `Uninstall CHaser Server.exe` を直接実行しても構いません。
+
+**macOS**: 「Applications」フォルダから「CHaser Server」をゴミ箱に入れます。
+
+> **大会データ・登録したプログラム/マップ/BGM は上記の操作では消えません。** これらは OS 標準のユーザーデータフォルダ（Windows: `%APPDATA%\CHaser Server`、macOS: `~/Library/Application Support/CHaser Server`）に保存されています。完全に削除したい場合はこのフォルダも合わせて削除してください。
 
 ### 2ウィンドウ構成
 
