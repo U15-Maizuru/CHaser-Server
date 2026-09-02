@@ -55,6 +55,7 @@ function state(
     participants, matches, standings, groups: null, qualifiers: null, qualifierCandidates: null, stageMaps: [], thirdPlaceMapId: null, stageLabels: [],
     qualifiersConfirmed: false,
     displayView: 'auto', autoPlay: { enabled: false, loop: false, announce: false, stoppedReason: null },
+    lanes: [{ roomId: 'room', primary: true, armedMatchId: null }],
     armedMatchId: null, boundRoomId: 'room', updatedAt: 0,
   };
 }

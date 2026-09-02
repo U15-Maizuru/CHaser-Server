@@ -86,6 +86,16 @@ export type FrontendMessage =
    * 省略した項目は今の設定を保つ (どれか1つだけを押せるようにするため)
    */
   | { type: 'tournament_set_auto_play';   payload: { enabled: boolean; loop?: boolean; announce?: boolean } }
+  /**
+   * 同時に走らせる試合の数 (レーン数)。1 なら1試合ずつ順に実行する。
+   *
+   * 2 以上にできるのは BOT対戦予選のある大会だけで、増やした副レーンには予選試合しか
+   * 流れない (`canRunInSideLane`)。レーンごとにルームと TCP ポート対を確保するので、
+   * どのレーンも空いているときにしか変更できない
+   */
+  | { type: 'tournament_set_lane_count';  payload: { count: number } }
+  /** 空いているレーンへ、次に実施すべき試合をまとめて配る (並列実行の運営操作) */
+  | { type: 'tournament_arm_next' }
   | { type: 'tournament_rescan' };
 
 // --- Room / lobby ---

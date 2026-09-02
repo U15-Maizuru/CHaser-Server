@@ -667,6 +667,23 @@ export interface TournamentSummary {
   boundRoomId:  string | null;
 }
 
+/**
+ * 対戦を実行する場所。**同時に走らせる試合の数だけ用意する。**
+ *
+ * lanes[0] が主レーンで、大会を bind したルームそのもの。副レーンは運営が並列数を
+ * 指定したときに追加で作られるルームで、BOT対戦予選の予選試合だけを流す
+ * (`canRunInSideLane`)。決勝トーナメントは勝ち上がりの依存があり、観客が見る主戦場でも
+ * あるので必ず主レーンで1試合ずつ行う。
+ */
+export interface TournamentLane {
+  /** このレーンの対戦を実行しているルーム。観戦画面はここへ join して盤面を受け取る */
+  roomId:       string;
+  /** 主レーンか (= 大会を bind したルーム) */
+  primary:      boolean;
+  /** このレーンで準備中・対戦中の試合。空いていれば null */
+  armedMatchId: string | null;
+}
+
 export interface TournamentStatePayload {
   tournamentId: string;
   name:         string;
@@ -719,6 +736,17 @@ export interface TournamentStatePayload {
    * 節数の算出を frontend に二重定義しないよう、backend が試合グラフから組み立てて配る。
    */
   stageLabels:  string[];
+  /**
+   * 対戦を実行するレーン。並列実行していなければ要素1つ (主レーンだけ)。
+   * 観戦画面はこれを見て画面を分割し、各レーンのルームから盤面を受け取る。
+   */
+  lanes:        TournamentLane[];
+  /**
+   * 主レーンで準備中・対戦中の試合。
+   *
+   * **副レーンのぶんは含まない。** 「今の主戦場は何か」を指す値で、待機画面の対戦カード・
+   * トーナメント表の強調・得点表示の文脈がこれを見る。全レーンを見たいときは `lanes`。
+   */
   armedMatchId: string | null;
   boundRoomId:  string;
   updatedAt:    number;

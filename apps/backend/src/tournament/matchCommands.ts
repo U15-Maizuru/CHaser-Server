@@ -1,13 +1,13 @@
-import type { ClientType, ProcessConfig, ResolvedParticipant } from '@u15/ws-types';
+import type { ClientType, ProcessConfig, ResolvedParticipant, TournamentMatch } from '@u15/ws-types';
 import {
-  blockedByQualifiers, doubleModeFor, groupStageCount, hasBracket, isConsolationMatch,
-  isKnockoutMatch,
+  blockedByQualifiers, canRunInSideLane, doubleModeFor, groupStageCount, hasBracket,
+  isConsolationMatch, isKnockoutMatch,
 } from '@u15/ws-types';
 import { buildProcessConfig } from '../game/processConfig.js';
 import { getCatalogEntry } from '../programCatalog.js';
 import {
-  TournamentError, commit, ctxOf, decide, disarmIfCleared, managerOf, requireMatch,
-  requireParticipant, updateMatch, type Binding, type CommandEnv,
+  TournamentError, commit, ctxOf, decide, disarmIfCleared, laneOfMatch, managerOf, primaryLane,
+  requireMatch, requireParticipant, updateMatch, type Binding, type CommandEnv, type Lane,
 } from './binding.js';
 import {
   confirmResult as confirmInGraph,
@@ -29,11 +29,17 @@ import {
  * requestReset は processConfig を消すため、先に割り当てると失われる。
  * また roundResults を空にすることで canEditMap()/canStart() の両ゲートが通るようになる。
  */
-export async function armMatch(env: CommandEnv, b: Binding, matchId: string): Promise<void> {
+export async function armMatch(
+  env: CommandEnv, b: Binding, lane: Lane, matchId: string,
+): Promise<void> {
   const match = requireMatch(b, matchId);
 
-  if (b.armedMatchId && b.armedMatchId !== matchId) {
+  if (lane.armedMatchId && lane.armedMatchId !== matchId) {
     throw new TournamentError('別の試合が準備中です。先にそちらを終えるか取り消してください');
+  }
+  const held = laneOfMatch(b, matchId);
+  if (held && held !== lane) {
+    throw new TournamentError('この試合は別のレーンで準備中です');
   }
   if (match.status !== 'ready' && match.status !== 'armed') {
     throw new TournamentError(`この試合はまだ開始できません (${match.status})`);
@@ -53,11 +59,30 @@ export async function armMatch(env: CommandEnv, b: Binding, matchId: string): Pr
   const bp = requireParticipant(participants, match.resolvedB);
 
   // スロットへ触る前に両者ぶんを解決しておく。片方だけ割り当ててから失敗すると
-  // COOL だけ準備完了・HOT は未選択という中途半端な状態が残ってしまう
-  const configs = [slotConfigOf(a, 0, b.roomId), slotConfigOf(bp, 1, b.roomId)];
+  // COOL だけ準備完了・HOT は未選択という中途半端な状態が残ってしまう。
+  //
+  // **libPath はそのレーンの部屋で組む。** 規約が server/rooms/<roomId>/libs/<cool|hot> なので、
+  // 主レーンの部屋で組むと、並列に走る対戦どうしが同じライブラリ置き場を奪い合う
+  const configs = [slotConfigOf(a, 0, lane.roomId), slotConfigOf(bp, 1, lane.roomId)];
 
-  const manager = managerOf(env, b);
+  const manager = managerOf(env, lane.roomId);
   if (!manager) throw new TournamentError('ルームが見つかりません');
+
+  // **副レーンの進む速さを主レーンに揃える。**
+  //
+  // ターン表示時間と TCP タイムアウトはコントロール窓が自分の部屋へ一方的に送る設定で、
+  // コントロール窓は主レーンの部屋にしか開かない。揃えないと副レーンだけ既定値
+  // (500ms/ターン) で走り、同じ画面に並んだ対戦の進みがレーンごとにばらばらに見える。
+  //
+  // レーンを作るときではなく **arm のたびに引き直す** — 運営が対戦の合間に設定を
+  // 変えても、次の試合から効くようにするため
+  if (!lane.primary) {
+    const primary = managerOf(env, b.roomId);
+    if (primary) {
+      manager.setTurnDelay(primary.turnDelayMs);
+      manager.setTcpTimeout(primary.tcpTimeoutMs);
+    }
+  }
 
   manager.setDemoMode(false);
   manager.setRepeatMode(false);
@@ -71,25 +96,87 @@ export async function armMatch(env: CommandEnv, b: Binding, matchId: string): Pr
   // null (毎回ランダム生成) のときも明示的に切り替える — マップ管理は「ライブラリ由来なら
   // 引き直さず保持する」設計 (MapManager.refreshForNewGame) なので、ここで何もしないと
   // 前の試合 (例えば予選) で読み込んだ固定マップが決勝までそのまま残ってしまう
-  const mapId = mapForMatch(b.loaded, match);
-  if (mapId) manager.loadMap(mapId);
-  else manager.generateRandomMap();
+  applyMapTo(env, b, lane, match);
 
   for (const c of configs) {
     await manager.setClientType(c.slot, c.type, c.processConfig);
   }
 
-  b.armedMatchId = matchId;
+  lane.armedMatchId = matchId;
   updateMatch(b, matchId, m => ({ ...m, status: 'armed' }));
   env.publish(b.roomId);
 }
 
-/** 準備を取り消して ready に戻す */
-export function cancelArm(env: CommandEnv, b: Binding): void {
-  if (!b.armedMatchId) return;
-  updateMatch(b, b.armedMatchId, m => ({ ...m, status: 'ready' }));
-  b.armedMatchId = null;
+/**
+ * その試合を流すレーンを決める。
+ *
+ * - 既にどこかのレーンが抱えている試合なら、そのレーン (再 arm は同じ場所で行う)
+ * - **副レーンで実施できない試合 (決勝トーナメント等) は、他のレーンが全部空いている
+ *   ときだけ主レーンで行う。** 主戦場は単独で行う、という決まり
+ * - それ以外は空いているレーンを主レーンから順に
+ */
+export function pickLaneFor(b: Binding, matchId: string): Lane {
+  const match = requireMatch(b, matchId);
+  const held  = laneOfMatch(b, matchId);
+  if (held) return held;
+
+  const busy = '別の試合が準備中です。先にそちらを終えるか取り消してください';
+
+  if (!canRunInSideLane(b.loaded.def.stage.format, match)) {
+    if (b.lanes.some(l => l.armedMatchId !== null)) throw new TournamentError(busy);
+    return primaryLane(b);
+  }
+
+  const idle = b.lanes.find(l => l.armedMatchId === null);
+  if (!idle) {
+    throw new TournamentError(b.lanes.length === 1
+      ? busy
+      : '空いているレーンがありません。先にどれかの試合を終えてください');
+  }
+  return idle;
+}
+
+/**
+ * 準備を取り消して ready に戻す。matchId を省略すると準備中のレーンをすべて取り消す
+ * (運営が並列実行をまとめて畳むときの操作)。
+ */
+export function cancelArm(env: CommandEnv, b: Binding, matchId?: string): void {
+  const target = matchId ? laneOfMatch(b, matchId) : undefined;
+  const lanes  = matchId
+    ? (target ? [target] : [])
+    : b.lanes.filter(l => l.armedMatchId !== null);
+  if (lanes.length === 0) return;
+
+  for (const lane of lanes) {
+    updateMatch(b, lane.armedMatchId!, m => ({ ...m, status: 'ready' }));
+    lane.armedMatchId = null;
+  }
   env.publish(b.roomId);
+}
+
+/** そのレーンで準備中の試合のマップを引き直す (指定が無ければランダム生成に戻す) */
+function applyMapTo(env: CommandEnv, b: Binding, lane: Lane, match: TournamentMatch): void {
+  const manager = managerOf(env, lane.roomId);
+  const mapId   = mapForMatch(b.loaded, match);
+  if (mapId) manager?.loadMap(mapId);
+  else manager?.generateRandomMap();
+}
+
+/**
+ * 準備済みの試合のうち target に当たるものへ、その場でマップを反映し直す。
+ *
+ * **レーンを1つに絞らず、当たったレーンすべてに効かせる。** BOT対戦予選は全参加者が
+ * 同じマップで戦うのが形式の根拠なので、並列実行中に片方のレーンだけ変えると条件が崩れる。
+ * 1ゲームでも消化していると RoundController.canEditMap が塞ぐため、その試合は次の arm に任せる
+ * (status が 'armed' の間だけが対象)。
+ */
+function reapplyArmedMaps(
+  env: CommandEnv, b: Binding, target: (m: TournamentMatch) => boolean,
+): void {
+  for (const lane of b.lanes) {
+    const armed = b.loaded.state.matches.find(m => m.id === lane.armedMatchId);
+    if (armed && armed.status === 'armed' && target(armed)) applyMapTo(env, b, lane, armed);
+  }
 }
 
 /**
@@ -142,7 +229,8 @@ export function confirmResult(
   if (note !== undefined) patch.note = note;
 
   commit(b, confirmInGraph(b.loaded.state.matches, matchId, patch, Date.now(), ctxOf(b)));
-  if (b.armedMatchId === matchId) b.armedMatchId = null;
+  const lane = laneOfMatch(b, matchId);
+  if (lane) lane.armedMatchId = null;
   env.publish(b.roomId);
 }
 
@@ -191,7 +279,8 @@ export function setWalkover(
 ): void {
   requireMatch(b, matchId);
   commit(b, walkoverInGraph(b.loaded.state.matches, matchId, winnerSide, Date.now(), ctxOf(b)));
-  if (b.armedMatchId === matchId) b.armedMatchId = null;
+  const lane = laneOfMatch(b, matchId);
+  if (lane) lane.armedMatchId = null;
   env.publish(b.roomId);
 }
 
@@ -229,16 +318,8 @@ export function setStageMap(
   decide(b, d => ({ ...d, stageMaps: { ...d.stageMaps, [String(stage)]: mapCatalogId } }));
   saveState(b.loaded.state);
 
-  // 準備済みの試合が同じ回戦なら、その場で反映する。1ゲームでも消化していると
-  // RoundController.canEditMap が塞ぐので、その場合は次の arm に任せる。
-  const armed = b.armedMatchId
-    ? b.loaded.state.matches.find(m => m.id === b.armedMatchId)
-    : undefined;
-  if (armed && armed.stage === stage && armed.status === 'armed') {
-    const mapId = mapForMatch(b.loaded, armed);
-    if (mapId) managerOf(env, b)?.loadMap(mapId);
-    else managerOf(env, b)?.generateRandomMap();
-  }
+  // 準備済みの試合が同じ回戦なら、その場で反映する
+  reapplyArmedMaps(env, b, m => m.stage === stage);
 
   env.publish(b.roomId);
 }
@@ -266,14 +347,7 @@ export function setMatchMap(
   saveState(b.loaded.state);
 
   // 準備済みの試合が同じ試合なら、その場で反映する (setStageMap と同じ考え方)
-  if (b.armedMatchId === matchId) {
-    const armed = b.loaded.state.matches.find(m => m.id === matchId);
-    if (armed && armed.status === 'armed') {
-      const mapId = mapForMatch(b.loaded, armed);
-      if (mapId) managerOf(env, b)?.loadMap(mapId);
-      else managerOf(env, b)?.generateRandomMap();
-    }
-  }
+  reapplyArmedMaps(env, b, m => m.id === matchId);
 
   env.publish(b.roomId);
 }

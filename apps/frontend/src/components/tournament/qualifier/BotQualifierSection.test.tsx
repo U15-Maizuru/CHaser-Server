@@ -43,6 +43,7 @@ function state(
     stageMaps: [], thirdPlaceMapId: null, stageLabels: [],
     displayView: 'auto',
     autoPlay: { enabled: false, loop: false, announce: false, stoppedReason: null },
+    lanes: [{ roomId: 'room', primary: true, armedMatchId: null }],
     armedMatchId: null, boundRoomId: 'room', updatedAt: 0,
   };
 }

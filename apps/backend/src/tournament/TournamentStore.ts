@@ -12,6 +12,7 @@ import type {
   ResolvedParticipant,
   TournamentAutoPlay,
   TournamentDisplayView,
+  TournamentLane,
   TournamentDefinition,
   TournamentMatch,
   TournamentState,
@@ -798,6 +799,9 @@ export function buildStatePayload(
   autoPlay: TournamentAutoPlay = {
     enabled: false, loop: false, announce: false, stoppedReason: null,
   },
+  // 並列実行していない大会 (と、レーンを気にしないテスト) のための既定値。
+  // 主レーン1本 = bind した部屋そのもの
+  lanes: TournamentLane[] = [{ roomId: boundRoomId, primary: true, armedMatchId }],
 ): TournamentStatePayload {
   const participants = resolveParticipants(loaded);
   return {
@@ -820,6 +824,7 @@ export function buildStatePayload(
     stageLabels:  stageLabelsOf(loaded),
     displayView,
     autoPlay,
+    lanes,
     armedMatchId,
     boundRoomId,
     updatedAt:    loaded.state.updatedAt,

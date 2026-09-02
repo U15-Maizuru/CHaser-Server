@@ -124,6 +124,11 @@ export class SlotManager extends EventEmitter {
     for (const slot of changedSlots) await this.startListening(slot);
   }
 
+  /** 今の TCP タイムアウト。並列レーンを主レーンと同じ設定で走らせるために読む */
+  get tcpTimeout(): number {
+    return this.timeoutMs;
+  }
+
   /** 実行中の接続にも即座に反映する。次に生成するクライアントの既定値としても使う。 */
   setTcpTimeout(ms: number): void {
     this.timeoutMs = ms;

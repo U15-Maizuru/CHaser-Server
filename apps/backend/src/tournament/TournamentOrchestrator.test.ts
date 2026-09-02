@@ -10,6 +10,8 @@ import { ensureTournamentDir, loadTournament, tournamentRootDir } from './Tourna
 const ROOM  = 'test-orch';
 const CUP   = 'orch-cup';
 const PORTS: [number, number] = [39501, 39502];
+/** 並列実行の副レーンへ払い出すポート (最大2本ぶん) */
+const LANE_PORTS: [number, number] = [39511, 39514];
 
 /** 全員 内蔵CPU の大会 (Python 不要で最後まで回せる) */
 function cupDef(overrides: Record<string, unknown> = {}) {
@@ -64,6 +66,7 @@ describe('TournamentOrchestrator', () => {
       autoPlayDelaysMs: {
         arm: 300, start: 10, nextRound: 10, confirm: 10, qualifiers: 10, restart: 10,
       },
+      lanePortRange: LANE_PORTS,
     });
   });
 
@@ -1165,6 +1168,108 @@ describe('TournamentOrchestrator', () => {
       expect(st.participants.find(p => p.isBot)?.name).toBe('運営BOT');
       expect(st.groups![0]!.participantIds).not.toContain('__bot__');
       expect(st.groups![0]!.participantIds).toHaveLength(6);
+    });
+
+    // ── 同時実行 (レーン) ────────────────────────────────────────────────
+    //
+    // BOT対戦予選は全員が同一BOT・同一マップと1試合ずつ戦うので試合の間に依存が無く、
+    // 実施順にも意味が無い。並列にしても測っている条件が変わらない、というのが根拠。
+    describe('同時実行 (レーン)', () => {
+      const laneRooms = () => lastState()!.lanes.map(l => l.roomId);
+
+      it('既定はレーン1本 (= bind した部屋そのもの)', () => {
+        writeCup(botCup());
+        orch.bind(ROOM, CUP);
+        expect(lastState()!.lanes).toEqual([
+          { roomId: ROOM, primary: true, armedMatchId: null },
+        ]);
+      });
+
+      it('増やすと副レーンの部屋が作られ、減らすと消える', () => {
+        writeCup(botCup());
+        orch.bind(ROOM, CUP);
+
+        orch.setLaneCount(ROOM, 3);
+        expect(laneRooms()).toEqual([ROOM, `${ROOM}-lane1`, `${ROOM}-lane2`]);
+        expect(rm.getRoom(`${ROOM}-lane1`)).toBeDefined();
+        // 副レーンは主レーンとは別の待ち受けポートを持つ (同じだと二重 listen で潰れる)
+        const ports = laneRooms().flatMap(id => rm.getRoom(id)!.ports);
+        expect(new Set(ports).size).toBe(ports.length);
+
+        orch.setLaneCount(ROOM, 1);
+        expect(laneRooms()).toEqual([ROOM]);
+        expect(rm.getRoom(`${ROOM}-lane1`)).toBeUndefined();
+      });
+
+      it('大会の状態は副レーンの部屋にも配信される (分割画面が表を出せるように)', () => {
+        writeCup(botCup());
+        orch.bind(ROOM, CUP);
+        orch.setLaneCount(ROOM, 2);
+
+        const rooms = sent
+          .filter(s => s.msg.type === 'tournament_state')
+          .map(s => s.roomId);
+        expect(rooms).toContain(`${ROOM}-lane1`);
+      });
+
+      it('予選が BOT対戦でない大会では増やせない', () => {
+        writeCup(cupDef());   // single-elimination
+        orch.bind(ROOM, CUP);
+        expect(() => orch.setLaneCount(ROOM, 2)).toThrow(TournamentError);
+      });
+
+      it('準備中の試合があるとレーン数を変えられない (走っている足元で部屋を消さない)', async () => {
+        writeCup(botCup());
+        orch.bind(ROOM, CUP);
+        const first = lastState()!.matches.find(m => m.group !== undefined)!;
+        await orch.armMatch(ROOM, first.id);
+
+        expect(() => orch.setLaneCount(ROOM, 2)).toThrow(TournamentError);
+      });
+
+      it('armNext は空いているレーンへ予選試合をまとめて配る', async () => {
+        writeCup(botCup());
+        orch.bind(ROOM, CUP);
+        orch.setLaneCount(ROOM, 3);
+
+        await orch.armNext(ROOM);
+
+        const armed = lastState()!.lanes.map(l => l.armedMatchId);
+        expect(armed.every(id => id !== null)).toBe(true);
+        // 3レーンに別々の試合が入る
+        expect(new Set(armed).size).toBe(3);
+        // 配られるのは予選だけ
+        const qualifying = new Set(
+          lastState()!.matches.filter(m => m.group !== undefined).map(m => m.id));
+        expect(armed.every(id => qualifying.has(id!))).toBe(true);
+      });
+
+      it('空きレーンが無ければ次の試合は断られる', async () => {
+        writeCup(botCup());
+        orch.bind(ROOM, CUP);
+        orch.setLaneCount(ROOM, 2);
+        await orch.armNext(ROOM);
+
+        const free = lastState()!.matches
+          .find(m => m.group !== undefined && m.status === 'ready')!;
+        await expect(orch.armMatch(ROOM, free.id)).rejects.toThrow(TournamentError);
+      });
+
+      it('決勝トーナメントの試合は副レーンへ流さず、主レーンで1試合ずつ行う', async () => {
+        writeCup(botCup());
+        orch.bind(ROOM, CUP);
+        orch.setLaneCount(ROOM, 3);
+        finishQualifying();
+        orch.confirmQualifiers(ROOM, true);
+
+        await orch.armNext(ROOM);
+
+        const lanes = lastState()!.lanes;
+        expect(lanes[0]!.armedMatchId).not.toBeNull();
+        // 主戦場は単独。副レーンは空のまま
+        expect(lanes.slice(1).every(l => l.armedMatchId === null)).toBe(true);
+        expect(matchOf(lanes[0]!.armedMatchId!).group).toBeUndefined();
+      });
     });
 
     it('BOT対戦予選の予選試合は先攻・後攻を入れ替えられない (全員同一条件が根拠)', () => {

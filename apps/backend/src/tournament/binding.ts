@@ -20,20 +20,41 @@ import { resolveContextOf, saveState, type LoadedTournament } from './Tournament
 /** 運営操作を断る理由。メッセージはそのまま運営パネルに出る */
 export class TournamentError extends Error {}
 
+/**
+ * 対戦を実行する場所。**同時に走らせる試合の数だけ持つ。**
+ *
+ * `lanes[0]` が主レーンで、大会を bind した部屋そのもの。副レーンは運営が並列数を
+ * 指定したときに作る追加の部屋で、BOT対戦予選の予選試合だけを流す (`canRunInSideLane`)。
+ *
+ * **「今その場所で何が起きているか」だけをレーンに持たせる。** 試合グラフ (`loaded`) と
+ * 自動進行の設定 (`autoPlay`) は大会に1つ — レーンごとに持つと結果の書き戻し先が分かれて
+ * state.json が食い違う。
+ */
+export interface Lane {
+  /** このレーンが対戦に使う部屋。観戦画面はここへ join して盤面を受け取る */
+  roomId:       string;
+  /** 主レーンか。副レーンは運営が並列数を下げたときに破棄される */
+  primary:      boolean;
+  /** このレーンで準備中・対戦中の試合 */
+  armedMatchId: string | null;
+  /** 自動進行の判断材料。そのレーンの ServerManager の最新の status */
+  lastStatus:   ServerStatusPayload;
+  /** そのレーンで予約中の自動操作 (レーンごとに高々1つ) */
+  autoTimer:    ReturnType<typeof setTimeout> | null;
+  listener:     (st: ServerStatusPayload) => void;
+}
+
 export interface Binding {
+  /** 主レーンの部屋。運営パネルと観戦画面はここへ join する */
   roomId:       string;
   tournamentId: string;
   loaded:       LoadedTournament;
-  armedMatchId: string | null;
-  /** 観戦画面に出すもの。運営席の表示とは独立 (armedMatchId と同じくプロセス内の状態) */
+  /** 対戦を実行するレーン。`lanes[0]` が主レーン。並列実行しなければ要素1つ */
+  lanes:        Lane[];
+  /** 観戦画面に出すもの。運営席の表示とは独立 (レーンと同じくプロセス内の状態) */
   displayView:  TournamentDisplayView;
-  /** 自動進行。armedMatchId と同じくプロセス内の状態なので bind のたびに切れている */
+  /** 自動進行。プロセス内の状態なので bind のたびに切れている */
   autoPlay:     TournamentAutoPlay;
-  /** 自動進行の判断材料。ServerManager の最新の status を持っておく */
-  lastStatus:   ServerStatusPayload;
-  /** 予約中の自動操作 (常に高々1つ) */
-  autoTimer:    ReturnType<typeof setTimeout> | null;
-  listener:     (st: ServerStatusPayload) => void;
   keepalive:    ReturnType<typeof setInterval>;
 }
 
@@ -45,8 +66,33 @@ export interface CommandEnv {
 }
 
 /** その部屋の ServerManager。ルームが消えていれば undefined */
-export function managerOf(env: CommandEnv, b: Binding) {
-  return env.rm.getRoom(b.roomId)?.manager;
+export function managerOf(env: CommandEnv, roomId: string) {
+  return env.rm.getRoom(roomId)?.manager;
+}
+
+/**
+ * 主レーン。**決勝トーナメントと、大会全体に効く一手はここでしか行わない**
+ * (決勝進出者の確定・デモの作り直し)。副レーンが同じ判断を二重に出さないための基準点。
+ */
+export function primaryLane(b: Binding): Lane {
+  return b.lanes[0]!;
+}
+
+/** その部屋を担当しているレーン */
+export function laneOfRoom(b: Binding, roomId: string): Lane | undefined {
+  return b.lanes.find(l => l.roomId === roomId);
+}
+
+/** その試合を抱えているレーン */
+export function laneOfMatch(b: Binding, matchId: string): Lane | undefined {
+  return b.lanes.find(l => l.armedMatchId === matchId);
+}
+
+/** いずれかのレーンが実行中の試合 id。次に配る試合の候補から外すのに使う */
+export function armedMatchIds(b: Binding): Set<string> {
+  return new Set(
+    b.lanes.map(l => l.armedMatchId).filter((id): id is string => id !== null),
+  );
 }
 
 export function requireMatch(b: Binding, matchId: string): TournamentMatch {
@@ -118,9 +164,12 @@ export function updateMatch(
  * 辻褄の合わない遷移をしてしまう。
  */
 export function disarmIfCleared(b: Binding, matchId: string): void {
-  if (!b.armedMatchId) return;
-  if (b.armedMatchId === matchId
-    || downstreamOf(b.loaded.state.matches, matchId).has(b.armedMatchId)) {
-    b.armedMatchId = null;
+  if (b.lanes.every(l => l.armedMatchId === null)) return;
+  const downstream = downstreamOf(b.loaded.state.matches, matchId);
+  for (const lane of b.lanes) {
+    if (!lane.armedMatchId) continue;
+    if (lane.armedMatchId === matchId || downstream.has(lane.armedMatchId)) {
+      lane.armedMatchId = null;
+    }
   }
 }

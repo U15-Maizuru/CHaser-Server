@@ -8,6 +8,10 @@ const PORT       = Number(process.env['PORT'] ?? 8765);
 const U15_MODE   = process.env['U15_MODE'] ?? 'local';   // 'local' | 'web'
 const LOCAL_PORTS: [number, number] = [2009, 2010];
 const WEB_PORTS:  [number, number]  = [13000, 14999];    // 1000ポート = 500並列ルーム
+// 大会を並列実行するときの副レーン用。参加者に案内する LOCAL_PORTS とは別レンジにして、
+// 手動接続の案内と衝突しないようにする (副レーンのポートはサーバーがプログラムへ
+// --port で渡すので、番号を人が知る必要は無い)
+const LANE_PORTS: [number, number]  = [12000, 12099];
 
 async function main() {
   ensureDirectories();
@@ -20,6 +24,9 @@ async function main() {
   const tournament = new TournamentOrchestrator({
     rm,
     broadcast: (roomId, msg) => ws.broadcastToRoom(roomId, msg),
+    // 並列実行はローカルモード限定。web モードのルームは RoomManager 自身の
+    // PortPool から出ているので、そこへ二重に払い出すと衝突する
+    ...(U15_MODE === 'local' ? { lanePortRange: LANE_PORTS } : {}),
   });
   ws.setTournament(tournament);
 

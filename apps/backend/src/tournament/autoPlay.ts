@@ -3,7 +3,9 @@ import type {
   TournamentFormat,
   TournamentMatch,
 } from '@u15/ws-types';
-import { hasQualifying, isKnockoutMatch, nextReadyMatch } from '@u15/ws-types';
+import {
+  canRunInSideLane, hasQualifying, isKnockoutMatch, nextReadyMatches,
+} from '@u15/ws-types';
 
 // オートプレイ (自動進行) の「次の一手」を決める純関数。
 //
@@ -70,6 +72,17 @@ export interface AutoPlayInput {
   loop:                boolean;
   /** 次の試合を準備する前にアナウンス画面を挟むか (自動進行中は試合ごとに選べないので一律) */
   announce:            boolean;
+  /**
+   * **このレーン以外**が実行中の試合。準備の候補から外し、その結果の確定もそのレーンに任せる。
+   * 並列実行していなければ空配列
+   */
+  otherArmedIds:       readonly string[];
+  /**
+   * 主レーンか。**大会全体に効く一手は主レーンだけが出す** — 決勝進出者の確定・
+   * 観客席へのアナウンス・デモの作り直しがそれで、副レーンも出すと同じ操作が並列数ぶん飛ぶ。
+   * 並列実行していなければ常に true
+   */
+  primary:             boolean;
 }
 
 /** その操作の前に置く待機時間 */
@@ -96,8 +109,14 @@ export function delayFor(kind: AutoPlayAction['kind'], delays: AutoPlayDelaysMs)
  * その時にもう一度呼ばれる。
  */
 export function nextAutoPlayAction(i: AutoPlayInput): AutoPlayAction | null {
-  // ① 結果の確定待ちが最優先。ここを飛ばすと次の試合を準備してしまう
-  const awaiting = i.matches.find(m => m.status === 'awaiting_confirm');
+  // ① 結果の確定待ちが最優先。ここを飛ばすと次の試合を準備してしまう。
+  //
+  // 並列実行中は**自分のレーンが抱えている試合だけ**を確定する。他のレーンのぶんを横から
+  // 取ると、同じ試合に確定が二重に飛ぶ。ただし、どのレーンも抱えていない確定待ち
+  // (前回の運営が中断して残ったものなど) は主レーンが拾う — 誰も拾わないとそこで止まる
+  const awaiting = i.matches.find(m => m.status === 'awaiting_confirm' && (
+    m.id === i.armedMatchId || (i.primary && !i.otherArmedIds.includes(m.id))
+  ));
   if (awaiting) {
     // 勝ち上がりの同点は公式ルールでは「マップを変更して再試合」か審判裁定。
     // どちらも運営の判断なので、勝手に決めずに止まる
@@ -132,7 +151,7 @@ export function nextAutoPlayAction(i: AutoPlayInput): AutoPlayAction | null {
   //
   //    **ボーダーが同点でも止めない。** 自動判定は順位表の並び順で必ず決定的に枠を埋めるので、
   //    運営が居なくても大会は完走する。同点を人が決め直したいときは自動進行を切る運用。
-  if (hasQualifying(i.format) && i.groupStageDone && !i.qualifiersConfirmed) {
+  if (i.primary && hasQualifying(i.format) && i.groupStageDone && !i.qualifiersConfirmed) {
     return { kind: 'confirm-qualifiers' };
   }
 
@@ -140,17 +159,27 @@ export function nextAutoPlayAction(i: AutoPlayInput): AutoPlayAction | null {
   //    出したあとは status.announcement.visible が立つのでここを素通りし、次の呼び出しで
   //    arm に落ちる (armMatch がアナウンスを消すので、次の試合ではまた出る)。
   //    **文面が空なら挟まない** — 真っ白な画面を数秒出すだけになるため
-  const next = nextReadyMatch(i.matches);
+  //
+  //    並列実行中は、他のレーンが実行中の試合を候補から外す。副レーンへ流せるのは
+  //    BOT対戦予選の予選だけで、それ以外 (決勝トーナメント) は他のレーンが全部空いて
+  //    いるときにだけ主レーンが取る — 主戦場は単独で行う、という pickLaneFor と同じ決まり
+  const next = nextReadyMatches(i.matches, 1, {
+    busyIds: new Set(i.otherArmedIds),
+    canRun:  m => canRunInSideLane(i.format, m)
+      ? true
+      : i.primary && i.otherArmedIds.length === 0,
+  })[0];
   if (next) {
+    // アナウンスは観客席に1つしか無いので主レーンだけが出す
     const st = i.status.announcement;
-    if (i.announce && !st.visible && (st.title !== '' || st.body !== '')) {
+    if (i.primary && i.announce && !st.visible && (st.title !== '' || st.body !== '')) {
       return { kind: 'announce' };
     }
     return { kind: 'arm', matchId: next.id };
   }
 
-  // ⑤ 全試合が終わった
-  if (i.matches.every(m => m.status === 'done')) {
+  // ⑤ 全試合が終わった (大会全体の判断なので主レーンだけ)
+  if (i.primary && i.matches.every(m => m.status === 'done')) {
     return i.loop ? { kind: 'restart' } : { kind: 'finish' };
   }
 

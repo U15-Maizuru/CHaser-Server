@@ -1,6 +1,8 @@
 import type { ServerStatusPayload, TournamentMatchResult } from '@u15/ws-types';
 import { computeSetResult, doubleModeFor } from '@u15/ws-types';
-import { commit, ctxOf, managerOf, updateMatch, type Binding, type CommandEnv } from './binding.js';
+import {
+  commit, ctxOf, managerOf, updateMatch, type Binding, type CommandEnv, type Lane,
+} from './binding.js';
 import { captureResult } from './progress.js';
 
 // ServerManager の 'status' を大会の進行へ写す。
@@ -8,17 +10,19 @@ import { captureResult } from './progress.js';
 // ServerManager は大会を知らないので、対戦の始まり・終わり・中断はここで読み替える。
 // 逆向き (大会 → 対戦) は matchCommands の armMatch が担う。
 
-export function applyServerStatus(env: CommandEnv, b: Binding, st: ServerStatusPayload): void {
+export function applyServerStatus(
+  env: CommandEnv, b: Binding, lane: Lane, st: ServerStatusPayload,
+): void {
   // デモ・リピートが別のコントロール窓から有効化されても打ち消す (自己修復)。
   // 有効なままだと自動進行が勝手に次の対戦を始めて、大会の進行と食い違う
-  const manager = managerOf(env, b);
+  const manager = managerOf(env, lane.roomId);
   if (manager && (st.demoMode || st.repeatMode)) {
     if (st.demoMode)   manager.setDemoMode(false);
     if (st.repeatMode) manager.setRepeatMode(false);
     return; // setXxxMode が再度 status を発火するのでここでは進めない
   }
 
-  const armedId = b.armedMatchId;
+  const armedId = lane.armedMatchId;
   if (!armedId) return;
   const match = b.loaded.state.matches.find(m => m.id === armedId);
   if (!match) return;
@@ -46,7 +50,7 @@ export function applyServerStatus(env: CommandEnv, b: Binding, st: ServerStatusP
   if (st.phase === 'setup' && st.roundResults.length === 0) {
     // 運営が中断・リセットした → カードは未実施へ戻す
     updateMatch(b, armedId, m => ({ ...m, status: 'ready' }));
-    b.armedMatchId = null;
+    lane.armedMatchId = null;
     env.publish(b.roomId);
   }
 }

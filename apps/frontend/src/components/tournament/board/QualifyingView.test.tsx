@@ -80,6 +80,7 @@ function state(
     stageMaps: [null, null], thirdPlaceMapId: null, stageLabels: ['予選 第1節', '決勝'],
     displayView: opts.displayView ?? 'auto',
     autoPlay: { enabled: false, loop: false, announce: false, stoppedReason: null },
+    lanes: [{ roomId: 'room', primary: true, armedMatchId: null }],
     armedMatchId: null, boundRoomId: 'room', updatedAt: 0,
   };
 }

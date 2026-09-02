@@ -187,6 +187,19 @@ export class ServerManager extends EventEmitter {
     this.round.setTurnDelay(ms);
   }
 
+  // ターン表示時間と TCP タイムアウトは ServerStatusPayload に載らない (コントロール窓が
+  // 一方的に送る設定なので、サーバーは返さない)。大会を並列実行するとき、副レーンを
+  // 主レーンと同じ設定で走らせるために読む必要があるので、ここだけ getter を置く。
+  /** 1ターンあたりの表示待機時間 */
+  get turnDelayMs(): number {
+    return this.round.turnDelayMs;
+  }
+
+  /** クライアントの応答待ちタイムアウト */
+  get tcpTimeoutMs(): number {
+    return this.slots.tcpTimeout;
+  }
+
   setTcpTimeout(ms: number): void {
     this.slots.setTcpTimeout(Math.max(1000, Math.min(60000, ms)));
   }
@@ -297,7 +310,7 @@ export class ServerManager extends EventEmitter {
 
     this.emit('session_created', session, playerNames);
 
-    const log    = openGameLog(this.logDir, this.round.currentRound);
+    const log    = openGameLog(this.logDir, this.round.currentRound, this.roomId);
     const result = await session.run(clients, this.mapManager.map, log, this.round.turnDelayMs, this.startDelayMs);
     console.log('Game finished:', result.status);
 

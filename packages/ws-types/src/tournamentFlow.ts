@@ -2,7 +2,7 @@ import type {
   MatchRules, ResolvedParticipant, StageRules, TournamentFormat, TournamentMatch,
   TournamentStatePayload,
 } from './tournament.js';
-import { compareByPlayOrder, hasBracket, hasQualifying } from './tournament.js';
+import { compareByPlayOrder, hasBotStage, hasBracket, hasQualifying } from './tournament.js';
 
 // 試合グラフから「今どうなっているか」を読み取る述語。
 //
@@ -67,7 +67,33 @@ export function playedCountOf(matches: TournamentMatch[]): Map<string, number> {
  * (差の上界 = 初期位置の差 + 1)。
  */
 export function nextReadyMatch(matches: TournamentMatch[]): TournamentMatch | null {
-  const played = playedCountOf(matches);
+  return nextReadyMatches(matches, 1)[0] ?? null;
+}
+
+export interface NextReadyOptions {
+  /** 別のレーンが実行中の試合。候補から外す */
+  busyIds?: ReadonlySet<string>;
+  /** そのレーンで実施してよい試合か。省略すると全て可 */
+  canRun?:  (m: TournamentMatch) => boolean;
+}
+
+/**
+ * 次に実施すべき試合を、実施順に最大 count 件。**並列レーンへ配るための一般化。**
+ *
+ * 並べ方は `nextReadyMatch` と同じ (回戦順 → 消化試合数の少ない人がいるカード →
+ * 実施順)。実施順の定義は `compareByPlayOrder` の1箇所だけ、という決まりを保つため、
+ * ここも並べ替えを自前で書かずにそれを通す。
+ *
+ * **「同じ参加者が2レーンに同時に出ない」ようなフィルタは掛けていない。** 対戦プログラムは
+ * 試合ごとに spawn される (ProcessClient) ので同じ人のプログラムが同時に何個動いても
+ * 構わないうえ、BOT対戦予選は**全試合に同じ BOT が出る**ので、そのフィルタを足すと
+ * 並列数が常に1になって機能そのものが消える。良かれと思って足さないこと。
+ */
+export function nextReadyMatches(
+  matches: TournamentMatch[], count: number, opts: NextReadyOptions = {},
+): TournamentMatch[] {
+  const busyIds  = opts.busyIds ?? new Set<string>();
+  const played   = playedCountOf(matches);
   const playedOf = (id: string | null) => (id === null ? 0 : played.get(id) ?? 0);
   /** そのカードで最も消化試合数が少ない人の消化数 */
   const behind = (m: TournamentMatch) => Math.min(playedOf(m.resolvedA), playedOf(m.resolvedB));
@@ -75,13 +101,30 @@ export function nextReadyMatch(matches: TournamentMatch[]): TournamentMatch | nu
   return [...matches]
     // 不戦は「試合」ではないので案内しない。開始前 (startedAt が null) の大会では
     // まだ確定していないぶんが 'ready' で残るため、状態ではなく枠の形で弾く
-    .filter(m => m.status === 'ready' && !isByeMatch(m))
+    .filter(m => m.status === 'ready' && !isByeMatch(m) && !busyIds.has(m.id))
+    .filter(m => opts.canRun?.(m) ?? true)
     .sort((a, b) => {
       if (a.stage !== b.stage) return a.stage - b.stage;
       const ba = behind(a), bb = behind(b);
       if (ba !== bb) return ba - bb;
       return compareByPlayOrder(a, b);
-    })[0] ?? null;
+    })
+    .slice(0, Math.max(0, count));
+}
+
+/**
+ * その試合を副レーン (主レーン以外) で実施してよいか。
+ *
+ * **BOT対戦予選の予選試合だけ。** 全参加者が同一BOT・同一マップと1試合ずつ戦う形式なので
+ * 試合の間に依存が無く、実施順にも意味が無い — 並列にしても測っている条件が変わらない、
+ * というのが並列実行を許す唯一の根拠。決勝トーナメントは勝ち上がりの依存を持ち、
+ * 観客が見る主戦場でもあるので、必ず主レーンで1試合ずつ行う。
+ *
+ * 予選リーグ (`group-then-bracket`) を含めていないのは、同じ節の中なら参加者は重ならない
+ * ものの、リーグ表の見せ方 (どの試合を強調するか) が未検討なため。足すならそちらも一緒に。
+ */
+export function canRunInSideLane(format: TournamentFormat, m: TournamentMatch): boolean {
+  return hasBotStage(format) && m.group !== undefined;
 }
 
 /**

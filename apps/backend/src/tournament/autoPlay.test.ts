@@ -58,6 +58,9 @@ function input(over: Partial<AutoPlayInput> = {}): AutoPlayInput {
     status:              status(),
     loop:                false,
     announce:            false,
+    // 既定は「並列実行していない主レーン1本」= 1試合ずつ順に実行する状態
+    otherArmedIds:       [],
+    primary:             true,
     ...over,
   };
 }

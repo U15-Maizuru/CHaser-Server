@@ -1,6 +1,6 @@
 import type { TournamentState } from '@u15/ws-types';
 import { NO_OPERATOR_DECISIONS, isGroupStageDone } from '@u15/ws-types';
-import { managerOf, resolveFor, type Binding, type CommandEnv } from './binding.js';
+import { managerOf, resolveFor, type Binding, type CommandEnv, type Lane } from './binding.js';
 import {
   delayFor, nextAutoPlayAction, type AutoPlayAction, type AutoPlayDelaysMs,
 } from './autoPlay.js';
@@ -25,39 +25,54 @@ export interface AutoPlayEnv extends CommandEnv {
   stop: (b: Binding, reason: string) => void;
 }
 
-/** 今の状態から次の一手を予約する。予約済み・自動進行が切なら何もしない */
+/**
+ * 今の状態から次の一手を予約する。**レーンごとに独立して予約する** — 並列実行中は
+ * それぞれのレーンが自分の対戦を自分のペースで進めるため。
+ */
 export function scheduleNext(env: AutoPlayEnv, b: Binding): void {
-  if (!b.autoPlay.enabled || b.autoTimer) return;
+  for (const lane of b.lanes) scheduleLane(env, b, lane);
+}
 
-  const planned = plan(b);
+/** 予約済み・自動進行が切なら何もしない */
+function scheduleLane(env: AutoPlayEnv, b: Binding, lane: Lane): void {
+  if (!b.autoPlay.enabled || lane.autoTimer) return;
+
+  const planned = plan(b, lane);
   if (!planned) return;
 
-  b.autoTimer = setTimeout(() => {
-    b.autoTimer = null;
-    const now = plan(b);
+  lane.autoTimer = setTimeout(() => {
+    lane.autoTimer = null;
+    const now = plan(b, lane);
     if (!now) return;
     // 待っている間に状況が変わった → 今の一手を、その一手ぶん待ってから
-    if (now.kind !== planned.kind) { scheduleNext(env, b); return; }
-    void run(env, b, now);
+    if (now.kind !== planned.kind) { scheduleLane(env, b, lane); return; }
+    void run(env, b, lane, now);
   }, delayFor(planned.kind, env.delays));
 }
 
 export function clearTimer(b: Binding): void {
-  if (b.autoTimer) {
-    clearTimeout(b.autoTimer);
-    b.autoTimer = null;
+  for (const lane of b.lanes) {
+    if (lane.autoTimer) {
+      clearTimeout(lane.autoTimer);
+      lane.autoTimer = null;
+    }
   }
 }
 
-function plan(b: Binding): AutoPlayAction | null {
+function plan(b: Binding, lane: Lane): AutoPlayAction | null {
   if (!b.autoPlay.enabled) return null;
   return nextAutoPlayAction({
     matches:             b.loaded.state.matches,
-    armedMatchId:        b.armedMatchId,
+    armedMatchId:        lane.armedMatchId,
+    otherArmedIds:       b.lanes
+      .filter(l => l !== lane)
+      .map(l => l.armedMatchId)
+      .filter((id): id is string => id !== null),
+    primary:             lane.primary,
     format:              b.loaded.def.stage.format,
     qualifiersConfirmed: qualifiersConfirmedOf(b.loaded),
     groupStageDone:      isGroupStageDone(b.loaded.state.matches),
-    status:              b.lastStatus,
+    status:              lane.lastStatus,
     loop:                b.autoPlay.loop,
     announce:            b.autoPlay.announce,
   });
@@ -69,15 +84,17 @@ function plan(b: Binding): AutoPlayAction | null {
  * 失敗 (プログラム未登録など) は握りつぶさず、理由を添えて自動進行を止める —
  * 同じ操作を延々と再試行すると、運営が気づかないまま止まっているのと変わらない。
  */
-async function run(env: AutoPlayEnv, b: Binding, action: AutoPlayAction): Promise<void> {
+async function run(
+  env: AutoPlayEnv, b: Binding, lane: Lane, action: AutoPlayAction,
+): Promise<void> {
   if (!b.autoPlay.enabled) return;
 
-  const manager = managerOf(env, b);
+  const manager = managerOf(env, lane.roomId);
   if (!manager) return;
 
   try {
     switch (action.kind) {
-      case 'arm':                await armMatch(env, b, action.matchId); break;
+      case 'arm':                await armMatch(env, b, lane, action.matchId); break;
       // 文面は運営が入れたものをそのまま使う (自動進行では出す/出さないだけを選ぶ)。
       // armMatch が visible を false に戻すので、次の試合でまた出る
       case 'announce':           manager.setAnnouncement({ visible: true }); break;
@@ -122,13 +139,16 @@ async function restart(env: AutoPlayEnv, b: Binding): Promise<void> {
   };
   b.loaded = { ...b.loaded, state };
   saveState(state);
-  b.armedMatchId = null;
+  for (const lane of b.lanes) lane.armedMatchId = null;
 
-  // 盤面と割り当てをセットアップへ戻す (bind 直後と同じ見た目にする)
-  const manager = managerOf(env, b);
-  await manager?.requestReset();
+  // 盤面と割り当てをセットアップへ戻す (bind 直後と同じ見た目にする)。
+  // 副レーンも戻さないと、前回の対戦の盤面が分割画面に残り続ける
   const firstMap = mapForStage(b.loaded, 0);
-  if (firstMap) manager?.loadMap(firstMap);
+  for (const lane of b.lanes) {
+    const manager = managerOf(env, lane.roomId);
+    await manager?.requestReset();
+    if (firstMap) manager?.loadMap(firstMap);
+  }
 
   env.publish(b.roomId);
 }

@@ -37,6 +37,7 @@ function state(over: Partial<TournamentStatePayload> = {}): TournamentStatePaylo
     displayView: 'auto',
     autoPlay: { enabled: false, loop: false, announce: false, stoppedReason: null },
     stageMaps: [], thirdPlaceMapId: null, stageLabels: [],
+    lanes: [{ roomId: 'room', primary: true, armedMatchId: null }],
     armedMatchId: null, boundRoomId: 'room', updatedAt: 0,
     ...over,
   };
