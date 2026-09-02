@@ -154,10 +154,12 @@ U15-server-maizuru/
 │   │       ├── programName.ts      プログラムのソースから名乗るプレイヤー名を読み取る
 │   │       ├── playerName.ts       プレイヤー名の正規化。TCP 由来 (TcpClient) と
 │   │       │                       ソース由来 (programName.ts) の両方がここを通る
-│   │       ├── mapCatalog.ts       マップライブラリ (CRUD カタログ、全ルーム共通)
+│   │       ├── mapCatalog.ts       マップライブラリ (CRUD カタログ、全ルーム共通)。
+│   │       │                       起動時に assets/map-library/ の既定マップを取り込む
 │   │       ├── libTemplates.ts     既定ライブラリ (pyCHaser 等) を各ルームの libs/ に配置
 │   │       ├── assets/
-│   │       │   └── lib-templates/  配置元テンプレート (ビルド時に dist へコピー)
+│   │       │   ├── lib-templates/  配置元テンプレート (ビルド時に dist へコピー)
+│   │       │   └── map-library/    既定で同梱する過去大会マップ (mapCatalog.ts が取り込む)
 │   │       ├── clients/
 │   │       │   ├── ComClient.ts        内蔵 CPU
 │   │       │   ├── ManualClient.ts     手動操作
@@ -254,6 +256,7 @@ U15-server-maizuru/
 │   │       │   ├── useBgm.ts             場面に応じた BGM 再生
 │   │       │   ├── useSceneTransition.ts 場面の切り替えに暗転を挟む (BGM のクロスフェードと同じ長さ)
 │   │       │   ├── useStartCountdown.ts  ゲーム開始カウントダウンの表示制御
+│   │       │   ├── useFrozenTournamentState.ts  結果確定の直後だけ tournamentState を凍結する
 │   │       │   ├── useBoardLayout.ts     盤面のセルサイズ・サイドパネル幅・スコアバー寸法の導出
 │   │       │   ├── useFitCorrection.ts   中身が高さに収まる最大の拡大率を二分探索で求める
 │   │       │   └── ...
@@ -266,6 +269,7 @@ U15-server-maizuru/
 │   │       │   ├── roundRow.ts        2ゲーム制サイドパネルの明細1行の組み立て
 │   │       │   ├── resultText.ts      決着理由・勝敗の文言
 │   │       │   ├── decisiveEffect.ts   決着理由 → 盤面演出 (勝者の 👑・敗者の暗転・敗因バッジ/リング) の変換
+│   │       │   ├── koryuDisplay.ts    得点の内訳をどちらのルールの式で見せるかの判定 (ruleSet + 予選/決勝)
 │   │       │   ├── tournamentResult.ts 配信済みの状態だけから表彰台を求める純関数
 │   │       │   ├── nativeDialog.ts    confirm/alert のあとに Electron のキーボード入力が
 │   │       │   │                      戻らない問題を避けるための包み (main.ts の window:refocus)
@@ -290,7 +294,8 @@ U15-server-maizuru/
 │   └── ws-types/
 │       └── src/
 │           ├── protocol.ts       基本型・enum・共有の既定値 (依存なし)
-│           ├── scoring.ts        競技ルールの得点・勝敗判定の純関数と係数 (→ protocol)
+│           ├── scoring.ts        舞鶴大会ルールの得点・勝敗判定の純関数と係数 (→ protocol)
+│           ├── koryuScoring.ts   交流大会ルールの得点・勝敗判定 (→ protocol, scoring)
 │           ├── tournament.ts     大会運営の型と純関数 (→ protocol, scoring)
 │           ├── tournamentFlow.ts 試合グラフを読む述語 (→ tournament)
 │           ├── messages.ts       WS メッセージ union (→ protocol, tournament)
@@ -447,7 +452,7 @@ type FrontendMessage =
 
 ```typescript
 // 大会データ (tournament.json)。stage は format で判別する共用体
-interface TournamentDefinition { formatVersion, id, name, match, stage, participants, bracket?, schedule? }
+interface TournamentDefinition { formatVersion, id, name, ruleSet?, match, stage, participants, bracket?, schedule? }
 interface MatchRules { doubleMode }
 type StageRules =
   | { format: 'single-elimination'; map; thirdPlaceMatch }
@@ -626,7 +631,7 @@ ws.onopen = () => {
 | `set_repeat_mode` | `{enabled}` | リピートモード ON/OFF (setup フェーズのみ変更可) |
 | `set_demo_mode` | `{enabled}` | デモモード (無人自動進行) ON/OFF (setup フェーズのみ変更可) |
 | `set_dark_mode` | `{enabled}` | 対戦表示のダークモード ON/OFF |
-| `set_display_prefs` | `Partial<DisplayPrefs>` | 観戦画面の表示・音設定 (テーマ / BGM / ミュート / ダーク幕の濃さ) の部分更新 |
+| `set_display_prefs` | `Partial<DisplayPrefs>` | 観戦画面の表示・音設定 (テーマ / BGM / ミュート / ダーク幕の濃さ / スコア表示モード) の部分更新 |
 | `set_turn_delay` | `{ms}` | ターン表示待機時間 |
 | `set_tcp_timeout` | `{ms}` | TCP クライアントの応答タイムアウト |
 | `set_ports` | `{ports: [number, number]}` | COOL/HOT の待ち受けポート変更 (ローカルモードかつ setup フェーズのみ有効、それ以外は無視) |
@@ -860,6 +865,24 @@ team-index を引き直さないと同じプログラムを追いかけられな
 表示し、2ゲーム制の第2ゲーム終了時も切り替えない。試合全体の勝者は `PlayerSidePanel` の
 総合欄に付く 🏆 (`computeSetResult().winnerSide`) だけが示す。
 
+### 交流大会ルールの得点計算 (`koryuScoring.ts`)
+
+舞鶴大会ルール (`scoring.ts`) とは完全に独立した数式で、アイテムポイント (×10) /
+一撃ボーナス / 総取りボーナスの仕組みは使わない。依存は `protocol.ts` と `scoring.ts` の
+素の集計ヘルパー (`idxForSide` / `roundWonBy` / `isBlunder`) のみで、`scoring.ts` 側から
+このファイルは import しない (呼び出し側が `ruleSet` を見てどちらの関数を呼ぶか選ぶ)。
+
+- **予選 (BOT対戦)**: `koryuBotRoundScore` が1ゲーム分の得点を出す。勝ちはアイテム数×3+
+  残りターン数、負けはアイテム数×3−残りターン数 (`BOT_ITEM_MULTIPLIER = 3`)。
+  `computeKoryuBotSetResult` が試合ぶんを合計し、順位表 (`standings.ts`) の並び替えに使う
+- **決勝トーナメント**: `koryuMatchRoundItems` が1ゲーム分の「獲得アイテム数」(引き分けの
+  タイブレークに使う) を出す。通常は獲得アイテム数そのままだが、以下の反則で負けた場合は
+  読み替える — 相手にやられた (ATTACK/TRAPPED): 0、自滅 (COLLISION/CONFINED/FOULED):
+  0−残りターン数。`computeKoryuMatchSetResult` が① 勝利数 → ② 獲得アイテム数の合計
+  (反則調整込み) の順で勝者を決め、それでも並べば `winnerSide: null` (真の同点。
+  運営がマップを変えて再試合するか審判裁定で勝者を指定する — `matchCommands.ts` の
+  既存の仕組みがそのまま使える)
+
 ### 判定優先順位 (`judgeGame`)
 
 1. ブロック下敷き (COLLISION / ATTACK)
@@ -971,6 +994,7 @@ App.tsx (ErrorBoundary でラップ)
 | `useStartCountdown(phase, turnInfo)` | ゲーム開始カウントダウンの表示制御 |
 | `useSceneTransition(scene)` | 場面が変わっても即座に差し替えず、暗転 → 差し替え → 明転と進める。`useBgm` のクロスフェードと同じ長さ (`SCENE_FADE_MS`) |
 | `useMapCatalogPreview(httpBase, mapId)` | ライブラリの1件を room に紐付けずプレビュー (`GET /api/maps/:id` 相当)。大会 standby のマップ枠とマップ管理で共用 |
+| `useFrozenTournamentState(state, trackLive)` | `trackLive` が false の間、`tournamentState` を最後に true だった値に凍結する (13-6) |
 | `useFileUpload()` | XHR multipart アップロード |
 
 ### 設定の分類と置き場所 (重要)
@@ -979,7 +1003,7 @@ App.tsx (ErrorBoundary でラップ)
 
 | 分類 | 例 | 真実の所在 | UI 上の置き場所 |
 |---|---|---|---|
-| A. 観戦画面の表示・音設定 | `muted` `bgmMuted` `bgmTrack{0,1,Wait,Result,Award}` `theme` `displayTitle` `veilAlpha` | **`ServerStatusPayload.displayPrefs`**。`darkMode` と同じくクライアントにキャッシュを持たない (SE/BGM ミュートだけはブラウザ観戦者が `useMuteOverride` でローカルに上書きできる) | `SettingDialog` (全フェーズ) |
+| A. 観戦画面の表示・音設定 | `muted` `bgmMuted` `bgmTrack{0,1,Wait,Result,Award}` `theme` `displayTitle` `veilAlpha` `scoreDisplayMode` | **`ServerStatusPayload.displayPrefs`**。`darkMode` と同じくクライアントにキャッシュを持たない (SE/BGM ミュートだけはブラウザ観戦者が `useMuteOverride` でローカルに上書きできる) | `SettingDialog` (全フェーズ) |
 | B. 対戦設定・サーバー既読返し | `doubleMode` `repeatMode` `demoMode` `darkMode` | **`ServerStatusPayload`**。クライアントにキャッシュを持たない | `SettingDialog`「対戦」タブ (`darkMode` のみ「表示」タブ) |
 | B″. 接続ポート (ローカル限定) | `ports` (COOL/HOT) | **`ServerStatusPayload.clients[].port`**。クライアントに永続キャッシュは持たないが、ダイアログを開いた時点の値を下書きにする (下記) | `SettingDialog`「対戦」タブ |
 | C. 対戦設定・サーバー未返却 | `timeout` `turnDelay` | クライアントのキャッシュのみ (`useMatchConfig`) | `SettingDialog`「対戦」タブ |
@@ -1261,7 +1285,8 @@ pnpm --filter @u15/ws-types test
 
 | 範囲 | ファイル |
 |---|---|
-| 競技ルールの得点・勝敗 | `src/scoring.test.ts` |
+| 舞鶴大会ルールの得点・勝敗 | `src/scoring.test.ts` |
+| 交流大会ルールの得点・勝敗 | `src/koryuScoring.test.ts` |
 
 **競技ルールそのものの回帰テストはここにしかない。** バックエンドとフロントエンドは
 どちらもこの純関数を呼ぶので、式を変えるときはまずここを直す。
@@ -1509,7 +1534,7 @@ server/tournament/<大会id>/
 
 `WsMessage` は `tournament_state` (`TournamentStatePayload | null`) を持ち、bind 中の
 ルームへ丸ごと配信する。**同じペイロードを副レーンの部屋へも配る** — 分割画面の枠は
-そちらへ join するので、配らないと枠が選手名を引けない (13-9)。後から開いた
+そちらへ join するので、配らないと枠が選手名も得点式も引けない (13-9)。後から開いた
 ウィンドウには、`WsServer.getExtraJoinMessages` という汎用フック経由で `join_room` 直後に
 リプレイする (`WsServer` / `LobbyRouter` は「大会」を知らない)。
 
@@ -1585,6 +1610,8 @@ ZIP を書く実装 (`zip.writeZip`) は元々テスト用ヘルパー (`test/bu
 | `lib/centeredBracketLayout.ts` | 【純関数】試合グラフ → カード座標と接続線のパス。決勝から winner-of / loser-of を逆に辿って左右2つの山に分け、決勝を中央の列に置く |
 | `lib/bracketSlots.ts` | 【純関数】組み合わせ編集のスロット操作 (`autoSlots` / `fitSlots` / 試合数の見積り) |
 | `lib/tournamentResult.ts` | 【純関数】配信済みの `TournamentStatePayload` だけから表彰台を求める |
+| `lib/koryuDisplay.ts` | 【純関数】得点の内訳をどちらのルールの式で見せるかの判定 (`ruleSet` + その試合が予選か決勝か) |
+| `hooks/useFrozenTournamentState.ts` | 結果確定の直後だけ `tournamentState` を凍結する。確定と同時に `armedMatchId` が消えるため、対策なしだと表示名や得点式が一瞬だけ切り替わって見える |
 | `components/FitArea.tsx` | 中身を親の空きいっぱいまで拡大・縮小して中央に置く入れ物 (`useFitScale`) |
 | `components/MultiLaneDisplay.tsx` | 並列実行中の観戦画面。レーンの数だけ盤面を並べ、枠ごとに別のルームへ join する (13-9) |
 | `ui/` | 画面共通の見た目 (色トークン・Button / Card / Dialog / Field / Tabs)。生の色や幕を各画面で書き起こさない |
@@ -2038,11 +2065,13 @@ BOT のプログラムは参加者と同じ二層構造 — 同梱ファイル (
 | `rankBy` | 使う形式 | 並べ方 |
 |---|---|---|
 | `'league-points'` (既定) | `league` / `group-then-bracket` | 勝ち点 → 合計ポイント → 直接対決 (公式ルール) |
-| `'total-points'` | `bot-then-bracket` | 合計ポイント → 一撃ボーナス → アイテムポイント |
+| `'total-points'` | `bot-then-bracket` (`ruleSet: 'maizuru'`) | 合計ポイント → 一撃ボーナス → アイテムポイント |
+| `'koryu-bot-score'` | `bot-then-bracket` (`ruleSet: 'koryu'`) | 合計ポイント (`koryuBotRoundScore` の和) だけ。交流大会ルールには一撃・アイテムの内訳が無いのでタイブレークせず同着に倒す |
 
 **`'league-points'` は1ビットも変えていない。** 公式ルールがタイブレークの連鎖を定めているので、
 `'total-points'` はその外側に足した別系統。全員が BOT としか戦わない以上「直接対決」は
-成立しないため、代わりに合計ポイントの内訳で割る。
+成立しないため、代わりに合計ポイントの内訳で割る。どれを使うかは `rankByOf`
+(`TournamentStore.ts`) が形式と `ruleSetOf(def)` から決める1箇所に閉じてある。
 
 内訳 (`StandingRow.itemPoints` / `strikePoints` / `sweepPoints`) は `m.result.roundResults` から
 積む。`set` は不戦勝で `null` になるが `roundResults` は必ずあるため。side → team-index の
