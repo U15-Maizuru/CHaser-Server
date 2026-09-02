@@ -28,7 +28,7 @@ const match = (over: Partial<TournamentMatch>): TournamentMatch => ({
 /** 実戦1つ + 不戦2つ (5人トーナメントの1回戦にあたる形) */
 function state(): TournamentStatePayload {
   return {
-    tournamentId: 'cup', name: 'テスト杯', ruleSet: 'maizuru',
+    tournamentId: 'cup', name: 'テスト杯',
     match: { doubleMode: false },
     stage: stageRulesFor('single-elimination'),
     participants: [1, 2, 3, 4].map(i => participant(`p${i}`, i)),
