@@ -40,8 +40,12 @@ const SIZES: Record<ButtonSize, CSSProperties> = {
 
 const FILLED: CSSProperties = { border: 'none', color: '#fff' };
 
+// **枠線は longhand で持つこと。** `border` の一括指定に `borderColor` だけを重ねると、
+// トグルの ON/OFF で React が「一括指定が効いているのに borderColor を消した」と警告し、
+// 実際に枠の色が戻らないことがある (choice の選択解除)
 const OUTLINED: CSSProperties = {
-  border: `1px solid ${BORDER_COLOR}`, background: BG_CARD, color: TEXT_SECONDARY,
+  borderWidth: 1, borderStyle: 'solid', borderColor: BORDER_COLOR,
+  background: BG_CARD, color: TEXT_SECONDARY,
 };
 
 const VARIANTS: Record<ButtonVariant, CSSProperties> = {

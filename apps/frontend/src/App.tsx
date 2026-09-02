@@ -24,6 +24,7 @@ import { Lobby }           from './components/Lobby';
 import type { ClientStatusPayload, InlineMapData, MapCatalogEntry, SoundKey } from '@u15/ws-types';
 import { DEFAULT_DISPLAY_PREFS, MapObject } from '@u15/ws-types';
 import type { EditableMap } from './components/MapEditorDialog';
+import { Splash } from './ui';
 
 // WS URL: 環境変数 > window.location.hostname (自動検出) の優先順位
 // file:// で読み込む Electron 本番ビルドでは hostname が空文字になるため localhost にフォールバック
@@ -217,7 +218,7 @@ function ControlApp({ roomId }: { roomId: string }) {
   const downloadMap = (data: InlineMapData, displayName: string) => downloadMapFile(HTTP_BASE, displayName, data);
 
   if (!isConnected && !hasConnectedOnce.current) {
-    return <div style={connecting}>バックエンドに接続中...</div>;
+    return <Splash title={displayPrefs.displayTitle} sub="バックエンドに接続中..." />;
   }
 
   return (
@@ -342,12 +343,6 @@ const controlLayout: React.CSSProperties = {
 
 const controlContent: React.CSSProperties = {
   flex: 1, minHeight: 0, overflow: 'hidden',
-};
-
-const connecting: React.CSSProperties = {
-  display: 'flex', height: '100vh',
-  alignItems: 'center', justifyContent: 'center',
-  background: '#0d1117', color: '#666', fontFamily: 'monospace', fontSize: 16,
 };
 
 const defaultStatus = {

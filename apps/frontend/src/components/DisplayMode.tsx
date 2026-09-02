@@ -31,7 +31,7 @@ import {
   SHADOW_MD, SHADOW_SM,
   RADIUS_MD,
   FONT_UI, FONT_NUM,
-  TEAM_PALETTE, teamGradient,
+  TEAM_PALETTE, teamGradient, Splash,
 } from '../ui';
 
 // ── 観客に出している画面 ──────────────────────────────────────────────────────
@@ -168,13 +168,11 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
 
   if (!isConnected) {
     return (
-      <div style={splash.root}>
-        <div style={splash.title}>{prefs.displayTitle}</div>
-        <div style={splash.sub}>バックエンドに接続中...</div>
+      <Splash title={prefs.displayTitle} sub="バックエンドに接続中...">
         {isBrowserSpectator && (
           <MuteToggle muted={effectiveMuted} onToggle={() => setMuteOverride(!effectiveMuted)} />
         )}
-      </div>
+      </Splash>
     );
   }
 
@@ -428,16 +426,6 @@ function TeamCard({ idx, name, state }: { idx: 0 | 1; name: string; state: strin
 }
 
 // ── スタイル ──────────────────────────────────────────────────────────────────
-
-const splash: Record<string, React.CSSProperties> = {
-  root: {
-    height: '100vh', display: 'flex', flexDirection: 'column',
-    alignItems: 'center', justifyContent: 'center',
-    background: BG_ROOT, fontFamily: FONT_UI, gap: 16,
-  },
-  title: { fontSize: 32, fontWeight: 800, letterSpacing: '0.04em', color: TEXT_PRIMARY },
-  sub:   { fontSize: 16, color: TEXT_MUTED },
-};
 
 const sw: Record<string, React.CSSProperties> = {
   root: {

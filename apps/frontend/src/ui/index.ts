@@ -8,6 +8,7 @@ export { Card, Section, Hint } from './Card';
 export { Callout, EmptyState } from './Callout';
 export type { CalloutTone } from './Callout';
 export { Dialog } from './Dialog';
+export { Splash } from './Splash';
 export type { DialogProps } from './Dialog';
 export { Field, TextInput, NumberInput, Select, Checkbox, Chip, ChipRow } from './Field';
 export { Tabs } from './Tabs';

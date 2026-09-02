@@ -6,8 +6,17 @@
     <link rel="icon" href="/favicon.ico" />
     <title>CHaser Server</title>
     <!-- 画面は各コンポーネントが 100vh で組む。既定の body マージンが残っていると
-         それだけで縦スクロールバーが出てしまうので、ここだけ打ち消す -->
-    <style>body { margin: 0 }</style>
+         それだけで縦スクロールバーが出てしまうので、ここだけ打ち消す。
+
+         プレースホルダの色をここで決めているのは、擬似要素はインラインスタイルで
+         書けないため。**入力済みの文字よりはっきり薄くすること** — 既定の濃さでは
+         例文を置いた入力欄が書き込み済みに見え、書いたつもりの運営が、押せないままの
+         送信ボタンを眺めることになる。
+         値は ui/tokens.ts の TEXT_MUTED と同じ。Firefox は既定で opacity を掛けるので戻す -->
+    <style>
+      body { margin: 0 }
+      ::placeholder { color: #a898ba; opacity: 1 }
+    </style>
   </head>
   <body>
     <div id="root"></div>
