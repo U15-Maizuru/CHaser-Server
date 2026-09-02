@@ -19,7 +19,7 @@
 10. [マルチルーム / Web サービスモード](#10-マルチルーム--web-サービスモード)
 11. [テスト](#11-テスト)
 12. [拡張ガイド](#12-拡張ガイド)
-13. [大会運営 (トーナメント / リーグ / 予選リーグ)](#13-大会運営-トーナメント--リーグ--予選リーグ)
+13. [大会運営 (トーナメント / リーグ / 予選リーグ / BOT対戦予選)](#13-大会運営-トーナメント--リーグ--予選リーグ--bot対戦予選)
 
 ---
 
@@ -180,7 +180,8 @@ U15-server-maizuru/
 │   │   │   └── favicon.ico      ブラウザのタブ用アイコン (icon.ico と同じ絵。dist の直下へコピーされる)
 │   │   └── src/
 │   │       ├── App.tsx             ?room=/?mode= に応じて画面を分岐 (Lobby/Display/Control/Tournament/Manual)
-│   │       ├── ui/                 画面共通の見た目 (tokens / Button / Card / Dialog / Field / Tabs)
+│   │       ├── ui/                 画面共通の見た目 (tokens / Button / Card / Callout / Dialog /
+│   │       │                       Field / Tabs / Splash)
 │   │       ├── assets/
 │   │       │   ├── Image/          テーマ別の盤面テクスチャ (Jewel / Light / Heavy / RPG)
 │   │       │   └── Sound/          同梱の SE (server/sounds に同名を置くと差し替わる)
@@ -255,6 +256,8 @@ U15-server-maizuru/
 │   ├── map-catalog/                マップライブラリ (CRUD カタログ、全ルーム共通)
 │   ├── music/                      BGM ファイル (全ルーム共通)
 │   ├── sounds/                     SE の差し替えファイル (全ルーム共通)
+│   ├── logs/                       対戦ログ (StableLog の既定の保存先。設定ダイアログ
+│   │                               「環境」タブで変更できる)
 │   └── rooms/<roomId>/
 │       ├── programs/cool/          COOL プレイヤーのアップロードプログラム
 │       ├── programs/hot/
@@ -266,7 +269,7 @@ U15-server-maizuru/
 
 ---
 
-> 上記に加えて、大会運営機能のファイルがある (詳細は [13章](#13-大会運営-トーナメント--リーグ--予選リーグ)):
+> 上記に加えて、大会運営機能のファイルがある (詳細は [13章](#13-大会運営-トーナメント--リーグ--予選リーグ--bot対戦予選)):
 > `apps/backend/src/tournament/` (試合グラフ・永続化・オーケストレータ) /
 > `apps/frontend/src/components/tournament/` + `lib/bracketLayout.ts` (トーナメント表) /
 > `packages/ws-types/src/{protocol,scoring,tournament,tournamentFlow,messages}.ts` (共有型と純関数) /
@@ -337,6 +340,7 @@ Windows には POSIX のプロセスグループが無く、`child.kill()` は�
 | `PORT` | `8765` | バックエンド HTTP/WS サーバーのポート |
 | `NODE_ENV` | `development` | `production` にすると frontend/dist を静的配信 |
 | `VITE_WS_URL` | `ws://hostname:8765` | フロントエンドの WS 接続先 (自動検出) |
+| `U15_PYTHON_EXE` | (未設定) | 対戦プログラムを動かす Python の実行ファイル。配布版で `main.ts` が同梱 Python を指してセットする (9章)。未設定なら PATH 上の `python` |
 
 ---
 
@@ -489,6 +493,7 @@ Web モードの room は対戦のたびに作られては消えるため対象�
 class WsServer {
   constructor(port: number)
   setRoomManager(rm: RoomManager): void   // 起動後に呼ぶ (LobbyRouter/GameMessageDispatch もここで生成)
+  setTournament(t: TournamentOrchestrator): void  // 大会運営を配線する (setRoomManager との順序は問わない)
   broadcastToRoom(roomId, msg: WsMessage): void
   broadcastAll(msg: WsMessage | LobbyMessage): void
   attachRoom(roomId, session, playerNames): void  // セッション開始時
@@ -858,7 +863,9 @@ App.tsx (ErrorBoundary でラップ)
 ```
 
 **画面共通の見た目は `src/ui/` に集約する。** 色トークン (`tokens.ts`) と、
-`Button` / `Card` / `Section` / `Dialog` / `Field` 系 / `Tabs` / `Callout` がある。
+`Button` / `Card` / `Section` / `Dialog` / `Field` 系 / `Tabs` / `Callout` / `Splash` がある。
+`Splash` は「まだ何も出せないとき」(バックエンド接続待ち) の全画面で、窓ごとに書き起こさない —
+起動のたび・瞬断のたびに窓ごとに違う色の画面がひらめくのは、会場に出す絵として事故に見える。
 ダイアログの幕やボタンの塗りを各画面で書き起こさないこと — 6画面で少しずつ違う幕を
 持っていると、余白や角丸を直すたびに全部を触ることになる。
 

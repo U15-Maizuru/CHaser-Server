@@ -142,6 +142,7 @@ U15-server-maizuru/
 │   ├── map-catalog/      マップライブラリ (全ルーム共通)
 │   ├── music/            BGM ファイル (全ルーム共通)
 │   ├── sounds/           効果音の差し替えファイル (全ルーム共通)
+│   ├── logs/             対戦ログ (保存先は設定ダイアログの「環境」タブで変更可)
 │   └── rooms/<roomId>/
 │       ├── programs/cool/  COOLプレイヤーの対戦用プログラム
 │       ├── programs/hot/   HOTプレイヤーの対戦用プログラム
