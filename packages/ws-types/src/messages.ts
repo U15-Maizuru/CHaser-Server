@@ -96,6 +96,13 @@ export type FrontendMessage =
   | { type: 'tournament_set_lane_count';  payload: { count: number } }
   /** 空いているレーンへ、次に実施すべき試合をまとめて配る (並列実行の運営操作) */
   | { type: 'tournament_arm_next' }
+  /**
+   * 準備済みのレーンをまとめて開始する。
+   *
+   * コントロール窓は主レーンの部屋にしか開かないので、**副レーンの「ゲームスタート」は
+   * 運営パネルからしか押せない。** 並列実行中の開始操作はこれ1つにまとめる
+   */
+  | { type: 'tournament_start_lanes' }
   | { type: 'tournament_rescan' };
 
 // --- Room / lobby ---

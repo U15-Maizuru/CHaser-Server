@@ -203,15 +203,30 @@ export type OperatorAction =
   /** 運営の操作待ち (巻き戻した直後など)。理由をそのまま画面に出す */
   | { kind: 'idle';                reason: string };
 
+/**
+ * いずれかのレーンが抱えている試合 id。
+ *
+ * `armedMatchId` は主レーンのぶんしか指さないので、「今どれが走っているか」を
+ * 知りたいところはこちらを使う。並列実行していなければ 0〜1個。
+ */
+export function armedLaneMatchIds(state: TournamentStatePayload): Set<string> {
+  return new Set(
+    state.lanes.map(l => l.armedMatchId).filter((id): id is string => id !== null),
+  );
+}
+
 export function nextOperatorAction(state: TournamentStatePayload): OperatorAction {
   const format = state.stage.format;
+  // 並列実行中は主レーンだけを見ても足りない。準備済みの判定も、次の試合の候補から
+  // 外すのも、全レーンぶんで見る (レーンが1本なら、主レーンだけを見るのと同じ結果になる)
+  const armedIds = armedLaneMatchIds(state);
 
   // ① 確定待ちが最優先。ここを飛ばすと次の試合を準備してしまう
   const awaiting = state.matches.find(m => m.status === 'awaiting_confirm');
   if (awaiting) return { kind: 'confirm', match: awaiting };
 
   // ② 準備済みならその試合を始める
-  const armed = state.matches.find(m => m.id === state.armedMatchId);
+  const armed = state.matches.find(m => armedIds.has(m.id));
   if (armed) return { kind: 'start', match: armed };
 
   // ③ 予選が終わっていれば、決勝へ進む前に決勝進出者を確定する
@@ -219,8 +234,8 @@ export function nextOperatorAction(state: TournamentStatePayload): OperatorActio
     return { kind: 'confirm-qualifiers' };
   }
 
-  // ④ 次の試合を準備する
-  const next = nextReadyMatch(state.matches);
+  // ④ 次の試合を準備する (他のレーンが走らせている試合は候補から外す)
+  const next = nextReadyMatches(state.matches, 1, { busyIds: armedIds })[0];
   if (next) {
     if (blockedByQualifiers(format, next, state.qualifiersConfirmed)) {
       return { kind: 'idle', reason: '決勝進出者を確定すると、決勝トーナメントの試合を準備できます' };

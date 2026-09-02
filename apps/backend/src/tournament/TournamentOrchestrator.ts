@@ -9,7 +9,7 @@ import { canRunInSideLane, hasBotStage, hasQualifying, nextReadyMatches } from '
 import type { RoomManager } from '../RoomManager.js';
 import { PortPool } from '../network/PortPool.js';
 import {
-  TournamentError, armedMatchIds, commit, laneOfRoom, primaryLane, resolveFor,
+  TournamentError, armedMatchIds, commit, laneOfRoom, managerOf, primaryLane, resolveFor,
   type Binding, type Lane,
 } from './binding.js';
 import {
@@ -266,6 +266,22 @@ export class TournamentOrchestrator {
     // 「他のレーンが空いているか」を見て断ってくれる
     const next = nextReadyMatches(b.loaded.state.matches, 1, { busyIds: busy })[0];
     if (next) await armMatch(this.env, b, pickLaneFor(b, next.id), next.id);
+  }
+
+  /**
+   * 準備済みのレーンをまとめて開始する。
+   *
+   * **副レーンにはコントロール窓が無い** (窓は主レーンの部屋にしか開かない) ので、
+   * 並列実行中の「ゲームスタート」はここが代わりに押す。準備できていないレーンは飛ばす。
+   *
+   * requestStart は対戦が終わるまで返らないので待たない — 進行は status イベントが運ぶ。
+   */
+  startLanes(roomId: string): void {
+    const b = this.require(roomId);
+    for (const lane of b.lanes) {
+      if (lane.armedMatchId === null) continue;
+      void managerOf(this.env, lane.roomId)?.requestStart();
+    }
   }
 
   /**

@@ -311,7 +311,7 @@ function payload(
   over: Partial<TournamentStatePayload> = {},
   format: TournamentFormat = 'single-elimination',
 ): TournamentStatePayload {
-  return {
+  const base: TournamentStatePayload = {
     tournamentId: 'cup',
     name:         'テスト杯',
     match:        { doubleMode: false },
@@ -330,6 +330,12 @@ function payload(
     updatedAt: 0,
     ...over,
   };
+  // **主レーンの armedMatchId は payload の armedMatchId と常に同じ。**
+  // バックエンドが同じ値から両方を組み立てるので、テストでも揃えておかないと
+  // nextOperatorAction (レーンを見る) が「準備済み」を見落とす
+  return over.lanes
+    ? base
+    : { ...base, lanes: [{ roomId: 'room', primary: true, armedMatchId: base.armedMatchId }] };
 }
 
 describe('nextOperatorAction', () => {

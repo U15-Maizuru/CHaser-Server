@@ -1,5 +1,8 @@
-import type { CatalogEntry, TournamentStatePayload } from '@u15/ws-types';
-import { doubleModeFor, nextOperatorAction, type OperatorAction } from '@u15/ws-types';
+import type { CatalogEntry, TournamentMatch, TournamentStatePayload } from '@u15/ws-types';
+import {
+  armedLaneMatchIds, canRunInSideLane, doubleModeFor, nextOperatorAction, nextReadyMatches,
+  type OperatorAction,
+} from '@u15/ws-types';
 import type { TournamentCommands } from '../../../hooks/useGameState';
 import { MatchCard } from '../board/MatchCard';
 import {
@@ -50,13 +53,12 @@ const HEADING: Record<OperatorAction['kind'], string> = {
   'idle':               '待機中',
 };
 
-function Body({ state, action, commands, programs }: {
-  state:    TournamentStatePayload;
-  action:   OperatorAction;
-  commands: TournamentCommands;
-  programs: CatalogEntry[];
+/** 「今やること」の中に出す試合カード。1枚しか出さないので幅は親いっぱいに広げる */
+function ActionMatchCard({ state, match }: {
+  state: TournamentStatePayload;
+  match: TournamentMatch;
 }) {
-  const card = (match: Parameters<typeof MatchCard>[0]['match']) => (
+  return (
     <MatchCard
       match={match}
       participants={state.participants}
@@ -64,17 +66,50 @@ function Body({ state, action, commands, programs }: {
       style={{ width: '100%' }}
     />
   );
+}
+
+/**
+ * 空いているレーンの数と、そこへ実際に配れる試合の数。
+ *
+ * **バックエンドの armNext と同じ述語 (canRunInSideLane) で、空きレーンの数を上限にして
+ * 数える** — ここだけ独自条件にすると、押しても何も起きないボタンや、数が合わない案内ができる。
+ */
+function spareLanesOf(state: TournamentStatePayload): { idle: number; count: number } {
+  const idle  = state.lanes.filter(l => l.armedMatchId === null).length;
+  const count = nextReadyMatches(state.matches, idle, {
+    busyIds: armedLaneMatchIds(state),
+    canRun:  m => canRunInSideLane(state.stage.format, m),
+  }).length;
+  return { idle, count };
+}
+
+function Body({ state, action, commands, programs }: {
+  state:    TournamentStatePayload;
+  action:   OperatorAction;
+  commands: TournamentCommands;
+  programs: CatalogEntry[];
+}) {
+  const card = (match: TournamentMatch) => <ActionMatchCard state={state} match={match} />;
 
   switch (action.kind) {
-    case 'confirm':
+    case 'confirm': {
+      // 並列実行では複数のレーンがほぼ同時に決着する。確定は1件ずつのダイアログなので、
+      // **残りが何件あるか**を先に見せておかないと「終わったはずの試合が消えない」に見える
+      const waiting = state.matches.filter(m => m.status === 'awaiting_confirm').length;
       return (
         <>
-          <p style={s.note}>対戦が終わりました。結果を確認して確定してください。</p>
+          <p style={s.note}>
+            対戦が終わりました。結果を確認して確定してください。
+            {waiting > 1 && <strong>（確定待ち {waiting} 件。1件ずつ確定します）</strong>}
+          </p>
           {card(action.match)}
         </>
       );
+    }
 
     case 'start':
+      // 並列実行中は「どのレーンが何を抱えているか」をまとめて見せ、開始も1操作にする
+      if (state.lanes.length > 1) return <LaneStart state={state} commands={commands} />;
       return (
         <>
           <p style={s.note}>
@@ -103,6 +138,11 @@ function Body({ state, action, commands, programs }: {
       // 入れ替わるため対象外)。BOT対戦予選は全参加者が同一条件で測られるのが根拠なので除外
       const swappable = !doubleModeFor(state, action.match)
         && !(state.stage.format === 'bot-then-bracket' && action.match.group !== undefined);
+      // 並列実行中に配れる予選試合があるなら、**まとめて配るほうを主役にする**。
+      // 逆にすると「この試合を準備」を押した時点で action が 'start' へ移り、残りの
+      // レーンへ配る入口をその画面から失う (1レーンだけで走らせることになる)
+      const spare = spareLanesOf(state);
+      const bulk  = state.lanes.length > 1 && spare.count > 1;
       return (
         <>
           {card(action.match)}
@@ -117,8 +157,21 @@ function Body({ state, action, commands, programs }: {
               </Hint>
             </>
           )}
-          <Button variant="primary" onClick={() => commands.arm(action.match.id)}>
-            この試合を準備 ▶
+          {bulk && (
+            <>
+              <Button variant="primary" onClick={() => commands.armNext()}>
+                {spare.count}試合をまとめて準備 ▶
+              </Button>
+              <Hint>
+                次に実施する予選試合を、空いている{spare.idle}レーンへ一度に配ります。
+              </Hint>
+            </>
+          )}
+          <Button
+            variant={bulk ? 'secondary' : 'primary'}
+            onClick={() => commands.arm(action.match.id)}
+          >
+            {bulk ? 'この試合だけ準備' : 'この試合を準備 ▶'}
           </Button>
         </>
       );
@@ -159,6 +212,58 @@ function Body({ state, action, commands, programs }: {
   }
 }
 
+/**
+ * 並列実行中の「ゲームを開始する」。どのレーンが何を抱えているかを並べ、開始は1操作にする。
+ *
+ * **副レーンにはコントロール画面が無い** (窓は主レーンの部屋にしか開かない) ので、
+ * 並列実行中の「ゲームスタート」はここが唯一の入口になる。
+ */
+function LaneStart({ state, commands }: {
+  state:    TournamentStatePayload;
+  commands: TournamentCommands;
+}) {
+  const spare   = spareLanesOf(state);
+  const running = state.matches.some(m => m.status === 'in_progress');
+  // **レーン番号を添える。** 観客席の分割画面が「レーン1〜N」で並ぶので、
+  // 番号が無いと「レーン2が止まっている」をどの試合のことか言い当てられない
+  const armed = state.lanes
+    .map((l, i) => ({ lane: i + 1, match: state.matches.find(m => m.id === l.armedMatchId) }))
+    .filter((x): x is { lane: number; match: TournamentMatch } => x.match !== undefined);
+
+  return (
+    <>
+      <p style={s.note}>
+        {armed.length}試合ぶんの割り当てが済みました。
+        同時に行う試合には<strong>コントロール画面がありません</strong>ので、
+        開始はこのボタンから行います。
+      </p>
+      {armed.map(({ lane, match }) => (
+        <div key={match.id} style={s.laneRow}>
+          <span style={s.laneTag}>レーン{lane}</span>
+          <div style={s.laneCard}><ActionMatchCard state={state} match={match} /></div>
+        </div>
+      ))}
+      <Button variant="primary" onClick={() => commands.startLanes()}>
+        準備できた試合をまとめて開始 ▶
+      </Button>
+      {/* 1試合ずつ準備してしまった運営が、残りのレーンを空けたまま始めなくて済むように。
+          ここに出さないと、いったん準備した時点で配り直す入口が無くなる。
+          **走り出したあとは出さない** — 「まとめて開始」は準備済みのレーンを全部
+          押しにいくので、対戦中のレーンへもう一度スタートを投げることになる */}
+      {spare.count > 0 && !running && (
+        <>
+          <Button variant="accent" onClick={() => commands.armNext()}>
+            空いているレーンへ、あと{spare.count}試合を準備 ▶
+          </Button>
+          <Hint>
+            レーンが{spare.idle}本空いています。開始前なら追加で配れます。
+          </Hint>
+        </>
+      )}
+    </>
+  );
+}
+
 const s: Record<string, React.CSSProperties> = {
   card: {
     background: BG_HEADER, border: `1px solid ${BORDER_COLOR}`,
@@ -170,6 +275,13 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: 11, letterSpacing: '0.06em', color: TEXT_SECONDARY, fontWeight: 700,
   },
   note: { margin: 0, fontSize: 12, lineHeight: 1.7, color: TEXT_PRIMARY },
+  laneRow: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 },
+  // 観客席の分割画面の「レーン1」と同じ呼び名。番号で画面と試合を結ぶ
+  laneTag: {
+    width: 46, flexShrink: 0, fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
+    color: TEXT_MUTED,
+  },
+  laneCard: { flex: 1, minWidth: 0 },
   assign: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, fontSize: 12 },
   assignName: {
     width: 110, flexShrink: 0, color: TEXT_SECONDARY,

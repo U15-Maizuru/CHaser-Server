@@ -15,6 +15,7 @@ import { useSceneTransition } from '../hooks/useSceneTransition';
 import { useCurrentMap } from '../hooks/useCurrentMap';
 import { useMapCatalogPreview } from '../hooks/useMapCatalogPreview';
 import { MainWindow } from './MainWindow';
+import { MultiLaneDisplay } from './MultiLaneDisplay';
 import { FitArea } from './FitArea';
 import { MapPreview } from './MapPreview';
 import { AnnouncementScreen } from './AnnouncementScreen';
@@ -53,7 +54,12 @@ import {
 // (運営席の表示とは連動しない)。全工程が終わったうえで決勝側を見ていれば表彰画面。
 
 type DisplayScene =
-  'award' | 'standby' | 'waiting' | 'playing' | 'result' | 'preview' | 'announce';
+  'award' | 'standby' | 'waiting' | 'playing' | 'result' | 'preview' | 'announce' | 'lanes';
+
+/** 並列実行中か (レーンが2本以上あり、どれかが対戦を抱えている) */
+function isRunningParallel(t: TournamentStatePayload | null | undefined): boolean {
+  return !!t && t.lanes.length > 1 && t.lanes.some(l => l.armedMatchId !== null);
+}
 
 function displayScene(
   phase:         ServerPhase,
@@ -62,6 +68,14 @@ function displayScene(
   previewMapId:  string | null,
   announcement:  AnnouncementState,
 ): DisplayScene {
+  // **並列実行中は分割画面がすべてに優先する。**
+  //
+  // このとき主レーンの phase / armedMatchId だけを見ても正しい場面にならない —
+  // 主レーンが空いていて副レーンだけが戦っている、という状態が普通に起きるため。
+  // 空き時間の割り込み (アナウンス・マッププレビュー) も、全レーンが空くまで出さない
+  // (どこかで対戦が走っている間に観客席を差し替えると、その対戦が見えなくなる)
+  if (isRunningParallel(tournament)) return 'lanes';
+
   const base = baseDisplayScene(phase, tournament, groupPhase);
   // 運営が出している割り込み (アナウンス / 手動マッププレビュー) は、対戦の空き時間
   // (waiting/standby) だけを置き換える。対戦中・結果表示・表彰中は割り込まない
@@ -103,11 +117,14 @@ const BGM_OF_SCENE: Record<DisplayScene, (p: DisplayPrefs, round: 0 | 1) => stri
   preview: p => p.bgmTrackWait,
   // 運営アナウンス中も「次の対戦を待つ場面」なので待機中と同じ曲
   announce: p => p.bgmTrackWait,
+  // 並列実行中は対戦曲。レーンごとに第1/第2ゲームがばらけるので、常に第1ゲームの曲にする
+  lanes:   p => p.bgmTrack0,
 };
 
 // 画面の暗転はこの単位で判定する。playing と result は同じ MainWindow をそのまま出し続ける
 // (盤面の上に結果を重ねるだけ) ので、両者の間に切り替えは無く暗転もしない。
-type VisualGroup = 'award' | 'standby' | 'waiting' | 'match' | 'preview' | 'announce';
+type VisualGroup =
+  'award' | 'standby' | 'waiting' | 'match' | 'preview' | 'announce' | 'lanes';
 
 function visualGroupOf(scene: DisplayScene): VisualGroup {
   return scene === 'playing' || scene === 'result' ? 'match' : scene;
@@ -163,10 +180,12 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
   // 最初の目盛り (1秒後) が来るより前に明転が終わり、観客には常に "3" から見える
   const countdown = useStartCountdown(displayedGroup === 'match', turnInfo);
 
+  // 並列実行中は SE を鳴らさない。N面ぶんの決着音・ターン音が重なると何も聞き取れず、
+  // どれか1面だけ鳴らしても他の面と食い違って見える。音は BGM 1本に絞る
   useGamePhaseSound({
     httpBase, snapshot, serverStatus, gameEnd, turnInfo, countdown,
     awarding: scene === 'award',
-    muted: effectiveMuted, enabled: true,
+    muted: effectiveMuted, enabled: scene !== 'lanes',
   });
   // 対戦中の BGM は開始カウントダウンが終わってから鳴らす (カウント中は無音)。
   // 合図に turnInfo を使うのは、phase が playing になった時点ではまだカウント中で、
@@ -204,6 +223,10 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
         groupPhase={groupView.phase}
         holdingGroupResult={groupView.holdingResult}
       />
+    );
+  } else if (displayedGroup === 'lanes' && tournamentState) {
+    content = (
+      <MultiLaneDisplay wsUrl={wsUrl} lanes={tournamentState.lanes} prefs={prefs} />
     );
   } else if (displayedGroup === 'announce') {
     content = <AnnouncementScreen announcement={announcement} displayTitle={prefs.displayTitle} />;

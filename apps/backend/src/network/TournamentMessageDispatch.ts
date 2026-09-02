@@ -15,8 +15,8 @@ export interface TournamentMessageDispatchDeps {
  * 他のゲームメッセージと違い失敗を握りつぶさず sendError で返す。
  *
  * 参照を getTournament で遅延して引くのは、WsServer の配線順 (setTournament を
- * setRoomManager より先に呼ぶ) に依存しないため。以前は生成時にスナップショットしており、
- * 順序を逆にすると大会メッセージが無言で無視されていた。
+ * setRoomManager より先に呼ぶ) に依存しないため。**生成時にスナップショットしないこと** —
+ * 配線の順序が入れ替わると、大会メッセージが無言で無視される。
  */
 export class TournamentMessageDispatch {
   constructor(private readonly deps: TournamentMessageDispatchDeps) {}
@@ -93,6 +93,9 @@ export class TournamentMessageDispatch {
         break;
       case 'tournament_arm_next':
         this.tournamentAsync(ws, t => t.armNext(roomId));
+        break;
+      case 'tournament_start_lanes':
+        this.tournament(ws, t => t.startLanes(roomId));
         break;
       case 'tournament_rescan':
         this.tournament(ws, t => t.rescan(roomId));

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type {
   AnnouncementState, CatalogEntry, MapCatalogEntry, TournamentStatePayload, TournamentSummary,
 } from '@u15/ws-types';
+import { armedLaneMatchIds } from '@u15/ws-types';
 import type { TournamentCommands } from '../../../hooks/useGameState';
 import { NextActionCard } from './NextActionCard';
 import { AnnouncementCard } from './AnnouncementCard';
@@ -68,6 +69,11 @@ export function TournamentPanel({
 
   const awaiting = state?.matches.find(m => m.status === 'awaiting_confirm') ?? null;
 
+  // どこかのレーンが対戦を抱えていれば、観客席は対戦画面 (並列なら分割画面) に入っている。
+  // **主レーンの armedMatchId だけを見ないこと** — 副レーンだけが走っている状態は普通に
+  // 起きるので、それだと「出したのに観客席に出ない」アナウンスができてしまう
+  const anyArmed = state ? armedLaneMatchIds(state).size > 0 : false;
+
   const tabs: TabDef<PanelTab>[] = [
     { id: 'library',  label: '大会' },
     { id: 'progress', label: '進行', ...(state ? {} : { disabledReason: '大会を選ぶと使えます' }) },
@@ -84,7 +90,7 @@ export function TournamentPanel({
 
       {/* 試合の合間だけ出す。対戦カードが決まったら観客席は対戦画面に入るので、
           出しっぱなしを消せるよう表示中だけカードを残す */}
-      {(!state?.armedMatchId || announcement.visible) && (
+      {(!anyArmed || announcement.visible) && (
         <AnnouncementCard announcement={announcement} onChange={setAnnouncement} />
       )}
 

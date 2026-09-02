@@ -48,6 +48,20 @@ export interface TournamentCommands {
    * (「自動で進める」「繰り返す」「アナウンスを挟む」を別々のボタンにしても互いを巻き戻さない)
    */
   setAutoPlay: (enabled: boolean, loop?: boolean, announce?: boolean) => void;
+  /**
+   * 同時に走らせる試合の数 (レーン数)。1 なら1試合ずつ順に実行する。
+   *
+   * 2 以上にできるのは BOT対戦予選のある大会だけで、どのレーンも空いているときだけ変えられる。
+   * 増やしたぶんは専用のルームと待ち受けポートを取るので、断られる理由は error で返る
+   */
+  setLaneCount: (count: number) => void;
+  /** 空いているレーンへ、次に実施すべき試合をまとめて配る */
+  armNext:  () => void;
+  /**
+   * 準備済みのレーンをまとめて開始する。副レーンにはコントロール窓が無いので、
+   * 並列実行中の「ゲームスタート」はこれで押す
+   */
+  startLanes: () => void;
   rescan:   () => void;
 }
 
@@ -243,6 +257,10 @@ export function useGameState(wsUrl: string, roomId: string): GameStateHook {
         send({ type: 'tournament_set_display_view', payload: { view } }),
       setAutoPlay: (enabled, loop, announce) =>
         send({ type: 'tournament_set_auto_play', payload: { enabled, loop, announce } }),
+      setLaneCount: (count) =>
+        send({ type: 'tournament_set_lane_count', payload: { count } }),
+      armNext:  ()                    => send({ type: 'tournament_arm_next' }),
+      startLanes: ()                  => send({ type: 'tournament_start_lanes' }),
       rescan:   ()                    => send({ type: 'tournament_rescan' }),
     },
   };

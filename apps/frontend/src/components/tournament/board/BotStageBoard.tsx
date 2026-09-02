@@ -1,5 +1,5 @@
 import type { StandingRow, TournamentMatch, TournamentStatePayload } from '@u15/ws-types';
-import { advancePerGroupOf } from '@u15/ws-types';
+import { advancePerGroupOf, armedLaneMatchIds } from '@u15/ws-types';
 import { FitArea } from '../../FitArea';
 import {
   BG_CARD, BG_ROOT, BORDER_COLOR, COOL_PALE, FONT_NUM, FONT_UI, GOLD_BASE, GOLD_LIGHT,
@@ -53,7 +53,20 @@ export function BotStageBoard({
   const advances = (id: string) => ranked.findIndex(s => s.participantId === id) < advanceCount
     && ranked.some(s => s.participantId === id);
 
-  const done = new Set(standings.filter(s => s.played > 0).map(s => s.participantId));
+  // **順位表に載るのは「確定済み」だけ** (standings.played は確定した試合しか数えない)。
+  // 対戦が終わってから運営が確定するまでの間、その人を「—」(未実施) に戻さないための集合を
+  // 別に持つ — 並列実行では3〜4人ぶんが同時にこの状態になるので、無いと画面が
+  // 「まだ誰も戦っていない」ように見える
+  const done    = new Set(standings.filter(s => s.played > 0).map(s => s.participantId));
+  const pending = new Set(
+    qualifying.filter(m => m.status === 'awaiting_confirm')
+      .flatMap(m => [m.resolvedA, m.resolvedB])
+      .filter((id): id is string => id !== null),
+  );
+
+  // 同時に走っている試合すべてに「対戦」印を付ける。**armedMatchId は主レーンのぶんしか
+  // 指さない**ので、並列実行中にそれだけを見ると3試合走っていても1人にしか印が付かない
+  const runningIds = armedLaneMatchIds(state);
 
   // ── エントリーリスト ──
   const entryTable = (
@@ -70,7 +83,7 @@ export function BotStageBoard({
         <tbody>
           {entryIds.map((id, i) => {
             const m = matchOf(id);
-            const isUpcoming = !!m && m.id === state.armedMatchId;
+            const isUpcoming = !!m && runningIds.has(m.id);
             const clickable  = interactive && !!onSelect && !!m;
             return (
               <tr
@@ -85,8 +98,13 @@ export function BotStageBoard({
               >
                 <td style={{ ...tdNum, color: TEXT_MUTED }}>{i + 1}</td>
                 <td style={{ ...td, textAlign: 'left', fontWeight: 600 }}>{nameOf(id)}</td>
+                {/* **確定待ちは「対戦」より先に見る。** レーンは確定するまで armed のままなので、
+                    先に isUpcoming を見ると、終わった対戦がいつまでも「▶ 対戦」に見える */}
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>
-                  {isUpcoming ? '▶ 対戦' : done.has(id) ? '済' : '—'}
+                  {done.has(id) ? '済'
+                    : pending.has(id) ? '結果確認中'
+                    : isUpcoming ? '▶ 対戦'
+                    : '—'}
                 </td>
               </tr>
             );
@@ -97,11 +115,15 @@ export function BotStageBoard({
     </div>
   );
 
+  /** 対戦は終わったが順位表にまだ載らない試合の数 (運営の確定待ち) */
+  const pendingCount = qualifying.filter(m => m.status === 'awaiting_confirm').length;
+
   // ── 順位リスト ──
   const standingsTable = (
     <div style={block}>
       <div style={tableTitle}>
         試合結果（{done.size} / {entryIds.length}）
+        {pendingCount > 0 && <span style={pendingNote}>＋{pendingCount}試合が確定待ち</span>}
       </div>
       {done.size === 0 ? (
         <div style={empty}>まだ結果がありません</div>
@@ -180,6 +202,11 @@ const block: React.CSSProperties = {
 };
 
 const tableTitle: React.CSSProperties = { fontSize: 14, fontWeight: 700, color: TEXT_PRIMARY };
+
+// 「終わったのに数が増えない」を説明する添え書き。見出しより弱く出す
+const pendingNote: React.CSSProperties = {
+  marginLeft: 8, fontSize: 11, fontWeight: 600, color: GOLD_BASE,
+};
 
 const table: React.CSSProperties = {
   borderCollapse: 'collapse', fontSize: 12, background: BG_CARD,

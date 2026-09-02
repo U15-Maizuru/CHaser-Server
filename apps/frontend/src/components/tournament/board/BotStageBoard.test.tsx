@@ -146,6 +146,25 @@ describe('BotStageBoard', () => {
     expect(rankedNames()).toEqual(['A', 'C', 'D', 'E', 'F']);
   });
 
+  it('対戦は終わったが確定前の人を「結果確認中」にする (並列実行では何人も同時にこうなる)', () => {
+    // レーンは確定するまで armed のままなので、armedMatchId が指したままでも
+    // 「▶ 対戦」ではなく確定待ちとして出す
+    const s = state(0, { armedMatchId: 'B-M1' });
+    render(<BotStageBoard state={{
+      ...s,
+      matches: s.matches.map((m, i) =>
+        (i < 3 ? { ...m, status: 'awaiting_confirm' as const } : m)),
+    }} />);
+
+    const table = screen.getByText(/^エントリー/).parentElement!.querySelector('table')!;
+    const rows  = within(table).getAllByRole('row').slice(1);
+    expect(rows[0]!.children[2]!.textContent).toBe('結果確認中');
+    expect(rows[2]!.children[2]!.textContent).toBe('結果確認中');
+    expect(rows[3]!.children[2]!.textContent).toBe('—');
+    // 順位リストはまだ0件なので、「終わったのに増えない」を数で説明する
+    expect(screen.getByText('＋3試合が確定待ち')).toBeInTheDocument();
+  });
+
   it('これから行う試合のエントリー行を「▶ 対戦」にする', () => {
     render(<BotStageBoard state={state(1, { armedMatchId: 'B-M2' })} />);
     const table = screen.getByText(/^エントリー/).parentElement!.querySelector('table')!;

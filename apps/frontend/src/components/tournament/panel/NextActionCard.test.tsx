@@ -26,7 +26,7 @@ const match = (over: Partial<TournamentMatch> = {}): TournamentMatch => ({
 });
 
 function state(over: Partial<TournamentStatePayload> = {}): TournamentStatePayload {
-  return {
+  const base: TournamentStatePayload = {
     tournamentId: 'cup', name: 'テスト杯',
     match: { doubleMode: false },
     stage: stageRulesFor('single-elimination'),
@@ -41,9 +41,18 @@ function state(over: Partial<TournamentStatePayload> = {}): TournamentStatePaylo
     armedMatchId: null, boundRoomId: 'room', updatedAt: 0,
     ...over,
   };
+  // **主レーンの armedMatchId は payload の armedMatchId と常に同じ。**
+  // バックエンドが同じ値から両方を組み立てるので、テストでもここを揃えておかないと
+  // nextOperatorAction (レーンを見る) が「準備済み」を見落とす
+  return over.lanes
+    ? base
+    : { ...base, lanes: [{ roomId: 'room', primary: true, armedMatchId: base.armedMatchId }] };
 }
 
-const commands = { arm: vi.fn(), confirmQualifiers: vi.fn(), assignProgram: vi.fn() };
+const commands = {
+  arm: vi.fn(), armNext: vi.fn(), startLanes: vi.fn(),
+  confirmQualifiers: vi.fn(), assignProgram: vi.fn(),
+};
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
@@ -96,6 +105,58 @@ describe('NextActionCard', () => {
     expect(screen.getByText('プログラムを割り当てる')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('P1 のプログラム'), { target: { value: 'lib-1' } });
     expect(commands.assignProgram).toHaveBeenCalledWith('p1', 'lib-1');
+  });
+
+  // ── 並列実行 (BOT対戦予選を複数レーンで同時に走らせる) ──────────────────────
+  //
+  // 「この試合を準備」を押した瞬間に action は 'start' へ移るので、その1手で残りの
+  // レーンへ配る入口を失わないことが要点。
+
+  /** レーン n 本の BOT対戦予選。予選試合は3つとも未実施 */
+  const parallel = (lanes: (string | null)[]) => state({
+    stage: stageRulesFor('bot-then-bracket'),
+    participants: [participant('p1'), participant('p2'), participant('p3'), participant('bot')],
+    matches: [
+      match({ id: 'Q1', group: 0, order: 0, resolvedA: 'p1', resolvedB: 'bot' }),
+      match({ id: 'Q2', group: 0, order: 1, resolvedA: 'p2', resolvedB: 'bot' }),
+      match({ id: 'Q3', group: 0, order: 2, resolvedA: 'p3', resolvedB: 'bot' }),
+    ].map(m => (lanes.includes(m.id) ? { ...m, status: 'armed' as const } : m)),
+    lanes: lanes.map((armedMatchId, i) => ({
+      roomId: `room${i}`, primary: i === 0, armedMatchId,
+    })),
+    armedMatchId: lanes[0],
+  });
+
+  it('並列実行中は、1試合ずつではなくまとめて準備するほうを主役にする', () => {
+    show(parallel([null, null, null]));
+    fireEvent.click(screen.getByText('3試合をまとめて準備 ▶'));
+    expect(commands.armNext).toHaveBeenCalled();
+    // 1試合だけ準備する道も残す (押し間違いではないと分かる文言で)
+    expect(screen.getByText('この試合だけ準備')).toBeInTheDocument();
+  });
+
+  it('1レーンだけ準備してしまっても、残りのレーンへ配り直せる', () => {
+    show(parallel(['Q1', null, null]));
+    expect(screen.getByText('ゲームを開始する')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('空いているレーンへ、あと2試合を準備 ▶'));
+    expect(commands.armNext).toHaveBeenCalled();
+  });
+
+  it('準備済みの試合にはレーン番号を添える (観客席の分割画面と突き合わせるため)', () => {
+    show(parallel(['Q1', 'Q2', null]));
+    expect(screen.getByText('レーン1')).toBeInTheDocument();
+    expect(screen.getByText('レーン2')).toBeInTheDocument();
+    expect(screen.queryByText('レーン3')).not.toBeInTheDocument();
+  });
+
+  it('確定待ちが複数あることを、確定を促すときに知らせる', () => {
+    show(state({
+      matches: [
+        match({ id: 'M1', status: 'awaiting_confirm' }),
+        match({ id: 'M2', status: 'awaiting_confirm' }),
+      ],
+    }));
+    expect(screen.getByText('（確定待ち 2 件。1件ずつ確定します）')).toBeInTheDocument();
   });
 
   it('予選が終わったら決勝進出者の確定を促す', () => {
