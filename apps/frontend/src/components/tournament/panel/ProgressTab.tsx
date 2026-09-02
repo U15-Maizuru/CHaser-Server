@@ -5,9 +5,7 @@ import { confirmDialog } from '../../../lib/nativeDialog';
 import { BotQualifierSection } from '../qualifier/BotQualifierSection';
 import { QualifierSection } from '../qualifier/QualifierSection';
 import { MatchCard } from '../board/MatchCard';
-import {
-  TEXT_MUTED, Button, EmptyState, Hint, Section,
-} from '../../../ui';
+import { Button, Hint, Section } from '../../../ui';
 
 // 大会の進み具合。決勝進出者の確認、試合の一覧と巻き戻し、結果の書き出し。
 
@@ -98,10 +96,6 @@ function MatchRow({ state, match, commands }: {
       {canReopen && <Button size="sm" noShrink onClick={reopen}>取り消す</Button>}
     </div>
   );
-}
-
-export function EmptyProgress() {
-  return <EmptyState style={{ color: TEXT_MUTED }}>大会を選ぶと進行状況が出ます。</EmptyState>;
 }
 
 const s: Record<string, React.CSSProperties> = {

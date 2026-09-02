@@ -6,9 +6,7 @@ import { FitArea } from '../../FitArea';
 import { BotStageBoard } from './BotStageBoard';
 import { BracketView } from './BracketView';
 import { LeagueTable } from './LeagueTable';
-import {
-  BORDER_COLOR, COOL_COLOR, FONT_UI, RADIUS_SM, TEXT_PRIMARY, TEXT_SECONDARY,
-} from '../../../ui';
+import { Button, FONT_UI, TEXT_PRIMARY } from '../../../ui';
 
 // 「予選 + 決勝トーナメント」の全体像。予選の表と決勝トーナメント表を切り替えて見せる。
 //
@@ -178,16 +176,20 @@ export function QualifyingView({
       {showTabs && controlled === undefined && (
         <div style={tabs}>
           {(['groups', 'bracket'] as const).map(p => (
-            <button
+            <Button
               key={p}
-              style={{ ...tab, ...(phase === p ? tabActive : null) }}
+              variant="choice"
+              size="sm"
+              selected={phase === p}
               onClick={() => setPicked(p)}
             >
               {p === 'groups' ? qualifyingLabel(state) : '決勝トーナメント'}
-            </button>
+            </Button>
           ))}
           {picked !== null && picked !== autoPhase && (
-            <button style={tabGhost} onClick={() => setPicked(null)}>進行に合わせる</button>
+            <Button variant="ghost" size="sm" onClick={() => setPicked(null)}>
+              進行に合わせる
+            </Button>
           )}
         </div>
       )}
@@ -215,18 +217,6 @@ const groupsGrid: React.CSSProperties = {
   columnGap: 28, rowGap: 12,
 };
 
+// 見た目は共通の Button (choice / ghost) に任せる。ここで枠線と塗りを書き起こすと、
+// 運営パネルの同じ役割のボタンとだんだんずれる
 const tabs: React.CSSProperties = { display: 'flex', gap: 6, alignItems: 'center' };
-
-const tab: React.CSSProperties = {
-  border: `1px solid ${BORDER_COLOR}`, borderRadius: RADIUS_SM, background: 'transparent',
-  color: TEXT_SECONDARY, fontFamily: FONT_UI, fontWeight: 700, fontSize: 12,
-  padding: '5px 12px', cursor: 'pointer',
-};
-
-const tabActive: React.CSSProperties = {
-  background: COOL_COLOR, borderColor: COOL_COLOR, color: '#fff',
-};
-
-const tabGhost: React.CSSProperties = {
-  ...tab, border: 'none', fontWeight: 400, fontSize: 11,
-};

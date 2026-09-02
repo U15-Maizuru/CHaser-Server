@@ -3,7 +3,7 @@ import type { CatalogEntry } from '@u15/ws-types';
 import { groupLabel } from '@u15/ws-types';
 import { fitSlots } from '../../../lib/bracketSlots';
 import {
-  HOT_COLOR, TEXT_MUTED, Button, EmptyState, Hint, Section, Select, TextInput,
+  BG_ROOT, HOT_COLOR, TEXT_MUTED, Button, EmptyState, Hint, Section, Select, TextInput,
 } from '../../../ui';
 import { autoGroupsOf, newParticipant, type DraftParticipant, type TournamentDraft } from './draft';
 
@@ -214,7 +214,7 @@ const s: Record<string, React.CSSProperties> = {
   bulk: { display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' },
   textarea: {
     width: '100%', minHeight: 72, resize: 'vertical', boxSizing: 'border-box',
-    padding: '5px 8px', background: '#faf7ff',
+    padding: '5px 8px', background: BG_ROOT,
     border: '1px solid rgba(140,120,210,0.18)', borderRadius: 12, fontSize: 12,
   },
 };

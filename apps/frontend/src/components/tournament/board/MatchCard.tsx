@@ -139,7 +139,9 @@ export function MatchCard({
         : justFinished ? { ...badge, ...badgeJustFinished }
         : rematch      ? { ...badge, ...badgeRematch }
         : { ...badge, color: MATCH_STATUS_COLOR[match.status] }}>
-          {upcoming ? '対戦試合' : justFinished ? '試合終了' : rematch ? '再試合待ち' : MATCH_STATUS_LABEL[match.status]}
+          {/* upcoming / justFinished は色で示す強調で、状態そのものは status が持つ。
+              ここに別のラベルを置くと「対戦試合」のような、状態でも呼び名でもない語ができる */}
+          {rematch ? '再試合待ち' : MATCH_STATUS_LABEL[match.status]}
         </span>
       </div>
 

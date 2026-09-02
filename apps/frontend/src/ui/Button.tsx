@@ -12,11 +12,16 @@ import {
  * secondary … 枠線つきの通常操作
  * ghost     … 枠なしの弱い操作 (閉じる / 解除)
  * danger    … 取り消し・破棄 (運営を終了)
+ * danger-outline
+ *           … 元に戻せないが、目立たせたくない破棄 (大会データの削除)。
+ *             進行の主アクションと同じ行に並ぶので、塗ると当日いちばん目を引くのが
+ *             削除になってしまう
  * choice    … 排他トグル。selected で塗る
  * icon      … 正方形のアイコン1文字
  */
 export type ButtonVariant =
-  | 'primary' | 'accent' | 'secondary' | 'ghost' | 'danger' | 'choice' | 'icon';
+  | 'primary' | 'accent' | 'secondary' | 'ghost' | 'danger' | 'danger-outline'
+  | 'choice' | 'icon';
 
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
@@ -42,7 +47,7 @@ const FILLED: CSSProperties = { border: 'none', color: '#fff' };
 
 // **枠線は longhand で持つこと。** `border` の一括指定に `borderColor` だけを重ねると、
 // トグルの ON/OFF で React が「一括指定が効いているのに borderColor を消した」と警告し、
-// 実際に枠の色が戻らないことがある (choice の選択解除)
+// 実際に枠の色が戻らないことがある (choice の選択解除・danger-outline の無効化)
 const OUTLINED: CSSProperties = {
   borderWidth: 1, borderStyle: 'solid', borderColor: BORDER_COLOR,
   background: BG_CARD, color: TEXT_SECONDARY,
@@ -52,6 +57,7 @@ const VARIANTS: Record<ButtonVariant, CSSProperties> = {
   primary:   { ...FILLED, background: WIN_BASE,  boxShadow: SHADOW_SM },
   accent:    { ...FILLED, background: COOL_COLOR },
   danger:    { ...FILLED, background: HOT_COLOR },
+  'danger-outline': { ...OUTLINED, color: HOT_COLOR, borderColor: HOT_COLOR },
   secondary: OUTLINED,
   ghost:     { border: 'none', background: 'transparent', color: TEXT_SECONDARY },
   choice:    { ...OUTLINED, background: 'transparent', borderRadius: RADIUS_SM },

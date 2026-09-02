@@ -12,7 +12,8 @@ import {
   validateDraft, type TournamentDraft,
 } from './draft';
 import {
-  TEXT_SECONDARY, Button, Callout, ChipRow, Dialog, EmptyState, Field, Hint, Section, TextInput,
+  BG_ROOT, TEXT_SECONDARY,
+  Button, Callout, ChipRow, Dialog, EmptyState, Field, Hint, Section, TextInput,
 } from '../../../ui';
 
 // 大会データ (tournament.json) を画面で作る / 直すためのダイアログ。
@@ -265,7 +266,7 @@ export function TournamentEditorDialog({
 }
 
 const s: Record<string, React.CSSProperties> = {
-  body:     { background: '#faf7ff' },
+  body:     { background: BG_ROOT },
   sections: { display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 },
   preview:  { flex: 1, minWidth: 0, fontSize: 12, color: TEXT_SECONDARY },
 };

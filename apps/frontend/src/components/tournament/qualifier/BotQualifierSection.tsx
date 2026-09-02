@@ -3,7 +3,7 @@ import { advancePerGroupOf } from '@u15/ws-types';
 import { confirmDialog } from '../../../lib/nativeDialog';
 import {
   BG_CARD, BG_ROOT, BORDER_COLOR, FONT_NUM, FONT_UI, GOLD_BASE, HOT_COLOR, RADIUS_SM,
-  TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE,
+  TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WARN_PALE, WARN_TEXT, WIN_BASE,
 } from '../../../ui';
 
 // BOT対戦予選の決勝進出者を決める「最終決定確認リスト」。
@@ -190,8 +190,8 @@ const rowExcluded: React.CSSProperties = {
 };
 
 const borderTag: React.CSSProperties = {
-  marginLeft: 6, fontSize: 9, fontWeight: 700, color: '#8a6d1f',
-  background: '#fffaf0', border: `1px solid ${GOLD_BASE}`,
+  marginLeft: 6, fontSize: 9, fontWeight: 700, color: WARN_TEXT,
+  background: WARN_PALE, border: `1px solid ${GOLD_BASE}`,
   borderRadius: 99, padding: '1px 6px',
 };
 
@@ -229,6 +229,6 @@ const btnMuted: React.CSSProperties = {
 };
 
 const warnRow: React.CSSProperties = {
-  background: '#fffaf0', border: `1px solid ${GOLD_BASE}`, color: '#8a6d1f',
+  background: WARN_PALE, border: `1px solid ${GOLD_BASE}`, color: WARN_TEXT,
   borderRadius: RADIUS_SM, padding: '6px 10px', fontSize: 11,
 };

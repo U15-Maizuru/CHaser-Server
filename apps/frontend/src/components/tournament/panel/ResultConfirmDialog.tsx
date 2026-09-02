@@ -3,6 +3,7 @@ import type { MapCatalogEntry, ResolvedParticipant, TournamentMatch } from '@u15
 import {
   BG_CARD, BORDER_COLOR, COOL_COLOR, FONT_NUM, FONT_UI, GOLD_BASE, HOT_COLOR,
   RADIUS_MD, RADIUS_SM, SHADOW_MD, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE,
+  WARN_PALE, WARN_TEXT,
 } from '../../../ui';
 import { affiliationOf, ParticipantName } from '../board/ParticipantName';
 
@@ -216,11 +217,11 @@ const hint: React.CSSProperties = {
 };
 
 const tieBox: React.CSSProperties = {
-  border: `1px solid ${GOLD_BASE}`, background: '#fffaf0',
+  border: `1px solid ${GOLD_BASE}`, background: WARN_PALE,
   borderRadius: RADIUS_SM, padding: 12, display: 'flex', flexDirection: 'column', gap: 10,
 };
 
-const tieTitle: React.CSSProperties = { fontSize: 14, fontWeight: 700, color: '#8a6d1f' };
+const tieTitle: React.CSSProperties = { fontSize: 14, fontWeight: 700, color: WARN_TEXT };
 
 const optionBox: React.CSSProperties = {
   display: 'flex', flexDirection: 'column', gap: 6,

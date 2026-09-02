@@ -7,9 +7,12 @@ import {
 // MatchInfoCard (トーナメント表で対になる2枚のプレイヤーカードの間に挟む対戦カード) の
 // どちらも同じ状態を表示するので、ラベル・色はここを唯一の情報源にする。
 
+// **「確定」は結果の確定に使う語なので、対戦前の状態には使わない。** 大会運営には
+// 「結果を確定する」「決勝進出者を確定する」があり、ready を「対戦確定」と呼ぶと
+// トーナメント表で未実施のカードが済んだように読める (観客席にもそのまま出る)。
 export const MATCH_STATUS_LABEL: Record<TournamentMatch['status'], string> = {
   pending:          '勝者待ち',
-  ready:            '対戦確定',
+  ready:            '対戦カード決定',
   armed:            '準備完了',
   in_progress:      '対戦中',
   awaiting_confirm: '結果確認',

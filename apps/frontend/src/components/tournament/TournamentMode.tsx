@@ -8,7 +8,7 @@ import { QualifierPicker } from './qualifier/QualifierSection';
 import { TournamentPanel } from './panel/TournamentPanel';
 import {
   BG_CARD, BG_ROOT, BORDER_COLOR, FONT_UI, RADIUS_MD, SHADOW_MD,
-  TEXT_MUTED, TEXT_PRIMARY, Button,
+  TEXT_MUTED, TEXT_PRIMARY, Button, Splash,
 } from '../../ui';
 
 // ?mode=tournament — 運営席の専用ウィンドウ。**大会運営の唯一の入口**。
@@ -26,7 +26,7 @@ export function TournamentMode({ wsUrl, roomId, httpBase }: TournamentModeProps)
   const t = state.tournamentState;
 
   if (!state.isConnected) {
-    return <div style={s.connecting}>バックエンドに接続中...</div>;
+    return <Splash title="大会運営" sub="バックエンドに接続中..." />;
   }
 
   return (
@@ -139,9 +139,5 @@ const s: Record<string, React.CSSProperties> = {
   empty: {
     height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
     color: TEXT_MUTED, fontSize: 13,
-  },
-  connecting: {
-    display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center',
-    background: '#0d1117', color: '#666', fontFamily: 'monospace', fontSize: 16,
   },
 };

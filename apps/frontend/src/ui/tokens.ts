@@ -37,6 +37,12 @@ export const GOLD_LIGHT = '#fff3cc';
 export const PENALTY_COLOR = '#ff7a1a';
 export const PENALTY_PALE  = '#fff3ea';
 
+// 注意 (Callout の warn・同点の断り書き・BOT予選の除外バッジ)。GOLD_BASE の枠線と組で使う。
+// **ここを唯一の出所にすること** — 書き起こしやすい2色なので、同じ値が画面ごとに
+// 散ると、片方だけ触ったときに同じ「注意」の見た目が画面によって変わる
+export const WARN_PALE = '#fffaf0';
+export const WARN_TEXT = '#8a6d1f';
+
 /** エラー表示 (アップロード失敗・プログラム起動失敗) */
 export const ERROR_COLOR = '#c43a3a';
 /** バックエンドとの接続が切れていることを示すバッジ */

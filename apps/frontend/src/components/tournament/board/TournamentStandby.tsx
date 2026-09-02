@@ -6,7 +6,7 @@ import { LeagueTable } from './LeagueTable';
 import { lastConfirmedMatch, winnerOf } from '../../../lib/tournamentResult';
 import {
   BG_ROOT, RADIUS_MD, SHADOW_SM,
-  TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE, WIN_LIGHT, WIN_PALE,
+  TEXT_PRIMARY, TEXT_SECONDARY, WIN_LIGHT, WIN_PALE,
   FONT_UI,
 } from '../../../ui';
 
@@ -43,7 +43,6 @@ export function TournamentStandby({
           </div>
         ) : finished ? (
           <div style={s.result}>
-            {/* <span style={s.resultTag}>試合終了</span> */}
             <span style={s.resultLabel}>{finished.label}</span>
             {/* 所属は勝者名の上に小さく。「〜の勝ち」の一文は名前だけで組む */}
             <span style={s.resultWinner}>
@@ -101,10 +100,6 @@ const s: Record<string, React.CSSProperties> = {
     display: 'flex', alignItems: 'center', gap: 14,
     background: WIN_PALE, border: `2px solid ${WIN_LIGHT}`,
     borderRadius: RADIUS_MD, boxShadow: SHADOW_SM, padding: '8px 22px',
-  },
-  resultTag: {
-    fontSize: 12, fontWeight: 800, letterSpacing: '0.1em',
-    color: '#fff', background: WIN_BASE, borderRadius: 99, padding: '3px 12px',
   },
   resultLabel: { fontSize: 14, color: TEXT_SECONDARY },
   resultWinner: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start' },

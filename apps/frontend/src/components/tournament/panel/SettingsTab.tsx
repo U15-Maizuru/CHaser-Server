@@ -120,7 +120,9 @@ export function SettingsTab({ state, maps, commands }: SettingsTabProps) {
           再試合か審判裁定かは運営が決めるものなので、自動では決めません。
         </Hint>
         {/* 自動進行の開始／停止は設定ではなく操作なので、選択チップではなくボタンにする
-            (設定ダイアログ「対戦」タブのデモ開始ボタンと同じ考え方) */}
+            (設定ダイアログ「対戦」タブのデモ開始ボタンと同じ考え方)。
+            **操作と、その振る舞いを決める2つのトグルは行を分ける** — 同じ行に混ぜると
+            押すと走り出すものと、次に走るときの設定でしかないものが見分けられない */}
         <ChipRow>
           <Button
             variant={state.autoPlay.enabled ? 'danger' : 'accent'}
@@ -129,6 +131,8 @@ export function SettingsTab({ state, maps, commands }: SettingsTabProps) {
           >
             {state.autoPlay.enabled ? '■ 自動進行を止める' : '▶ 自動進行を始める'}
           </Button>
+        </ChipRow>
+        <ChipRow>
           <Button
             variant="choice" size="sm"
             selected={state.autoPlay.loop}
@@ -136,8 +140,6 @@ export function SettingsTab({ state, maps, commands }: SettingsTabProps) {
           >
             デモモード（繰り返す）
           </Button>
-        </ChipRow>
-        <ChipRow>
           <Button
             variant="choice" size="sm"
             selected={state.autoPlay.announce}

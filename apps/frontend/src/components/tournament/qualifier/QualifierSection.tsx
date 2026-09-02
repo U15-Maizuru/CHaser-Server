@@ -3,7 +3,7 @@ import { groupLabel, hasBotStage } from '@u15/ws-types';
 import { confirmDialog } from '../../../lib/nativeDialog';
 import {
   BG_CARD, BORDER_COLOR, FONT_UI, GOLD_BASE, RADIUS_SM,
-  TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE,
+  TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WARN_PALE, WARN_TEXT, WIN_BASE,
 } from '../../../ui';
 
 // 決勝トーナメントの進出者。
@@ -235,6 +235,6 @@ const btnGhost: React.CSSProperties = {
 };
 
 const warnRow: React.CSSProperties = {
-  background: '#fffaf0', border: `1px solid ${GOLD_BASE}`, color: '#8a6d1f',
+  background: WARN_PALE, border: `1px solid ${GOLD_BASE}`, color: WARN_TEXT,
   borderRadius: RADIUS_SM, padding: '6px 10px', fontSize: 11,
 };

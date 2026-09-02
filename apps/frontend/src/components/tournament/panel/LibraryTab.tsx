@@ -176,8 +176,11 @@ export function LibraryTab({
                 >
                   編集
                 </Button>
+                {/* **塗らない。** 元に戻せない操作を「運営開始」と同じ強さで並べると、
+                    当日いちばん押される行の中でいちばん目を引くのが削除になる。
+                    赤い文字と枠だけにして、意図して探した人にだけ見つけさせる */}
                 <Button
-                  size="sm" variant="danger" noShrink disabled={!!t.boundRoomId}
+                  size="sm" variant="danger-outline" noShrink disabled={!!t.boundRoomId}
                   title={t.boundRoomId ? '運営中の大会は削除できません' : '大会データを削除する'}
                   onClick={() => handleDelete(t)}
                 >

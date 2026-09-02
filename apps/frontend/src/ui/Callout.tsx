@@ -1,13 +1,14 @@
 import type { CSSProperties, ReactNode } from 'react';
 import {
   BORDER_COLOR, GOLD_BASE, HOT_COLOR, RADIUS_SM, TEXT_MUTED, TEXT_SECONDARY, TURN_PALE,
+  WARN_PALE, WARN_TEXT,
 } from './tokens';
 
 export type CalloutTone = 'info' | 'warn' | 'error';
 
 const TONES: Record<CalloutTone, CSSProperties & { mark: string }> = {
   info:  { background: TURN_PALE, border: `1px solid ${BORDER_COLOR}`, color: TEXT_SECONDARY, mark: '' },
-  warn:  { background: '#fffaf0', border: `1px solid ${GOLD_BASE}`,    color: '#8a6d1f',      mark: '⚠ ' },
+  warn:  { background: WARN_PALE,  border: `1px solid ${GOLD_BASE}`,    color: WARN_TEXT,      mark: '⚠ ' },
   error: { background: '#fff0f0', border: `1px solid ${HOT_COLOR}`,   color: HOT_COLOR,      mark: '⚠ ' },
 };
 
