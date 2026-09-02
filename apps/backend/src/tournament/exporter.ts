@@ -47,10 +47,13 @@ function statusLabel(m: TournamentMatch): string {
 export function matchesCsv(loaded: LoadedTournament): string {
   const ps     = resolveParticipants(loaded);
   const nameOf = (id: string | null) => (id ? ps.find(p => p.id === id)?.name ?? id : '');
+  // 所属は記録として残す。**プレイヤー名の隣の列にする** — 表計算で並べ替えたときに
+  // 名前と所属が離れていると、どちらの所属なのか読めなくなる
+  const affOf  = (id: string | null) => (id ? ps.find(p => p.id === id)?.affiliation ?? '' : '');
 
   const header = [
     '試合ID', '区分', '回戦', '試合名', '状態',
-    'プレイヤーA', 'プレイヤーB',
+    'プレイヤーA', 'A所属', 'プレイヤーB', 'B所属',
     'A勝利数', 'B勝利数', '引分',
     'A合計ポイント', 'B合計ポイント',
     '勝者', '決め手', '備考',
@@ -74,7 +77,9 @@ export function matchesCsv(loaded: LoadedTournament): string {
       :                                `予選${groupLabel(m.group)}`,
       m.stage + 1, m.label, statusLabel(m),
       m.byeA ? '(不戦)' : nameOf(m.resolvedA),
+      m.byeA ? ''       : affOf(m.resolvedA),
       m.byeB ? '(不戦)' : nameOf(m.resolvedB),
+      m.byeB ? ''       : affOf(m.resolvedB),
       set?.wins[0] ?? '', set?.wins[1] ?? '', set?.draws ?? '',
       set?.totals[0] ?? '', set?.totals[1] ?? '',
       win === 0 ? nameOf(m.resolvedA) : win === 1 ? nameOf(m.resolvedB) : (r ? '決着なし' : ''),
@@ -104,13 +109,13 @@ export function matchesCsv(loaded: LoadedTournament): string {
 }
 
 const STANDINGS_HEADER = [
-  '順位', 'プレイヤー', '試合数', '勝', '分', '敗', '勝ち点', '合計ポイント', '同順位',
+  '順位', 'プレイヤー', '所属', '試合数', '勝', '分', '敗', '勝ち点', '合計ポイント', '同順位',
 ];
 
 // BOT対戦予選は勝ち点で順位を付けないので勝ち点列を出さず、代わりに順位を決めた内訳を出す
 // (「合計 → 一撃 → アイテム」の順に見れば、同点がどこで割れたのかが読める)
 const BOT_STANDINGS_HEADER = [
-  '順位', 'プレイヤー', '結果', '合計ポイント', '一撃ボーナス', 'アイテムポイント', '総取りボーナス', '同順位',
+  '順位', 'プレイヤー', '所属', '結果', '合計ポイント', '一撃ボーナス', 'アイテムポイント', '総取りボーナス', '同順位',
 ];
 
 /**
@@ -122,15 +127,17 @@ const BOT_STANDINGS_HEADER = [
 export function standingsCsv(loaded: LoadedTournament): string {
   const ps     = resolveParticipants(loaded);
   const nameOf = (id: string) => ps.find(p => p.id === id)?.name ?? id;
+  const affOf  = (id: string) => ps.find(p => p.id === id)?.affiliation ?? '';
   const bot    = hasBotStage(loaded.def.stage.format);
 
   const row = (s: StandingRow): unknown[] => (bot
     ? [
-        s.rank, nameOf(s.participantId), resultMark(s),
+        s.rank, nameOf(s.participantId), affOf(s.participantId), resultMark(s),
         s.totalPoints, s.strikePoints, s.itemPoints, s.sweepPoints, s.tied ? 'はい' : '',
       ]
     : [
-        s.rank, nameOf(s.participantId), s.played, s.wins, s.draws, s.losses,
+        s.rank, nameOf(s.participantId), affOf(s.participantId),
+        s.played, s.wins, s.draws, s.losses,
         s.points, s.totalPoints, s.tied ? 'はい' : '',
       ]);
 

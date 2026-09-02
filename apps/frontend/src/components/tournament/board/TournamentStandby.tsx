@@ -3,7 +3,7 @@ import { hasQualifying } from '@u15/ws-types';
 import { BracketView } from './BracketView';
 import { QualifyingView, qualifyingLabel, type QualifyingPhase } from './QualifyingView';
 import { LeagueTable } from './LeagueTable';
-import { lastConfirmedMatch, winnerNameOf } from '../../../lib/tournamentResult';
+import { lastConfirmedMatch, winnerOf } from '../../../lib/tournamentResult';
 import {
   BG_ROOT, RADIUS_MD, SHADOW_SM,
   TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE, WIN_LIGHT, WIN_PALE,
@@ -29,7 +29,7 @@ export function TournamentStandby({
   state, displayTitle, groupPhase, holdingGroupResult = false,
 }: TournamentStandbyProps) {
   const finished = lastConfirmedMatch(state);
-  const winner   = finished ? winnerNameOf(state, finished) : null;
+  const winner   = finished ? winnerOf(state, finished) : null;
 
   return (
     <div style={s.root}>
@@ -45,7 +45,11 @@ export function TournamentStandby({
           <div style={s.result}>
             {/* <span style={s.resultTag}>試合終了</span> */}
             <span style={s.resultLabel}>{finished.label}</span>
-            <span style={s.resultName}>{winner ? `${winner} の勝ち` : '決着なし'}</span>
+            {/* 所属は勝者名の上に小さく。「〜の勝ち」の一文は名前だけで組む */}
+            <span style={s.resultWinner}>
+              {winner?.affiliation && <span style={s.resultAff}>{winner.affiliation}</span>}
+              <span style={s.resultName}>{winner ? `${winner.name} の勝ち` : '決着なし'}</span>
+            </span>
           </div>
         ) : (
           <div style={s.sub}>まもなく開始します</div>
@@ -103,6 +107,8 @@ const s: Record<string, React.CSSProperties> = {
     color: '#fff', background: WIN_BASE, borderRadius: 99, padding: '3px 12px',
   },
   resultLabel: { fontSize: 14, color: TEXT_SECONDARY },
+  resultWinner: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start' },
+  resultAff:   { fontSize: 12, fontWeight: 600, color: TEXT_SECONDARY },
   resultName:  { fontSize: 22, fontWeight: 800, color: TEXT_PRIMARY },
 
   // 残りの高さを全部渡す。中で fit が図を最大化する

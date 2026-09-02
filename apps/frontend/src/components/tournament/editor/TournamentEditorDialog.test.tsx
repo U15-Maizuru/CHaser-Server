@@ -113,6 +113,40 @@ describe('TournamentEditorDialog — 新規作成', () => {
     expect(screen.getByTestId('editor-validation')).toHaveTextContent('重複しています');
   });
 
+  // 所属は名前と扱いが違う: 空でよく、重複してもよい
+  it('所属は空でも重複していても保存できる', async () => {
+    renderNew();
+    fireEvent.change(screen.getByLabelText('大会名'), { target: { value: 'テスト杯' } });
+    addParticipants(['舞鶴A', '舞鶴B', '東舞鶴C']);
+    fireEvent.change(screen.getByLabelText('参加者1 の所属'), { target: { value: '舞鶴中学校' } });
+    fireEvent.change(screen.getByLabelText('参加者2 の所属'), { target: { value: '舞鶴中学校' } });
+    // 3人目は所属を入れない
+    expect(screen.queryByTestId('editor-validation')).toBeNull();
+
+    fireEvent.click(screen.getByText('この内容で作成'));
+    await waitFor(() => expect(calls.some(c => c.url.includes('/import'))).toBe(true));
+
+    const ps = sentDefinition().participants;
+    expect(ps[0]!.affiliation).toBe('舞鶴中学校');
+    expect(ps[1]!.affiliation).toBe('舞鶴中学校');
+    // 未入力は項目ごと書かない (バックエンドの正規化と揃える)
+    expect(ps[2]!.affiliation).toBeUndefined();
+  });
+
+  it('まとめて追加はカンマの後ろを所属として読む', () => {
+    renderNew();
+    fireEvent.click(screen.getByText('まとめて追加'));
+    fireEvent.change(screen.getByLabelText('参加者をまとめて追加'), {
+      target: { value: '舞鶴A,舞鶴中学校\n東舞鶴C' },
+    });
+    fireEvent.click(screen.getByText('この内容で追加'));
+
+    expect(screen.getByLabelText('参加者1 の名前')).toHaveValue('舞鶴A');
+    expect(screen.getByLabelText('参加者1 の所属')).toHaveValue('舞鶴中学校');
+    expect(screen.getByLabelText('参加者2 の名前')).toHaveValue('東舞鶴C');
+    expect(screen.getByLabelText('参加者2 の所属')).toHaveValue('');
+  });
+
   it('既存の大会IDと衝突したら弾く', async () => {
     existing = [{ id: 'cup-a', name: '既存' }];
     renderNew();

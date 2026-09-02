@@ -76,6 +76,23 @@ describe('parseTournamentDefinition', () => {
     expect(def.participants[0]!.id).toBe('team-alpha');
   });
 
+  it('所属は任意。空文字・空白だけなら未入力に倒す', () => {
+    const def = parse({
+      name: 'x',
+      participants: [
+        { id: 'a', name: 'A', affiliation: ' 舞鶴中学校 ' },
+        { id: 'b', name: 'B', affiliation: '   ' },
+        { id: 'c', name: 'C' },
+        // 名前と違い、所属は重複してよい (同じ学校から複数人出るのが普通)
+        { id: 'd', name: 'D', affiliation: '舞鶴中学校' },
+      ],
+    });
+    expect(def.participants[0]!.affiliation).toBe('舞鶴中学校');
+    expect(def.participants[1]!.affiliation).toBeUndefined();
+    expect(def.participants[2]!.affiliation).toBeUndefined();
+    expect(def.participants[3]!.affiliation).toBe('舞鶴中学校');
+  });
+
   it('program: null (未提出) を許す', () => {
     const def = parse({ name: 'x', participants: [{ id: 'a', name: 'A', program: null }] });
     expect(def.participants[0]!.program).toBeNull();

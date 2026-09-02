@@ -6,11 +6,17 @@ import { idxForSide, isConsolationMatch } from '@u15/ws-types';
 // 表彰に要るデータは TournamentStatePayload に全て入っている (matches と standings) ので、
 // バックエンドに順位を計算させず、配信済みの状態だけから導く。
 
-/** 表彰台の1行。同着なら names が複数になる */
+/** 参加者の呼び名。所属は任意 (表・結果では名前の上に添える) */
+export interface ParticipantLabel {
+  name:        string;
+  affiliation: string | null;
+}
+
+/** 表彰台の1行。同着なら entries が複数になる */
 export interface PodiumRow {
   rank:  1 | 2 | 3;
   label: string;
-  names: string[];
+  entries: ParticipantLabel[];
 }
 
 const RANK_LABEL: Record<1 | 2 | 3, string> = {
@@ -66,12 +72,14 @@ export function lastConfirmedMatch(state: TournamentStatePayload | null): Tourna
   }, null);
 }
 
-/** 確定した試合の勝者名。決着なし (両者棄権) なら null */
-export function winnerNameOf(state: TournamentStatePayload, m: TournamentMatch): string | null {
+/** 確定した試合の勝者。決着なし (両者棄権) なら null */
+export function winnerOf(
+  state: TournamentStatePayload, m: TournamentMatch,
+): ParticipantLabel | null {
   const side = m.result?.winnerSide ?? null;
   if (side === null) return null;
   const id = side === 0 ? m.resolvedA : m.resolvedB;
-  return id ? state.participants.find(p => p.id === id)?.name ?? null : null;
+  return id ? labelLookup(state)(id) : null;
 }
 
 /**
@@ -85,39 +93,39 @@ export function podiumOf(state: TournamentStatePayload): PodiumRow[] {
 }
 
 function eliminationPodium(state: TournamentStatePayload): PodiumRow[] {
-  const nameOf = nameLookup(state);
+  const labelOf = labelLookup(state);
   const rows: PodiumRow[] = [];
 
   const final = finalMatchOf(state.matches);
   if (final) {
     const winner = participantOfSide(final, final.result?.winnerSide ?? null);
     const loser  = participantOfSide(final, otherSide(final.result?.winnerSide ?? null));
-    pushRow(rows, 1, nameOf(winner));
-    pushRow(rows, 2, nameOf(loser));
+    pushRow(rows, 1, labelOf(winner));
+    pushRow(rows, 2, labelOf(loser));
   }
 
   // 3位決定戦は決勝と同じ stage に置かれている (isConsolationMatch で見分ける)
   const third = state.matches.find(m => isConsolationMatch(m) && m.stage === (final?.stage ?? -1));
   if (third) {
-    pushRow(rows, 3, nameOf(participantOfSide(third, third.result?.winnerSide ?? null)));
+    pushRow(rows, 3, labelOf(participantOfSide(third, third.result?.winnerSide ?? null)));
   }
 
   return rows;
 }
 
 function leaguePodium(state: TournamentStatePayload): PodiumRow[] {
-  const nameOf   = nameLookup(state);
+  const labelOf   = labelLookup(state);
   const standings = state.standings ?? [];
   const rows: PodiumRow[] = [];
 
   for (const rank of [1, 2, 3] as const) {
     // computeStandings の rank は同着のぶんだけ飛ぶ (1,1,3) ので、
     // 存在しない順位は行ごと落ちる
-    const names = standings
+    const entries = standings
       .filter(s => s.rank === rank)
-      .map(s => nameOf(s.participantId))
-      .filter((n): n is string => n !== null);
-    if (names.length > 0) rows.push({ rank, label: RANK_LABEL[rank], names });
+      .map(s => labelOf(s.participantId))
+      .filter((e): e is ParticipantLabel => e !== null);
+    if (entries.length > 0) rows.push({ rank, label: RANK_LABEL[rank], entries });
   }
 
   return rows;
@@ -140,8 +148,20 @@ function participantOfSide(m: TournamentMatch, side: 0 | 1 | null): string | nul
   return side === 0 ? m.resolvedA : m.resolvedB;
 }
 
+/** 名前だけを引く。**対戦画面はこちらを使う** (所属は出さない) */
 function nameLookup(state: TournamentStatePayload): (id: string | null) => string | null {
   return id => (id ? state.participants.find(p => p.id === id)?.name ?? null : null);
+}
+
+/** 名前 + 所属を引く。表・結果の表示に使う */
+function labelLookup(
+  state: TournamentStatePayload,
+): (id: string | null) => ParticipantLabel | null {
+  return id => {
+    if (!id) return null;
+    const p = state.participants.find(x => x.id === id);
+    return p ? { name: p.name, affiliation: p.affiliation ?? null } : null;
+  };
 }
 
 /**
@@ -170,6 +190,6 @@ export function armedMatchNames(
   return cool !== null && hot !== null ? [cool, hot] : null;
 }
 
-function pushRow(rows: PodiumRow[], rank: 1 | 2 | 3, name: string | null): void {
-  if (name !== null) rows.push({ rank, label: RANK_LABEL[rank], names: [name] });
+function pushRow(rows: PodiumRow[], rank: 1 | 2 | 3, entry: ParticipantLabel | null): void {
+  if (entry !== null) rows.push({ rank, label: RANK_LABEL[rank], entries: [entry] });
 }

@@ -39,7 +39,18 @@ export function TournamentFinale({ state, displayTitle }: TournamentFinaleProps)
             <div key={row.rank} style={{ ...s.row, ...(row.rank === 1 ? s.rowTop : null) }}>
               <span style={row.rank === 1 ? s.medalTop : s.medal}>{medalOf(row.rank)}</span>
               <span style={row.rank === 1 ? s.labelTop : s.label}>{row.label}</span>
-              <span style={row.rank === 1 ? s.nameTop : s.name}>{row.names.join(' ・ ')}</span>
+              {/* 所属は名前の上に小さく。同着 (リーグの同順位) は連名なので、
+                  それぞれに所属を添えて誰の所属なのか取り違えないようにする */}
+              <span style={s.entries}>
+                {row.entries.map(e => (
+                  <span key={e.name} style={s.entry}>
+                    {e.affiliation && (
+                      <span style={row.rank === 1 ? s.affTop : s.aff}>{e.affiliation}</span>
+                    )}
+                    <span style={row.rank === 1 ? s.nameTop : s.name}>{e.name}</span>
+                  </span>
+                ))}
+              </span>
             </div>
           ))}
         </div>
@@ -111,6 +122,13 @@ const s: Record<string, React.CSSProperties> = {
 
   label:    { fontSize: 14, color: TEXT_SECONDARY, minWidth: 72 },
   labelTop: { fontSize: 18, fontWeight: 700, color: GOLD_BASE, minWidth: 72 },
+
+  // 同着は横に並べる (「A ・ B」の代わりに、所属つきの塊を隙間を空けて並べる)
+  entries: { display: 'flex', alignItems: 'flex-end', gap: 24, minWidth: 0 },
+  entry:   { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', minWidth: 0 },
+
+  aff:     { fontSize: 13, fontWeight: 600, color: TEXT_SECONDARY, letterSpacing: '0.04em' },
+  affTop:  { fontSize: 18, fontWeight: 700, color: TEXT_SECONDARY, letterSpacing: '0.04em' },
 
   name:    { fontSize: 24, fontWeight: 700, color: TEXT_PRIMARY },
   nameTop: { fontSize: 44, fontWeight: 800, color: TEXT_PRIMARY, letterSpacing: '0.02em' },

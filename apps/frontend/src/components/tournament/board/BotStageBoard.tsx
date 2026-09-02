@@ -1,6 +1,7 @@
 import type { StandingRow, TournamentMatch, TournamentStatePayload } from '@u15/ws-types';
 import { advancePerGroupOf, armedLaneMatchIds } from '@u15/ws-types';
 import { FitArea } from '../../FitArea';
+import { affiliationOf, ParticipantName } from './ParticipantName';
 import {
   BG_CARD, BG_ROOT, BORDER_COLOR, COOL_PALE, FONT_NUM, FONT_UI, GOLD_BASE, GOLD_LIGHT,
   RADIUS_SM, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE, WIN_LIGHT,
@@ -35,6 +36,9 @@ export function BotStageBoard({
   const entryIds  = group?.participantIds ?? [];
 
   const nameOf = (id: string) => state.participants.find(p => p.id === id)?.name ?? id;
+  const cellName = (id: string) => (
+    <ParticipantName name={nameOf(id)} affiliation={affiliationOf(state.participants, id)} />
+  );
   const botName = state.participants.find(p => p.isBot)?.name ?? '運営BOT';
 
   const qualifying = state.matches.filter(m => m.group !== undefined);
@@ -97,7 +101,7 @@ export function BotStageBoard({
                 title={m?.label}
               >
                 <td style={{ ...tdNum, color: TEXT_MUTED }}>{i + 1}</td>
-                <td style={{ ...td, textAlign: 'left', fontWeight: 600 }}>{nameOf(id)}</td>
+                <td style={{ ...td, textAlign: 'left', fontWeight: 600 }}>{cellName(id)}</td>
                 {/* **確定待ちは「対戦」より先に見る。** レーンは確定するまで armed のままなので、
                     先に isUpcoming を見ると、終わった対戦がいつまでも「▶ 対戦」に見える */}
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>
@@ -156,7 +160,7 @@ export function BotStageBoard({
                   }}
                 >
                   <td style={{ ...cell, fontWeight: 700 }}>{s.rank}{s.tied ? '=' : ''}</td>
-                  <td style={{ ...cell, textAlign: 'left' }}>{nameOf(s.participantId)}</td>
+                  <td style={{ ...cell, textAlign: 'left' }}>{cellName(s.participantId)}</td>
                   <td style={cell}>{resultMark(s)}</td>
                   <td style={{ ...cellNum, fontWeight: 700 }}>{s.totalPoints}</td>
                   <td style={cellNum}>{s.strikePoints}</td>

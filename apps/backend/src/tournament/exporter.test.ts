@@ -112,7 +112,7 @@ describe('エクスポート', () => {
     writeCup({ ...DEF, format: 'league' });
     const csv = standingsCsv(loadTournament(ID)!);
     const lines = csv.replace(/^﻿/, '').trim().split('\r\n');
-    expect(lines[0]).toBe('順位,プレイヤー,試合数,勝,分,敗,勝ち点,合計ポイント,同順位');
+    expect(lines[0]).toBe('順位,プレイヤー,所属,試合数,勝,分,敗,勝ち点,合計ポイント,同順位');
     expect(lines).toHaveLength(3); // ヘッダ + 2人
   });
 

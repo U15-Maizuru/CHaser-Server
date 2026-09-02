@@ -4,14 +4,21 @@ import type {
   TournamentFormat,
   ResolvedParticipant, StandingRow, TournamentMatch, TournamentStatePayload,
 } from '@u15/ws-types';
-import { isTournamentComplete, lastConfirmedMatch, podiumOf, winnerNameOf } from './tournamentResult';
+import { isTournamentComplete, lastConfirmedMatch, podiumOf, winnerOf } from './tournamentResult';
 
 // 表彰台はトーナメントとリーグで導き方が別なので、両方を通す。
 
+// 所属は任意なので、**持つ人と持たない人を混ぜて**おく (A だけが所属を持つ)
+const AFFILIATIONS: Record<string, string | undefined> = { A: '舞鶴中学校' };
+
 const participants: ResolvedParticipant[] = ['A', 'B', 'C', 'D'].map((name, i) => ({
   id: `p${i + 1}`, name, seed: i + 1,
+  ...(AFFILIATIONS[name] ? { affiliation: AFFILIATIONS[name] } : {}),
   programCatalogId: null, builtinCpu: true, programName: '内蔵CPU',
 }));
+
+/** 期待値の組み立て。名前から所属を引く */
+const label = (name: string) => ({ name, affiliation: AFFILIATIONS[name] ?? null });
 
 function done(winnerSide: 0 | 1 | null, confirmedAt = 2): TournamentMatch['result'] {
   return {
@@ -133,32 +140,38 @@ describe('lastConfirmedMatch', () => {
   });
 });
 
-describe('winnerNameOf', () => {
-  it('勝った側の名前を返す', () => {
+describe('winnerOf', () => {
+  it('勝った側の名前と所属を返す', () => {
     const m = match('SF1', 0, 'p1', 'p2', { result: done(1) });
-    expect(winnerNameOf(state('single-elimination', [m]), m)).toBe('B');
+    expect(winnerOf(state('single-elimination', [m]), m)).toEqual(label('B'));
+  });
+
+  it('所属のある参加者なら所属も付く', () => {
+    const m = match('SF1', 0, 'p1', 'p2', { result: done(0) });
+    expect(winnerOf(state('single-elimination', [m]), m))
+      .toEqual({ name: 'A', affiliation: '舞鶴中学校' });
   });
 
   it('決着なし (両者棄権) なら null', () => {
     const m = match('SF1', 0, 'p1', 'p2', { result: done(null) });
-    expect(winnerNameOf(state('single-elimination', [m]), m)).toBeNull();
+    expect(winnerOf(state('single-elimination', [m]), m)).toBeNull();
   });
 });
 
 describe('podiumOf (トーナメント)', () => {
   it('決勝の勝者が優勝・敗者が準優勝', () => {
     expect(podiumOf(state('single-elimination', semisAndFinal))).toEqual([
-      { rank: 1, label: '優勝',   names: ['A'] },
-      { rank: 2, label: '準優勝', names: ['C'] },
+      { rank: 1, label: '優勝',   entries: [label('A')] },
+      { rank: 2, label: '準優勝', entries: [label('C')] },
     ]);
   });
 
   it('3位決定戦があればその勝者が第3位', () => {
     const matches = [...semisAndFinal, thirdPlace(1, 'p2', 'p4', 1)];
     expect(podiumOf(state('single-elimination', matches))).toEqual([
-      { rank: 1, label: '優勝',   names: ['A'] },
-      { rank: 2, label: '準優勝', names: ['C'] },
-      { rank: 3, label: '第3位',  names: ['D'] },
+      { rank: 1, label: '優勝',   entries: [label('A')] },
+      { rank: 2, label: '準優勝', entries: [label('C')] },
+      { rank: 3, label: '第3位',  entries: [label('D')] },
     ]);
   });
 
@@ -171,7 +184,7 @@ describe('podiumOf (トーナメント)', () => {
   it('決勝が不戦勝 (相手が bye) でも優勝だけは出る', () => {
     const matches = [match('FINAL', 0, 'p1', null, { byeB: true, result: done(0) })];
     expect(podiumOf(state('single-elimination', matches))).toEqual([
-      { rank: 1, label: '優勝', names: ['A'] },
+      { rank: 1, label: '優勝', entries: [label('A')] },
     ]);
   });
 });
@@ -180,9 +193,9 @@ describe('podiumOf (リーグ)', () => {
   it('順位表の上位3位を出す', () => {
     const standings = [standing('p2', 1), standing('p1', 2), standing('p3', 3), standing('p4', 4)];
     expect(podiumOf(state('league', [], standings))).toEqual([
-      { rank: 1, label: '優勝',   names: ['B'] },
-      { rank: 2, label: '準優勝', names: ['A'] },
-      { rank: 3, label: '第3位',  names: ['C'] },
+      { rank: 1, label: '優勝',   entries: [label('B')] },
+      { rank: 2, label: '準優勝', entries: [label('A')] },
+      { rank: 3, label: '第3位',  entries: [label('C')] },
     ]);
   });
 
@@ -191,8 +204,8 @@ describe('podiumOf (リーグ)', () => {
       standing('p1', 1, true), standing('p2', 1, true), standing('p3', 3), standing('p4', 4),
     ];
     expect(podiumOf(state('league', [], standings))).toEqual([
-      { rank: 1, label: '優勝',  names: ['A', 'B'] },
-      { rank: 3, label: '第3位', names: ['C'] },
+      { rank: 1, label: '優勝',  entries: [label('A'), label('B')] },
+      { rank: 3, label: '第3位', entries: [label('C')] },
     ]);
   });
 });

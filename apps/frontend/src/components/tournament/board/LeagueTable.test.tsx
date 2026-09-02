@@ -77,6 +77,22 @@ describe('LeagueTable', () => {
     expect(names).toEqual(['C', 'B', 'A']);
   });
 
+  // 所属は名前の上に添える。**縦軸 (行の見出し) と順位表だけ** —
+  // 横軸の見出しは4文字に切り詰めた略称なので、足すと升目が読めなくなる
+  it('所属を持つ参加者は、行の見出しと順位表で所属つきになる', () => {
+    const withAff = participants.map(p =>
+      (p.id === 'p1' ? { ...p, affiliation: '舞鶴中学校' } : p));
+    const standings = [standing('p1', 1), standing('p2', 2), standing('p3', 3)];
+    render(<LeagueTable matches={matches} participants={withAff} standings={standings} />);
+
+    // textContent は所属 → 名前の順に連結される (2行で出ている)
+    expect(crossTableRowNames()).toEqual(['舞鶴中学校A', 'B', 'C']);
+
+    const rows = standingsRows();
+    expect(within(rows[0]!).getAllByRole('cell')[1]!.textContent).toBe('舞鶴中学校A');
+    expect(within(rows[1]!).getAllByRole('cell')[1]!.textContent).toBe('B');
+  });
+
   it('standings が空でも星取表は出る (1試合も終わっていない大会)', () => {
     render(<LeagueTable matches={matches} participants={participants} standings={[]} />);
     expect(crossTableRowNames()).toEqual(['A', 'B', 'C']);

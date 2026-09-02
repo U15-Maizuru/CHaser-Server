@@ -35,6 +35,8 @@ export interface DraftParticipant {
   key:  string;
   id:   string;
   name: string;
+  /** 所属 (任意)。'' は未入力。名前と違って重複してよい */
+  affiliation: string;
   program: ProgramChoice;
   file?: BundledFile;
   /**
@@ -113,9 +115,14 @@ function nextParticipantId(taken: Set<string>): string {
   }
 }
 
-export function newParticipant(taken: Set<string>, name: string): DraftParticipant {
+export function newParticipant(
+  taken: Set<string>, name: string, affiliation = '',
+): DraftParticipant {
   const id = nextParticipantId(taken);
-  return { key: `${id}-${Math.random().toString(36).slice(2, 8)}`, id, name, program: '' };
+  return {
+    key: `${id}-${Math.random().toString(36).slice(2, 8)}`,
+    id, name, affiliation, program: '',
+  };
 }
 
 export function emptyDraft(id = defaultId()): TournamentDraft {
@@ -194,7 +201,9 @@ export function draftFromDefinition(
     },
 
     participants: ordered.map((p): DraftParticipant => {
-      const base: Omit<DraftParticipant, 'program'> = { key: p.id, id: p.id, name: p.name };
+      const base: Omit<DraftParticipant, 'program'> = {
+        key: p.id, id: p.id, name: p.name, affiliation: p.affiliation ?? '',
+      };
       if (p.group !== undefined) base.group = p.group;
       return { ...base, ...toChoice(p.program, assigned.get(p.id)) };
     }),
@@ -233,6 +242,8 @@ export function definitionFromDraft(d: TournamentDraft): TournamentDefinition {
   const participants: ParticipantDef[] = d.participants.map((p, i) => ({
     id:      p.id,
     name:    p.name.trim(),
+    // 未入力なら項目ごと書かない (バックエンドの正規化と揃える)
+    ...(p.affiliation.trim() === '' ? {} : { affiliation: p.affiliation.trim() }),
     seed:    i + 1,
     ...(d.format === 'group-then-bracket' ? { group: groupOf(d, i) } : {}),
     program: toProgram(p.program, p.file),

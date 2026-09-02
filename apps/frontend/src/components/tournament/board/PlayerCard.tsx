@@ -8,22 +8,30 @@ import {
   TEXT_MUTED, TEXT_PRIMARY, WIN_BASE, WIN_PALE,
 } from '../../../ui';
 import { UPCOMING_KEYFRAMES } from './matchStatusStyle';
+import { AFF_LINE_H, affiliationOf, ParticipantName } from './ParticipantName';
 
 // トーナメント表の1枠 (1試合の片側 = 1人) のカード。中央収束レイアウト (BracketView) 専用。
 //
 // 名前と得点だけを持つ — 試合ラベル・状態バッジ・裁定注記は対になる2枚の間に挟む
 // MatchInfoCard の役目 (「対戦」1つに対する情報を、対戦者ごとに重複して出さないため)。
 //
-// 「対戦相手をまとめた1枚」だった旧デザインの MatchCard とは別物 — こちらは山の絵として
-// 見せるための「1人1カード」表現。運営パネルの「今やること」のような、対戦を1枚で
-// 見せたい場面は今まで通り MatchCard を使う (NextActionCard / ProgressTab)。
+// 対戦を1枚にまとめる MatchCard とは別物 — こちらは山の絵として見せるための
+// 「1人1カード」表現。運営パネルの「今やること」のように、対戦を1枚で見せたい場面は
+// MatchCard を使う (NextActionCard / ProgressTab)。
 
 export const PLAYER_CARD_W = 224;
 
 const CARD_PAD_V  = 7;
 const ROW_LINE_H  = 22;
 
-export const PLAYER_CARD_H = CARD_PAD_V * 2 + ROW_LINE_H;
+/**
+ * カードの高さ。**表の中で1種類に決めること** — 所属のある人と無い人で高さが違うと
+ * 対になる2枚の間の対戦カードがずれ、接続線の行き先も食い違う。所属を持つ参加者が
+ * 1人でもいる大会では、全員ぶん所属の行を空ける (`ParticipantName` の reserve)。
+ */
+export function playerCardHeight(withAffiliation: boolean): number {
+  return CARD_PAD_V * 2 + (withAffiliation ? AFF_LINE_H : 0) + ROW_LINE_H;
+}
 
 export interface PlayerCardProps {
   match:        TournamentMatch;
@@ -37,6 +45,8 @@ export interface PlayerCardProps {
   selected?:    boolean;
   /** 「この試合を準備」で確定した、これから行う試合。観客に一目で分かるよう強調する */
   upcoming?:    boolean;
+  /** 所属の行を出すか。**表の全カードで同じ値にすること** (playerCardHeight と揃える) */
+  withAffiliation?: boolean;
   /** たった今「確定」した試合。次の試合が始まるまで、どれが終わったのかを示す */
   justFinished?: boolean;
   onSelect?:    (matchId: string) => void;
@@ -45,7 +55,7 @@ export interface PlayerCardProps {
 
 export function PlayerCard({
   match, side, participants, format, interactive = false, selected = false, upcoming = false,
-  justFinished = false, onSelect, style,
+  withAffiliation = false, justFinished = false, onSelect, style,
 }: PlayerCardProps) {
   const resolvedId = side === 0 ? match.resolvedA : match.resolvedB;
   const isBye      = side === 0 ? match.byeA : match.byeB;
@@ -61,6 +71,9 @@ export function PlayerCard({
     // 運営BOT は参加者ではないので、名前だけだとエントリーの1人に見える
     return p.isBot ? `🤖 ${p.name}` : p.name;
   };
+
+  // 所属は確定した参加者にだけ付く (「Aリーグ 1位」「不戦」には所属が無い)
+  const affiliation = isBye ? null : affiliationOf(participants, resolvedId);
 
   const winner  = match.result?.winnerSide ?? null;
   const won     = winner === side;
@@ -85,7 +98,7 @@ export function PlayerCard({
         // won (勝者強調) だけは justFinished と共存しうるが、cardJustFinished が
         // border/background に触れないよう作ってあるので cardWon の緑と衝突しない
         ...card,
-        height: PLAYER_CARD_H,
+        height: playerCardHeight(withAffiliation),
         ...(side === 0 ? cardCool : cardHot),
         ...(won ? cardWon : null),
         ...(rematch ? cardRematch : null),
@@ -102,9 +115,13 @@ export function PlayerCard({
       title={match.label}
     >
       {upcoming && <style>{UPCOMING_KEYFRAMES}</style>}
-      <span style={{ ...name, ...(won ? nameWon : null), ...(pending ? namePending : null) }}>
-        {nameOf()}
-      </span>
+      <ParticipantName
+        name={nameOf()}
+        affiliation={affiliation}
+        reserve={withAffiliation}
+        style={{ minWidth: 0 }}
+        nameStyle={{ ...name, ...(won ? nameWon : null), ...(pending ? namePending : null) }}
+      />
       <span style={pointsStyle}>{points ?? '—'}</span>
     </div>
   );
@@ -115,7 +132,9 @@ const card: React.CSSProperties = {
   background: BG_CARD, border: `1px solid ${BORDER_COLOR}`,
   borderRadius: RADIUS_SM, boxShadow: SHADOW_SM,
   padding: `${CARD_PAD_V}px 8px`, fontFamily: FONT_UI,
-  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6,
+  // **下ぞろえ。** 所属の行が付くと名前は下の行に来るので、中央ぞろえのままだと
+  // 得点だけが名前より一段上に浮く
+  display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 6,
   borderLeft: '3px solid transparent',
 };
 
@@ -154,7 +173,7 @@ const cardUpcoming: React.CSSProperties = {
 // たった今確定した試合。勝者・敗者の両方のカードに付く (「この対戦が直近に終わった」
 // という試合単位の情報のため)。勝者はすでに cardWon の緑を持っているので、ここで
 // 枠や背景まで緑にすると敗者のカードも「勝った」ように見えてしまう
-// (実際にこの見え方のバグが起きた — 決勝で両者とも勝者色に見えた)。
+// (決勝なら、勝者と敗者の両方が勝者色で並ぶ)。
 // 枠・背景は一切変えず、勝敗と紛れない金色 (upcoming と同系統だが脈動しない静的なリング)
 // だけを足して「この試合が直近に終わった」ことだけを示す
 const cardJustFinished: React.CSSProperties = {

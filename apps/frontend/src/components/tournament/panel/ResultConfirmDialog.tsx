@@ -4,6 +4,7 @@ import {
   BG_CARD, BORDER_COLOR, COOL_COLOR, FONT_NUM, FONT_UI, GOLD_BASE, HOT_COLOR,
   RADIUS_MD, RADIUS_SM, SHADOW_MD, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE,
 } from '../../../ui';
+import { affiliationOf, ParticipantName } from '../board/ParticipantName';
 
 // 試合結果の確定ダイアログ。
 //
@@ -48,12 +49,13 @@ export function ResultConfirmDialog({
 
   const nameOf = (id: string | null) =>
     (id ? participants.find(p => p.id === id)?.name ?? id : '—');
+  const affOf  = (id: string | null) => affiliationOf(participants, id);
 
   const totals = match.result?.set?.totals ?? [0, 0];
   const wins   = match.result?.set?.wins ?? [0, 0];
-  const sides: { side: 0 | 1; name: string }[] = [
-    { side: 0, name: nameOf(match.resolvedA) },
-    { side: 1, name: nameOf(match.resolvedB) },
+  const sides: { side: 0 | 1; name: string; affiliation: string | null }[] = [
+    { side: 0, name: nameOf(match.resolvedA), affiliation: affOf(match.resolvedA) },
+    { side: 1, name: nameOf(match.resolvedB), affiliation: affOf(match.resolvedB) },
   ];
 
   return (
@@ -73,7 +75,12 @@ export function ResultConfirmDialog({
             {sides.map(s => (
               <tr key={s.side}>
                 <td style={{ ...td, fontWeight: match.result?.winnerSide === s.side ? 700 : 400 }}>
-                  {match.result?.winnerSide === s.side && '🏆 '}{s.name}
+                  {/* 所属は名前の上に。審判裁定のボタン (「〜 の勝ち」) は一文なので名前だけ */}
+                  <ParticipantName
+                    name={s.name}
+                    affiliation={s.affiliation}
+                    {...(match.result?.winnerSide === s.side ? { prefix: '🏆 ' } : {})}
+                  />
                 </td>
                 <td style={tdNum}>{wins[s.side]}</td>
                 <td style={tdNum}>{totals[s.side]}</td>

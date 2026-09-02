@@ -93,6 +93,21 @@ describe('TournamentFinale', () => {
     expect(screen.getAllByRole('table')).toHaveLength(2);
   });
 
+  it('所属があれば表彰台の名前の上に出す', () => {
+    const withAff = participants.map(p =>
+      (p.id === 'p1' ? { ...p, affiliation: '舞鶴中学校' } : p));
+    const matches = [match('FINAL', 0, 'p1', 'p2', 0)];
+    render(
+      <TournamentFinale
+        state={{ ...state('single-elimination', matches), participants: withAff }}
+        displayTitle="U15 大会"
+      />);
+
+    expect(screen.getAllByText('舞鶴中学校').length).toBeGreaterThan(0);
+    // 所属を持たない準優勝は名前だけ
+    expect(screen.getByText('準優勝')).toBeInTheDocument();
+  });
+
   it('勝者不在 (両者棄権) なら表彰台は出さず、表だけ見せる', () => {
     const matches = [
       { ...match('FINAL', 0, 'p1', 'p2', 0), result: done(null) },

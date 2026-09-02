@@ -2,7 +2,8 @@ import { useMemo } from 'react';
 import type { ResolvedParticipant, TournamentFormat, TournamentMatch } from '@u15/ws-types';
 import { centeredBracketLayout } from '../../../lib/centeredBracketLayout';
 import { FitArea } from '../../FitArea';
-import { PLAYER_CARD_W, PLAYER_CARD_H, PlayerCard } from './PlayerCard';
+import { PLAYER_CARD_W, playerCardHeight, PlayerCard } from './PlayerCard';
+import { hasAffiliation } from './ParticipantName';
 import { matchInfoHeight, MatchInfoCard } from './MatchInfoCard';
 import { FONT_UI, TEXT_MUTED, TEXT_SECONDARY, WIN_BASE } from '../../../ui';
 
@@ -35,11 +36,14 @@ export function BracketView({
   matches, participants, format, interactive = false, selectedId = null, onSelect,
   upcomingId = null, finishedId = null, scale = 1, fit = false, maxScale = 3,
 }: BracketViewProps) {
+  const withAffiliation = useMemo(() => hasAffiliation(participants), [participants]);
+
   const layout = useMemo(
     () => centeredBracketLayout(matches, {
-      cardW: PLAYER_CARD_W, cardH: PLAYER_CARD_H, matchInfoHeightOf: matchInfoHeight,
+      cardW: PLAYER_CARD_W, cardH: playerCardHeight(withAffiliation),
+      matchInfoHeightOf: matchInfoHeight,
     }),
-    [matches],
+    [matches, withAffiliation],
   );
   const byId = useMemo(() => new Map(matches.map(m => [m.id, m])), [matches]);
 
@@ -108,6 +112,7 @@ export function BracketView({
             interactive={interactive}
             selected={selectedId === n.matchId}
             upcoming={upcomingId === n.matchId}
+            withAffiliation={withAffiliation}
             justFinished={finishedId === n.matchId}
             {...(onSelect ? { onSelect } : {})}
             style={{ position: 'absolute', left: n.x, top: n.y }}

@@ -36,12 +36,24 @@ export function ParticipantEditor({ draft, programs, patch }: ParticipantEditorP
   const addOne = () =>
     update([...participants, newParticipant(new Set(participants.map(p => p.id)), '')]);
 
+  /**
+   * まとめて追加。1行1人で、**カンマ (または読点・タブ) で区切ると2つめが所属**になる。
+   *
+   * 所属を1人ずつ打ち直すのは学校対抗のような大会だと現実的でない — 名簿を貼り付ける
+   * のがそもそも「まとめて追加」の用途なので、そこで所属まで入るようにする。
+   * 区切りが無い行は名前だけとして読む。
+   */
   const addBulk = () => {
-    const names = bulk.split('\n').map(s => s.trim()).filter(s => s !== '');
-    if (names.length === 0) return;
+    const rows = bulk.split('\n')
+      .map(line => {
+        const [name = '', affiliation = ''] = line.split(/[,、\t]/, 2);
+        return { name: name.trim(), affiliation: affiliation.trim() };
+      })
+      .filter(r => r.name !== '');
+    if (rows.length === 0) return;
     const taken = new Set(participants.map(p => p.id));
-    const added = names.map(n => {
-      const p = newParticipant(taken, n);
+    const added = rows.map(r => {
+      const p = newParticipant(taken, r.name, r.affiliation);
       taken.add(p.id);
       return p;
     });
@@ -117,6 +129,9 @@ export function ParticipantEditor({ draft, programs, patch }: ParticipantEditorP
     >
       <Hint>
         上から順が選手番号です。番号の小さい方が第1ゲームで先攻になります。
+        所属 (学校名・チーム名) は<strong>任意</strong>で、同じ所属が何人いても構いません。
+        入力するとトーナメント表や結果でプレイヤー名の上に添えて出ます
+        （対戦画面はプレイヤー名だけです）。
         {format === 'group-then-bracket'
           && ' 予選リーグは選手番号順に蛇行 (A,B,B,A…) で振り分けます。個別に変えられます。'}
       </Hint>
@@ -126,7 +141,7 @@ export function ParticipantEditor({ draft, programs, patch }: ParticipantEditorP
           <textarea
             style={s.textarea} value={bulk}
             aria-label="参加者をまとめて追加"
-            placeholder={'1行に1プレイヤー\n舞鶴A\n舞鶴B'}
+            placeholder={'1行に1プレイヤー（カンマの後ろは所属）\n舞鶴A,舞鶴中学校\n舞鶴B,舞鶴中学校\n東舞鶴C'}
             onChange={e => setBulk(e.target.value)}
           />
           <Button size="sm" onClick={addBulk}>この内容で追加</Button>
@@ -141,6 +156,12 @@ export function ParticipantEditor({ draft, programs, patch }: ParticipantEditorP
           <TextInput
             value={p.name} aria-label={`参加者${i + 1} の名前`} placeholder="プレイヤー名"
             onChange={e => patchAt(i, { name: e.target.value })}
+            style={{ flex: 1, minWidth: 0 }}
+          />
+          {/* 所属は任意。名前が空だと保存できないのに対し、こちらは空のままでよい */}
+          <TextInput
+            value={p.affiliation} aria-label={`参加者${i + 1} の所属`} placeholder="所属（任意）"
+            onChange={e => patchAt(i, { affiliation: e.target.value })}
             style={{ flex: 1, minWidth: 0 }}
           />
           <Select

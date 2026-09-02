@@ -165,6 +165,20 @@ describe('BotStageBoard', () => {
     expect(screen.getByText('＋3試合が確定待ち')).toBeInTheDocument();
   });
 
+  it('所属はエントリーと順位リストの両方で名前の上に出る', () => {
+    const s = state(2);
+    const withAff = s.participants.map(p =>
+      (p.id === 'p1' ? { ...p, affiliation: '舞鶴中学校' } : p));
+    render(<BotStageBoard state={{ ...s, participants: withAff }} />);
+
+    const entry = screen.getByText(/^エントリー/).parentElement!.querySelector('table')!;
+    const rows  = within(entry).getAllByRole('row').slice(1);
+    expect(rows[0]!.children[1]!.textContent).toBe('舞鶴中学校A');
+    expect(rows[1]!.children[1]!.textContent).toBe('B');
+
+    expect(rankedNames()[0]).toBe('舞鶴中学校A');
+  });
+
   it('これから行う試合のエントリー行を「▶ 対戦」にする', () => {
     render(<BotStageBoard state={state(1, { armedMatchId: 'B-M2' })} />);
     const table = screen.getByText(/^エントリー/).parentElement!.querySelector('table')!;

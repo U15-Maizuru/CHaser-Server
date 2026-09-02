@@ -1,5 +1,6 @@
 import type { ResolvedParticipant, StandingRow, TournamentMatch } from '@u15/ws-types';
 import { FitArea } from '../../FitArea';
+import { affiliationOf, ParticipantName } from './ParticipantName';
 import {
   BG_CARD, BG_ROOT, BORDER_COLOR, COOL_PALE, FONT_NUM, FONT_UI, GOLD_BASE, GOLD_LIGHT,
   HOT_COLOR, RADIUS_SM, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE, WIN_LIGHT,
@@ -40,7 +41,7 @@ export interface LeagueTableProps {
   gridCells?:   boolean;
   /**
    * 決勝トーナメントへ上がる人数 (予選リーグのみ)。順位表の上位この人数までを金色にし、
-   * 直下に通過ラインを引く。0 / 省略時は「1位だけ金色」の従来どおり (単独リーグの優勝者)。
+   * 直下に通過ラインを引く。0 / 省略時は1位だけを金色にする (単独リーグの優勝者)。
    */
   advanceCount?: number;
   /**
@@ -68,6 +69,11 @@ export function LeagueTable({
   upcomingMatchId = null, finishedMatchId = null, fit = false, maxScale = 3,
 }: LeagueTableProps) {
   const nameOf = (id: string) => participants.find(p => p.id === id)?.name ?? id;
+  // 所属は縦軸 (行の見出し) と順位表にだけ添える。**横軸の見出しには出さない** —
+  // あちらは4文字に切り詰めた略称の列で、所属を足すと星取表の升目が読めなくなる
+  const cellName = (id: string) => (
+    <ParticipantName name={nameOf(id)} affiliation={affiliationOf(participants, id)} />
+  );
   // エントリー順 (participants は seed 順で配信される)。順位で並べ替えない
   const order  = participants.map(p => p.id);
 
@@ -122,7 +128,7 @@ export function LeagueTable({
                   ...td, textAlign: 'left', fontWeight: 600,
                   ...(isUpcomingTeam(a) ? headUpcoming : null),
                 }}>
-                  {nameOf(a)}
+                  {cellName(a)}
                 </td>
                 {order.map(b => {
                   if (a === b) return <td key={b} style={{ ...td, background: BG_ROOT }} />;
@@ -201,7 +207,7 @@ export function LeagueTable({
                   <td style={{ ...cell, fontWeight: 700 }}>
                     {s.rank}{s.tied ? '=' : ''}
                   </td>
-                  <td style={{ ...cell, textAlign: 'left' }}>{nameOf(s.participantId)}</td>
+                  <td style={{ ...cell, textAlign: 'left' }}>{cellName(s.participantId)}</td>
                   <td style={cellNum}>{s.played}</td>
                   <td style={cellNum}>{s.wins}</td>
                   <td style={cellNum}>{s.draws}</td>

@@ -235,8 +235,20 @@ function parseParticipants(v: unknown): ParticipantDef[] {
       group = o['group'];
     }
 
+    // 所属は任意。**空文字・空白だけは「未入力」に正規化する** (asString を通さないのは、
+    // あちらが空文字を弾くため — 名前と違って所属は空でよい)
+    let affiliation: string | undefined;
+    const rawAff = o['affiliation'];
+    if (rawAff !== undefined && rawAff !== null) {
+      if (typeof rawAff !== 'string') {
+        throw new DefinitionError(`participants[${i}].affiliation は文字列である必要があります`);
+      }
+      if (rawAff.trim() !== '') affiliation = rawAff.trim();
+    }
+
     const program = parseProgram(o['program'], `participants[${i}].program`);
     const base: ParticipantDef = { id, name, program };
+    if (affiliation !== undefined) base.affiliation = affiliation;
     if (seed  !== undefined) base.seed  = seed;
     if (group !== undefined) base.group = group;
     return base;

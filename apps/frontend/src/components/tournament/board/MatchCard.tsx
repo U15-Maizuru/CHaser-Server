@@ -8,6 +8,7 @@ import {
   TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE, WIN_LIGHT, WIN_PALE,
 } from '../../../ui';
 import { MATCH_STATUS_LABEL, MATCH_STATUS_COLOR, UPCOMING_KEYFRAMES } from './matchStatusStyle';
+import { AFF_LINE_H, affiliationOf, hasAffiliation, ParticipantName } from './ParticipantName';
 
 // 1試合 (公式ルールの「試合」= 2ゲーム) のカード。
 // control / display / 専用ウィンドウの3画面で共用する。操作の有無は interactive で切り替える。
@@ -17,7 +18,7 @@ const CARD_W = 208;
 // カードの高さに関わる寸法。ここが唯一の値の出所で、下の style オブジェクト
 // (card/header/row/note) もこの定数を直に使って描画する。CARD_H/NOTE_H をこれらと
 // 無関係な決め打ち数値にすると、行の高さを変えたときに直し忘れて、固定高さ+overflow:hidden で
-// 下端が見切れる事故になる (実際に一度なった — "E2E-B" の行が欠けて見えた不具合)
+// 下端が見切れる
 const CARD_PAD_V  = 6;  // card の padding 上下 (それぞれ)
 const CARD_GAP    = 3;  // flex 子要素どうしの隙間
 const HEADER_H    = 16; // 見出し行 (ラベル + バッジ)。バッジの種類で内容の高さが変わっても
@@ -33,9 +34,14 @@ const CARD_H = CARD_PAD_V * 2 + HEADER_H + CARD_GAP + ROW_H + CARD_GAP + ROW_H;
 // 高さの計算式ごと1箇所にまとめておき、実際の描画 (下の card.height) もこれで決め打ちする
 const NOTE_H = CARD_GAP + NOTE_LINE_H;
 
+// 所属を出す大会では、対戦者の行が2行になる (2人ぶん)
+const AFF_H = AFF_LINE_H * 2;
+
 /** そのカードが実際に必要とする高さ。overflow:hidden の下端が見切れないよう描画に使う */
-function matchCardHeight(match: TournamentMatch): number {
-  return match.result?.decidedBy === 'manual' ? CARD_H + NOTE_H : CARD_H;
+function matchCardHeight(match: TournamentMatch, withAffiliation: boolean): number {
+  return CARD_H
+    + (withAffiliation ? AFF_H : 0)
+    + (match.result?.decidedBy === 'manual' ? NOTE_H : 0);
 }
 
 export interface MatchCardProps {
@@ -69,11 +75,22 @@ export function MatchCard({
     return p.isBot ? `🤖 ${p.name}` : p.name;
   };
 
+  // 所属は確定した参加者にだけ付く (「Aリーグ 1位」「不戦」には無い)
+  const affOf = (id: string | null, isBye: boolean): string | null =>
+    (isBye ? null : affiliationOf(participants, id));
+
+  // 一覧に並ぶカードの高さがばらつくと、どこまでが1試合なのか読み取りにくくなる
+  const withAffiliation = hasAffiliation(participants);
+
   const winner = match.result?.winnerSide ?? null;
-  const rows: { side: 0 | 1; name: string; points: number | null; won: boolean; pending: boolean }[] = [
+  const rows: {
+    side: 0 | 1; name: string; affiliation: string | null;
+    points: number | null; won: boolean; pending: boolean;
+  }[] = [
     {
       side: 0,
       name: nameOf(match.resolvedA, match.byeA, match.slotA),
+      affiliation: affOf(match.resolvedA, match.byeA),
       points: match.result?.set?.totals[0] ?? null,
       won: winner === 0,
       pending: !match.resolvedA && !match.byeA,
@@ -81,6 +98,7 @@ export function MatchCard({
     {
       side: 1,
       name: nameOf(match.resolvedB, match.byeB, match.slotB),
+      affiliation: affOf(match.resolvedB, match.byeB),
       points: match.result?.set?.totals[1] ?? null,
       won: winner === 1,
       pending: !match.resolvedB && !match.byeB,
@@ -98,7 +116,7 @@ export function MatchCard({
         // 「次の試合」と「たった今終わった試合」が同時に同じカードに付くことはない
         // (確定した瞬間に準備は外れる) ので、上書き順は問題にならない
         ...card,
-        height: matchCardHeight(match),
+        height: matchCardHeight(match, withAffiliation),
         // rematch は upcoming/justFinished より弱い強調。同点で再試合待ちのまま次の準備に
         // 入る (再試合を armMatch で準備し直す) こともあるので、その間は upcoming を優先する
         ...(rematch ? cardRematch : null),
@@ -127,10 +145,14 @@ export function MatchCard({
 
       {rows.map(r => (
         <div key={r.side} style={{ ...row, ...(r.side === 0 ? rowCool : rowHot) }}>
-          <span style={{ ...name, ...(r.won ? nameWon : null), ...(r.pending ? namePending : null) }}>
-            {r.won && <span style={crown}>🏆</span>}
-            {r.name}
-          </span>
+          <ParticipantName
+            name={r.name}
+            affiliation={r.affiliation}
+            reserve={withAffiliation}
+            style={{ minWidth: 0 }}
+            nameStyle={{ ...name, ...(r.won ? nameWon : null), ...(r.pending ? namePending : null) }}
+            {...(r.won ? { prefix: <span style={crown}>🏆</span> } : {})}
+          />
           <span style={points}>{r.points ?? '—'}</span>
         </div>
       ))}
@@ -145,7 +167,7 @@ export function MatchCard({
 // height は matchCardHeight() で決め打ちする (minHeight ではなく固定)。
 // **この固定が意味を持つのは、中身の各行 (header/row/note) の高さがブラウザ既定の行高に
 // 頼らず lineHeight で決め打ちされているときだけ。** どちらかだけ直すと、指定した高さより
-// 実際の中身が高くなって下端が見切れる (これで一度事故った — "E2E-B" の行が欠けて見えた不具合)
+// 実際の中身が高くなり、固定した高さから下端がはみ出して見切れる
 const card: React.CSSProperties = {
   width: CARD_W, boxSizing: 'border-box', overflow: 'hidden',
   background: BG_CARD, border: `1px solid ${BORDER_COLOR}`,
@@ -213,8 +235,9 @@ const badge: React.CSSProperties = {
   fontSize: 9, lineHeight: '14px', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0,
 };
 
+// 得点は名前の行に合わせて下ぞろえにする (所属の行が付くと名前が下の行へ来るため)
 const row: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+  display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
   gap: 6, padding: `${ROW_PAD_V}px 6px`, borderRadius: 6,
 };
 

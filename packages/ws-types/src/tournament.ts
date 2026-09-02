@@ -197,6 +197,12 @@ export type ParticipantProgram =
 export interface ParticipantDef {
   id:      string;
   name:    string;
+  /**
+   * 所属 (学校名・チーム名など)。**任意** — 名前と違って空でよく、重複してもよい
+   * (同じ学校から複数人が出るのが普通)。表・結果では名前の上に小さく添えるだけで、
+   * 誰かを指し示す識別子としては使わない。空文字は省略と同じに正規化する
+   */
+  affiliation?: string;
   /** 組み合わせ表の選手番号。小さいほど第1ゲームで先攻になる。省略時は記載順 */
   seed?:   number;
   /** group-then-bracket のみ: 所属する予選リーグ (0始まり)。省略時は autoGroupAssign で振り分ける */
@@ -505,7 +511,7 @@ export function isConsolationMatch(m: TournamentMatch): boolean {
  * 試合一覧 (運営パネル)・結果CSV・次の試合の選定 (`nextReadyMatch`) は
  * すべてこれを通すこと。**別々に並べ替えを書くと必ずズレる。**
  *
- * `no` を持たない試合 (予選リーグなど、表を持たない形式) は従来どおり
+ * `no` を持たない試合 (予選リーグなど、表を持たない形式) は
  * 「敗者戦が先 → order の昇順」に落とす。
  */
 export function compareByPlayOrder(a: TournamentMatch, b: TournamentMatch): number {
@@ -522,6 +528,8 @@ export function compareByPlayOrder(a: TournamentMatch, b: TournamentMatch): numb
 export interface ResolvedParticipant {
   id:                string;
   name:              string;
+  /** 所属。未入力なら undefined (`ParticipantDef.affiliation` を参照) */
+  affiliation?:      string;
   seed:              number;
   /** プログラムライブラリのエントリ ID。未提出なら null */
   programCatalogId:  string | null;

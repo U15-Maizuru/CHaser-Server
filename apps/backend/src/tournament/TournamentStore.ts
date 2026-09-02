@@ -725,12 +725,14 @@ function findDefinitionRoot(staging: string): string | null {
 export function resolveParticipants(loaded: LoadedTournament): ResolvedParticipant[] {
   const resolve = (
     id: string, name: string, program: ParticipantProgram, seed: number,
+    affiliation?: string,
   ): ResolvedParticipant => {
     const link  = loaded.state.programs[id];
     const entry = link ? getCatalogEntry(link.catalogId) : undefined;
     const cpu   = program?.kind === 'builtin';
     return {
       id, name, seed,
+      ...(affiliation !== undefined ? { affiliation } : {}),
       programCatalogId: entry?.id ?? null,
       builtinCpu:       cpu,
       programName:      cpu ? '内蔵CPU' : entry?.displayName ?? null,
@@ -738,11 +740,12 @@ export function resolveParticipants(loaded: LoadedTournament): ResolvedParticipa
   };
 
   const ordered = orderBySeed(loaded.def.participants)
-    .map((p, i) => resolve(p.id, p.name, p.program, i + 1));
+    .map((p, i) => resolve(p.id, p.name, p.program, i + 1, p.affiliation));
 
   const botRules = loaded.def.stage.format === 'bot-then-bracket' ? loaded.def.stage.bot : null;
   if (!botRules) return ordered;
 
+  // 運営BOT に所属は無い (エントリーではないので)
   // seed 0 = 選手番号を持たない。BOT は組み合わせ表に載る存在ではない
   const bot = resolve(BOT_PARTICIPANT_ID, botDisplayName(botRules), botRules.program, 0);
   return [...ordered, { ...bot, isBot: true }];
