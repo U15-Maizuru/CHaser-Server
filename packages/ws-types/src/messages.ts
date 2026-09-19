@@ -15,7 +15,9 @@ import type {
   ServerStatusPayload,
   TurnStartPayload,
 } from './protocol.js';
-import type { TournamentDisplayView, TournamentStatePayload } from './tournament.js';
+import type {
+  AutoPlayTieBreak, TournamentDisplayView, TournamentStatePayload,
+} from './tournament.js';
 
 // --- Commands (Frontend → Backend) ---
 
@@ -82,10 +84,11 @@ export type FrontendMessage =
   | { type: 'tournament_set_display_view'; payload: { view: TournamentDisplayView } }
   /**
    * 自動進行の切り替え。`loop` は「全試合が終わったら最初からやり直す」(デモモード)、
-   * `announce` は「次の試合を準備する前にアナウンス画面を挟む」。
+   * `announce` は「次の試合を準備する前にアナウンス画面を挟む」、
+   * `tieBreak` は「勝ち上がりの同点で止まる / 抽選で決めて続ける」。
    * 省略した項目は今の設定を保つ (どれか1つだけを押せるようにするため)
    */
-  | { type: 'tournament_set_auto_play';   payload: { enabled: boolean; loop?: boolean; announce?: boolean } }
+  | { type: 'tournament_set_auto_play';   payload: { enabled: boolean; loop?: boolean; announce?: boolean; tieBreak?: AutoPlayTieBreak } }
   /**
    * 同時に走らせる試合の数 (レーン数)。1 なら1試合ずつ順に実行する。
    *

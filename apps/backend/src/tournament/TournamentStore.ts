@@ -804,7 +804,7 @@ export function buildStatePayload(
   loaded: LoadedTournament, boundRoomId: string, armedMatchId: string | null,
   displayView: TournamentDisplayView = 'auto',
   autoPlay: TournamentAutoPlay = {
-    enabled: false, loop: false, announce: false, stoppedReason: null,
+    enabled: false, loop: false, announce: false, tieBreak: 'pause', stoppedReason: null,
   },
   // 並列実行していない大会 (と、レーンを気にしないテスト) のための既定値。
   // 主レーン1本 = bind した部屋そのもの

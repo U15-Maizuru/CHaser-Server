@@ -40,6 +40,8 @@ describe('TournamentOrchestrator', () => {
   let rm: RoomManager;
   let orch: TournamentOrchestrator;
   let sent: { roomId: string; msg: WsMessage }[];
+  /** 自動進行の乱数。テストごとに差し替えて抽選・シャッフルの結果を固定する */
+  let random: () => number;
 
   const lastState = (): TournamentStatePayload | null => {
     for (let i = sent.length - 1; i >= 0; i--) {
@@ -54,6 +56,7 @@ describe('TournamentOrchestrator', () => {
     ensureTournamentDir();
     ensureCatalogDir();
     sent = [];
+    random = Math.random;
     rm   = new RoomManager();
     rm.createRoom(ROOM, PORTS);
     // CPU 同士の対戦を現実的な時間で終わらせる (既定の 500ms/ターン では1ゲーム50秒超)
@@ -66,6 +69,7 @@ describe('TournamentOrchestrator', () => {
       autoPlayDelaysMs: {
         arm: 300, start: 10, nextRound: 10, confirm: 10, qualifiers: 10, restart: 10,
       },
+      random: () => random(),
       lanePortRange: LANE_PORTS,
     });
   });
@@ -779,22 +783,28 @@ describe('TournamentOrchestrator', () => {
       writeCup(soloCup());
       orch.bind(ROOM, CUP);
       expect(lastState()!.autoPlay)
-        .toEqual({ enabled: false, loop: false, announce: false, stoppedReason: null });
+        .toEqual({ enabled: false, loop: false, announce: false, tieBreak: 'pause', stoppedReason: null });
 
       // 切ったまま繰り返しの設定だけ入れられる (パネルのボタンが分かれているため)
       orch.setAutoPlay(ROOM, false, true);
       expect(lastState()!.autoPlay)
-        .toEqual({ enabled: false, loop: true, announce: false, stoppedReason: null });
+        .toEqual({ enabled: false, loop: true, announce: false, tieBreak: 'pause', stoppedReason: null });
 
       // 合間のアナウンスも他の設定を巻き戻さずに入れられる
       orch.setAutoPlay(ROOM, false, undefined, true);
       expect(lastState()!.autoPlay)
-        .toEqual({ enabled: false, loop: true, announce: true, stoppedReason: null });
+        .toEqual({ enabled: false, loop: true, announce: true, tieBreak: 'pause', stoppedReason: null });
+
+      // 同点の扱いも他の設定を巻き戻さずに切り替えられる
+      orch.setAutoPlay(ROOM, false, undefined, undefined, 'random');
+      expect(lastState()!.autoPlay)
+        .toEqual({ enabled: false, loop: true, announce: true, tieBreak: 'random', stoppedReason: null });
 
       // 省略した項目は今の設定を巻き戻さない
       orch.setAutoPlay(ROOM, false);
       expect(lastState()!.autoPlay.loop).toBe(true);
       expect(lastState()!.autoPlay.announce).toBe(true);
+      expect(lastState()!.autoPlay.tieBreak).toBe('random');
     });
 
     it('準備・開始・確定を代行して最後まで進め、終わると自動で切れる', async () => {

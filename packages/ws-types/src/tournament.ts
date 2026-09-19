@@ -588,6 +588,16 @@ export interface StandingRow {
 export type TournamentDisplayView = 'auto' | 'groups' | 'bracket';
 
 /**
+ * 自動進行中に、勝ち上がりの試合が同点で終わったときの扱い。
+ *
+ * - `'pause'`  : 自動進行を止めて運営に返す (再試合か審判裁定かは運営が決める)
+ * - `'random'` : 抽選で勝者を決めて、そのまま進める (無人運営向け)
+ *
+ * 予選リーグの引き分けは正当な結果なので、どちらでも影響しない。
+ */
+export type AutoPlayTieBreak = 'pause' | 'random';
+
+/**
  * オートプレイ (自動進行) の状態。
  *
  * 運営が押していた「この試合を準備」→「ゲームスタート」→「結果を確定」を
@@ -607,6 +617,8 @@ export interface TournamentAutoPlay {
    * 出す文面は手動運営と同じ `AnnouncementState` — 別に持つと運営が2か所を直すことになる。
    */
   announce: boolean;
+  /** 勝ち上がりの同点で止まるか、抽選で決めて続けるか */
+  tieBreak: AutoPlayTieBreak;
   /**
    * 自動進行が止まった理由。動いている間は null。
    *

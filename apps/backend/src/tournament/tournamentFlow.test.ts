@@ -323,7 +323,7 @@ function payload(
     standings: null, groups: null, qualifiers: null, qualifierCandidates: null,
     qualifiersConfirmed: false,
     displayView: 'auto',
-    autoPlay: { enabled: false, loop: false, announce: false, stoppedReason: null },
+    autoPlay: { enabled: false, loop: false, announce: false, tieBreak: 'pause', stoppedReason: null },
     stageMaps: [], thirdPlaceMapId: null, stageLabels: [],
     lanes: [{ roomId: 'room', primary: true, armedMatchId: null }],
     armedMatchId: null,

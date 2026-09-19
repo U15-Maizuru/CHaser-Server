@@ -1,4 +1,5 @@
 import type {
+  AutoPlayTieBreak,
   ServerStatusPayload,
   TournamentAutoPlay,
   TournamentDisplayView,
@@ -51,7 +52,7 @@ const KEEPALIVE_MS = 60_000;
 const MAX_LANES = 4;
 
 const AUTO_PLAY_OFF: TournamentAutoPlay = {
-  enabled: false, loop: false, announce: false, stoppedReason: null,
+  enabled: false, loop: false, announce: false, tieBreak: 'pause', stoppedReason: null,
 };
 
 export interface OrchestratorDeps {
@@ -59,6 +60,8 @@ export interface OrchestratorDeps {
   broadcast: (roomId: string, msg: WsMessage) => void;
   /** 自動進行の待機時間 (テストで縮めるためだけの穴。既定は視認性を優先した秒単位) */
   autoPlayDelaysMs?: Partial<AutoPlayDelaysMs>;
+  /** 自動進行の乱数 (同点の抽選・デモモードの組み合わせシャッフル)。テストで固定するための穴 */
+  random?: () => number;
   /**
    * 並列実行の副レーンへ払い出す TCP ポートの範囲。**渡さないと並列実行できない。**
    *
@@ -85,6 +88,7 @@ export class TournamentOrchestrator {
       rm:      deps.rm,
       publish: roomId => this.publish(roomId),
       delays:  { ...DEFAULT_AUTO_PLAY_DELAYS_MS, ...deps.autoPlayDelaysMs },
+      random:  deps.random ?? Math.random,
       stop:    (b, reason) => this.stopAuto(b, reason),
     };
   }
@@ -427,16 +431,19 @@ export class TournamentOrchestrator {
   /**
    * 自動進行 (オートプレイ) を入れる / 切る。
    *
-   * `loop` / `announce` を省略すると今の設定を保つ — パネルのボタン (自動で進める /
-   * 繰り返す / アナウンスを挟む) が互いの設定を巻き戻さないようにするため。
+   * `loop` / `announce` / `tieBreak` を省略すると今の設定を保つ — パネルのボタン (自動で進める /
+   * 繰り返す / アナウンスを挟む / 同点の扱い) が互いの設定を巻き戻さないようにするため。
    * 入れ直しは停止理由も消す。
    */
-  setAutoPlay(roomId: string, enabled: boolean, loop?: boolean, announce?: boolean): void {
+  setAutoPlay(
+    roomId: string, enabled: boolean, loop?: boolean, announce?: boolean, tieBreak?: AutoPlayTieBreak,
+  ): void {
     const b = this.require(roomId);
     b.autoPlay = {
       enabled,
       loop:     loop     ?? b.autoPlay.loop,
       announce: announce ?? b.autoPlay.announce,
+      tieBreak: tieBreak ?? b.autoPlay.tieBreak,
       stoppedReason: null,
     };
     if (!enabled) clearTimer(b);

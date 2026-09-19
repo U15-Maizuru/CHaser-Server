@@ -58,6 +58,7 @@ function input(over: Partial<AutoPlayInput> = {}): AutoPlayInput {
     status:              status(),
     loop:                false,
     announce:            false,
+    tieBreak:            'pause',
     // 既定は「並列実行していない主レーン1本」= 1試合ずつ順に実行する状態
     otherArmedIds:       [],
     primary:             true,
@@ -133,6 +134,23 @@ describe('nextAutoPlayAction', () => {
     const action = nextAutoPlayAction(input({ matches: ms }));
     expect(action?.kind).toBe('pause');
     expect(action).toMatchObject({ reason: expect.stringContaining('同点') });
+  });
+
+  it('同点の扱いが「抽選」なら、止まらずに抽選で確定する', () => {
+    const ms = [match({ status: 'awaiting_confirm', result: result(null) })];
+    expect(nextAutoPlayAction(input({ matches: ms, tieBreak: 'random' })))
+      .toEqual({ kind: 'confirm-by-lot', matchId: 'SF1' });
+  });
+
+  it('抽選にしていても、勝敗が付いた試合は普通に確定する', () => {
+    const ms = [match({ status: 'awaiting_confirm', result: result(0) })];
+    expect(nextAutoPlayAction(input({ matches: ms, tieBreak: 'random' })))
+      .toEqual({ kind: 'confirm', matchId: 'SF1' });
+  });
+
+  it('抽選の確定にも「結果を見せる間」を置く', () => {
+    expect(delayFor('confirm-by-lot', DEFAULT_AUTO_PLAY_DELAYS_MS))
+      .toBe(DEFAULT_AUTO_PLAY_DELAYS_MS.confirm);
   });
 
   it('リーグの引き分けはそのまま確定する', () => {

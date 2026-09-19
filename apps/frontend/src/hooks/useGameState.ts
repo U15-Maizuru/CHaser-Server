@@ -11,6 +11,7 @@ import type {
   MapParams,
   ProcessConfig,
   ServerStatusPayload,
+  AutoPlayTieBreak,
   TournamentDisplayView,
   TournamentStatePayload,
   TurnStartPayload,
@@ -47,7 +48,9 @@ export interface TournamentCommands {
    * 自動進行の切り替え。`loop` / `announce` を省略するとサーバー側の今の設定を保つ
    * (「自動で進める」「繰り返す」「アナウンスを挟む」を別々のボタンにしても互いを巻き戻さない)
    */
-  setAutoPlay: (enabled: boolean, loop?: boolean, announce?: boolean) => void;
+  setAutoPlay: (
+    enabled: boolean, loop?: boolean, announce?: boolean, tieBreak?: AutoPlayTieBreak,
+  ) => void;
   /**
    * 同時に走らせる試合の数 (レーン数)。1 なら1試合ずつ順に実行する。
    *
@@ -255,8 +258,8 @@ export function useGameState(wsUrl: string, roomId: string): GameStateHook {
         send({ type: 'tournament_confirm_qualifiers', payload: { confirmed } }),
       setDisplayView: (view) =>
         send({ type: 'tournament_set_display_view', payload: { view } }),
-      setAutoPlay: (enabled, loop, announce) =>
-        send({ type: 'tournament_set_auto_play', payload: { enabled, loop, announce } }),
+      setAutoPlay: (enabled, loop, announce, tieBreak) =>
+        send({ type: 'tournament_set_auto_play', payload: { enabled, loop, announce, tieBreak } }),
       setLaneCount: (count) =>
         send({ type: 'tournament_set_lane_count', payload: { count } }),
       armNext:  ()                    => send({ type: 'tournament_arm_next' }),

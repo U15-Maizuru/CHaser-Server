@@ -21,6 +21,8 @@ import {
 
 export interface AutoPlayEnv extends CommandEnv {
   delays: AutoPlayDelaysMs;
+  /** 同点の抽選とデモモードの組み合わせシャッフルに使う乱数 ([0, 1)) */
+  random: () => number;
   /** 自動進行を止める (理由は運営パネルにそのまま出る) */
   stop: (b: Binding, reason: string) => void;
 }
@@ -75,6 +77,7 @@ function plan(b: Binding, lane: Lane): AutoPlayAction | null {
     status:              lane.lastStatus,
     loop:                b.autoPlay.loop,
     announce:            b.autoPlay.announce,
+    tieBreak:            b.autoPlay.tieBreak,
   });
 }
 
@@ -102,6 +105,11 @@ async function run(
       case 'start':              await manager.requestStart(); break;
       case 'next-round':         await manager.requestNextRound(); break;
       case 'confirm':            confirmResult(env, b, action.matchId); break;
+      // 勝者は運営の手動指定と同じ経路 (decidedBy: 'manual') で入れ、理由を note に残す。
+      // 表のカードに note が出るので、観客にも「抽選で決まった」ことが分かる
+      case 'confirm-by-lot':
+        confirmResult(env, b, action.matchId, env.random() < 0.5 ? 0 : 1, '同点のため抽選で決定');
+        break;
       case 'confirm-qualifiers': confirmQualifiers(env, b, true); break;
       case 'restart':            await restart(env, b); break;
       case 'finish':             env.stop(b, '全ての試合が終了しました'); return;

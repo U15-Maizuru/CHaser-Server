@@ -86,7 +86,10 @@ export class TournamentMessageDispatch {
         break;
       case 'tournament_set_auto_play':
         this.tournament(ws, t =>
-          t.setAutoPlay(roomId, msg.payload.enabled, msg.payload.loop, msg.payload.announce));
+          t.setAutoPlay(
+            roomId, msg.payload.enabled, msg.payload.loop, msg.payload.announce,
+            msg.payload.tieBreak,
+          ));
         break;
       case 'tournament_set_lane_count':
         this.tournament(ws, t => t.setLaneCount(roomId, msg.payload.count));

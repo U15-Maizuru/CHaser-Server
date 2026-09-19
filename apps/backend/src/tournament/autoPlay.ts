@@ -1,4 +1,5 @@
 import type {
+  AutoPlayTieBreak,
   ServerStatusPayload,
   TournamentFormat,
   TournamentMatch,
@@ -54,6 +55,11 @@ export type AutoPlayAction =
   | { kind: 'start' }
   | { kind: 'next-round' }
   | { kind: 'confirm';    matchId: string }
+  /**
+   * 勝ち上がりの同点を抽選で決めて確定する。**どちらが勝つかはここでは決めない** —
+   * この関数は純関数のままにしたいので、乱数は実行側 (autoPlayRunner) が引く
+   */
+  | { kind: 'confirm-by-lot'; matchId: string }
   | { kind: 'confirm-qualifiers' }
   | { kind: 'restart' }
   /** 全試合が終わり、繰り返さないので自動進行を終える */
@@ -72,6 +78,8 @@ export interface AutoPlayInput {
   loop:                boolean;
   /** 次の試合を準備する前にアナウンス画面を挟むか (自動進行中は試合ごとに選べないので一律) */
   announce:            boolean;
+  /** 勝ち上がりの同点で止まるか、抽選で決めて続けるか */
+  tieBreak:            AutoPlayTieBreak;
   /**
    * **このレーン以外**が実行中の試合。準備の候補から外し、その結果の確定もそのレーンに任せる。
    * 並列実行していなければ空配列
@@ -92,7 +100,8 @@ export function delayFor(kind: AutoPlayAction['kind'], delays: AutoPlayDelaysMs)
     case 'announce':           return delays.announce;
     case 'start':              return delays.start;
     case 'next-round':         return delays.nextRound;
-    case 'confirm':            return delays.confirm;
+    case 'confirm':
+    case 'confirm-by-lot':     return delays.confirm;
     case 'confirm-qualifiers': return delays.qualifiers;
     case 'restart':            return delays.restart;
     // 進行を止めるだけなので待つ意味が無い
@@ -119,8 +128,10 @@ export function nextAutoPlayAction(i: AutoPlayInput): AutoPlayAction | null {
   ));
   if (awaiting) {
     // 勝ち上がりの同点は公式ルールでは「マップを変更して再試合」か審判裁定。
-    // どちらも運営の判断なので、勝手に決めずに止まる
+    // どちらも運営の判断なので、既定では勝手に決めずに止まる。
+    // 運営が `tieBreak: 'random'` を選んでいるときだけ、抽選で決めて先へ進む
     if (awaiting.result?.winnerSide == null && isKnockoutMatch(i.format, awaiting)) {
+      if (i.tieBreak === 'random') return { kind: 'confirm-by-lot', matchId: awaiting.id };
       return {
         kind:   'pause',
         reason: `「${awaiting.label}」が同点です。再試合するか、勝者を指定してください`,
