@@ -138,6 +138,20 @@ describe('centeredBracketLayout', () => {
     expect(gap).toBeGreaterThan(0);
   });
 
+  it('決勝と3位決定戦の間は、他の列より広い centerGapY だけ空ける', () => {
+    const withThird = [
+      ...FOUR,
+      m('THIRD', 1, 1, '3位決定戦', L('SF1'), L('SF2')),
+    ];
+    const CENTER_GAP_Y = 60;
+    const l = centeredBracketLayout(withThird, { ...OPTS, centerGapY: CENTER_GAP_Y });
+    const final = nodesOf(l, 'FINAL');
+    const third = nodesOf(l, 'THIRD').side0;
+
+    expect(third.y - (final.side1.y + final.side1.h)).toBeGreaterThanOrEqual(CENTER_GAP_Y);
+    expect(CENTER_GAP_Y).toBeGreaterThan(OPTS.gapY);
+  });
+
   it('不戦の試合 (byeA) への/からの線は hidden になる', () => {
     const withBye = FOUR.map(x => x.id === 'SF1' ? { ...x, byeB: true } : x);
     const l = centeredBracketLayout(withBye, OPTS);

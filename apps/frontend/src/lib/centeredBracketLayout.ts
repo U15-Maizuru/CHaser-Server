@@ -81,6 +81,11 @@ export interface CenteredBracketLayoutOptions {
   gapX?: number;
   /** 同じ列のカード間の縦の隙間 */
   gapY?: number;
+  /**
+   * 中央列 (決勝と3位決定戦) のカード間の縦の隙間。1試合が3枚の縦積みなので、gapY のままだと
+   * 決勝と3位決定戦が6枚の連続した塊に見え、別の試合だと読み取れない。
+   */
+  centerGapY?: number;
   padding?: number;
   headerH?: number;
   /**
@@ -96,7 +101,7 @@ export interface CenteredBracketLayoutOptions {
 }
 
 const DEFAULTS = {
-  cardW: 208, cardH: 34, gapX: 56, gapY: 14, padding: 16, headerH: 22, matchInfoH: 24,
+  cardW: 208, cardH: 34, gapX: 56, gapY: 14, centerGapY: 64, padding: 16, headerH: 22, matchInfoH: 24,
 };
 
 interface PairPos { matchId: string; x: number; y: number; w: number; h: number; }
@@ -104,7 +109,7 @@ interface PairPos { matchId: string; x: number; y: number; w: number; h: number;
 export function centeredBracketLayout(
   matches: TournamentMatch[], opts: CenteredBracketLayoutOptions = {},
 ): CenteredBracketLayout {
-  const { cardW, cardH, gapX, gapY, padding, headerH, matchInfoH } = { ...DEFAULTS, ...opts };
+  const { cardW, cardH, gapX, gapY, centerGapY, padding, headerH, matchInfoH } = { ...DEFAULTS, ...opts };
   const infoH = opts.matchInfoHeightOf ?? (() => matchInfoH);
   const pairH = (m: TournamentMatch) => cardH + infoH(m) + cardH;
 
@@ -166,7 +171,7 @@ export function centeredBracketLayout(
 
   // 中央列: 決勝 (+ 3位決定戦)。参照先 (準決勝相当) は左右の山で既に配置済みなので、
   // 「参照している子カード2つの中点」に自然に置ける
-  layoutColumn(centerMatches, finalColX, cardW, top, gapY, pairH, pos);
+  layoutColumn(centerMatches, finalColX, cardW, top, centerGapY, pairH, pos);
   columns.push({ x: finalColX, label: columnLabel([final]) });
 
   const nodes: BracketCardNode[] = [];
