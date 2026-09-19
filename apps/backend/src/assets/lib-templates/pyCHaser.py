@@ -15,14 +15,14 @@
 
 【マスの情報】
     行動関数が返すマップ情報は、以下のいずれかの種類です。
-    「Floor」:なしもない
+    「Floor」:なにもない
     「Enemy」:相手
     「Block」:ブロック
     「Item」 :アイテム
 
 【マップ情報の構造】
-    get_ready() と walk()/put() は、自分を中心とする9マスの情報を
-    以下の順番でリストとして返します。
+    get_ready() と walk()/put() は、自分を中心とする周囲9マスの情報
+    (walk/put は行動後の位置での情報) を以下の順番でリストとして返します。
 
     「UpLeft」  |  「Up」   |「UpRight」
     -----------+-----------+-----------
@@ -47,6 +47,11 @@
                                         [0]        ← 1マス先 (自分のすぐ上)
                                             ●
 
+    look() は、どの方向でも並び順は上の「マップ情報の構造」と同じ向き
+    (左上から右下へ、上が上) です。方向に合わせて回転はしません。
+    例えば look(Down) では [0][1][2] が自分に一番近い行、[6][7][8] が一番遠い行です。
+    search() は、どの方向でも [0] が自分に一番近いマスです。
+
 【重要: look と search の結果の受け取り方】
     get_ready() が返すのは「自分の周囲9マス」で、これは常に同じです。
     look() や search() で調べた結果は、その関数の戻り値として返ってきます。
@@ -60,6 +65,8 @@
 import socket
 import ipaddress
 import os
+import sys
+import time
 
 import random
 
@@ -120,19 +127,24 @@ class Client:
                 self.host = input('IPアドレスを入力してください ⇒ ')
 
         if not self.__ip_judge(self.host):
-            os._exit(1)
+            sys.exit(1)
 
-        self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.connected = False
+        notified = False
         while True:
+            # 接続に失敗したソケットは再利用せず、試行ごとに作り直す
+            self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             try:
                 self.client.connect((self.host, int(self.port)))
             except ConnectionRefusedError:
-                if not self.connected:
-                    self.connected = True
+                self.client.close()
+                if not notified:
+                    notified = True
                     print('サーバーが起動していません')
+                time.sleep(0.5) # 待たずに再試行すると CPU を使い切る
                 continue
             break
+        self.connected = True
 
         print("接続完了")
         print("  名　前:", self.name)
@@ -144,9 +156,14 @@ class Client:
     def __ip_judge(self, host):
         try:
             ipaddress.ip_address(host)
-        except Exception as e:
-            print("IPアドレスの形式に誤りがあります : {0}".format(e))
-            return False
+        except ValueError:
+            # IPアドレスでなければホスト名として解決できるか確認
+            try:
+                socket.gethostbyname(host)
+            except OSError as e:
+                print("ホスト名またはIPアドレスに誤りがあります : {0}".format(e))
+                return False
+            return True
         else:
             return True
 
@@ -154,32 +171,48 @@ class Client:
         try:
             self.client.sendall(send_str.encode("utf-8"))
         except OSError:
-            print("send error:{0}\0".format(send_str))
+            print("send error:{0}".format(send_str.strip()))
+            raise
 
-    def __order(self, order_str, gr_flag=False):
+    # サーバーからの応答を1件受信
+    def __recv_response(self):
+        # 先頭の1回は必ず受信する。空なら接続が切れている
+        data = self.client.recv(4096)
+        if not data:
+            raise OSError("Connection closed.")
+
+        # "1"(マップ情報)は改行までが1件。分割して届いても最後まで待つ
+        if data[0:1] == b"1":
+            while b"\n" not in data:
+                chunk = self.client.recv(4096)
+                if not chunk:
+                    raise OSError("Connection closed.")
+                data += chunk
+
+        return data[0:11].decode("utf-8")
+
+    def __order(self, order_str, gr_flag = False):
         try:
             if gr_flag:
                 responce = self.client.recv(4096)
+                if not responce:
+                    raise OSError("Connection closed.")
 
                 if b"@" in responce:
-                    pass  # Connection completed.
+                    pass # Connection completed.
                 else:
                     print("Connection failed.")
 
             self.__str_send(order_str + "\r\n")
 
-            responce = self.client.recv(4096)[0:11].decode("utf-8")
+            responce = self.__recv_response()
 
             if not gr_flag:
                 self.__str_send("#\r\n")
 
-            if not responce:
-                raise OSError("Connection closed")
-
             if responce[0] == "1":
                 return [int(x) for x in responce[1:10]]
             elif responce[0] == "0":
-                # self.box()
                 raise OSError("Game Set!")
             else:
                 print("responce[0] = {0} : Response error.".format(responce[0]))
@@ -188,6 +221,7 @@ class Client:
         except OSError as e:
             print(e)
             self.client.close()
+            sys.stdout.flush() # os._exit はバッファを書き出さないため
             os._exit(0)
 
     def get_ready(self):
@@ -326,14 +360,14 @@ class Client:
         return forwardRight[direction]
 
     # 指定方向の左前方向
-    def fowardLeft(self, direction):
-        fowardLeft = {
+    def forwardLeft(self, direction):
+        forwardLeft = {
             Up    : UpLeft,
             Down  : DownRight,
             Right : UpRight,
             Left  : DownLeft
         }
-        return fowardLeft[direction]
+        return forwardLeft[direction]
 
     # 指定方向の右後方向
     def backRight(self, direction):
@@ -345,7 +379,7 @@ class Client:
         }
         return backRight[direction]
 
-    # 指定方向の左前方向
+    # 指定方向の左後方向
     def backLeft(self, direction):
         backLeft = {
             Up    : DownLeft,
@@ -370,9 +404,12 @@ class Client:
         if len(legalMove) > 0:
             # 移動可能な中からランダムに選択
             selectedMove = random.choice(legalMove)
-        else:
+        elif direction is not None:
             # 迂回できないときは後退を選択
             selectedMove = self.backward(direction)
+        else:
+            # 進行方向の指定がなく全方向ブロックのときは、どこにも動けないので任意の方向
+            selectedMove = random.choice([Up, Down, Left, Right])
 
         # 選んだ方向に移動
         return self.walk(selectedMove), selectedMove
