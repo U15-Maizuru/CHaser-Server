@@ -6,6 +6,7 @@ import {
 } from './autoPlay.js';
 import { armMatch, confirmResult } from './matchCommands.js';
 import { confirmQualifiers } from './qualifierCommands.js';
+import { shuffledSeedOrder, withSeedOrder } from './seedShuffle.js';
 import {
   buildMatches, mapForStage, qualifiersConfirmedOf, saveState,
 } from './TournamentStore.js';
@@ -131,12 +132,19 @@ async function run(
  * 進行ではなく運営の設定なので残し、結果に紐づくもの (決勝進出者の指名・確定) は捨てる。
  */
 async function restart(env: AutoPlayEnv, b: Binding): Promise<void> {
+  // 組み合わせが手動でなければ、選手番号を振り直して組み合わせを変える。手動なら並びを保つ。
+  // **先に def を差し替えること** — buildMatches も resolveFor も b.loaded.def を読む
+  const reseeded  = shuffledSeedOrder(b.loaded.def, env.random);
+  const seedOrder = reseeded ?? b.loaded.state.seedOrder ?? null;
+  if (reseeded) b.loaded = { ...b.loaded, def: withSeedOrder(b.loaded.def, reseeded) };
+
   const state: TournamentState = {
     tournamentId: b.tournamentId,
     // 運営中の作り直しなので「開始済み」のまま。buildMatches は未開始の graph を返すので、
     // 解き直して bye を不戦勝に戻す (未確定のままだとデモが最後まで進まない)
     startedAt:    Date.now(),
     matches:      resolveFor(b, buildMatches(b.loaded.def)),
+    seedOrder,
     programs:     b.loaded.state.programs,
     decisions:    {
       ...NO_OPERATOR_DECISIONS,

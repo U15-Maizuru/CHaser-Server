@@ -845,6 +845,13 @@ export interface TournamentState {
    */
   startedAt:    number | null;
   matches:      TournamentMatch[];
+  /**
+   * 選手番号の振り直し (participant id の列。先頭が選手番号 1)。null / 省略は定義のまま。
+   *
+   * デモモードの繰り返しで、組み合わせが手動でない大会の組み合わせを毎回変えるためのもの。
+   * **定義 (tournament.json) は書き換えず**、読み込み時に `ParticipantDef.seed` へ重ねる。
+   */
+  seedOrder?:   string[] | null;
   /** participantId → プログラムライブラリのエントリ */
   programs:     Record<string, { catalogId: string; sha256: string } | undefined>;
   decisions:    OperatorDecisions;

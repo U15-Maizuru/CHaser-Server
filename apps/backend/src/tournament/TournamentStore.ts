@@ -28,6 +28,7 @@ import { addCatalogEntry, getCatalogEntry, setDemoEnabled } from '../programCata
 import { buildBracket } from './bracket.js';
 import { buildLeague } from './league.js';
 import { orderBySeed } from './bracket.js';
+import { withSeedOrder } from './seedShuffle.js';
 import { buildBotStage } from './botStage.js';
 import { assignGroups, buildGroupStage } from './groupStage.js';
 import { resolveMatches, type ResolveContext } from './progress.js';
@@ -474,10 +475,13 @@ function readDefinition(id: string): TournamentDefinition {
 export function loadTournament(id: string): LoadedTournament | null {
   if (!isSafeId(id) || !fs.existsSync(defPath(id))) return null;
 
-  const def  = readDefinition(id);
-  const prev = readState(id);
-  const { programs } = syncPrograms(def, prev?.programs ?? {});
+  const rawDef = readDefinition(id);
+  const prev   = readState(id);
+  const { programs } = syncPrograms(rawDef, prev?.programs ?? {});
 
+  // デモモードが振り直した選手番号を重ねる。**返す def は常にこの重ねたもの** —
+  // 組み合わせを読む所 (buildMatches / groupsOf / 参加者の表示順) がどこも同じ並びを見るため
+  let def   = withSeedOrder(rawDef, prev?.seedOrder);
   let state: TournamentState;
   if (prev && stateMatchesDefinition(def, prev)) {
     const decisions = sanitizeDecisions(def, prev.decisions);
@@ -493,6 +497,8 @@ export function loadTournament(id: string): LoadedTournament | null {
       ),
     };
   } else {
+    // 定義と噛み合わない = 作り直し。振り直した並びも捨てて、定義のままの並びから組む
+    def   = rawDef;
     state = {
       tournamentId: id,
       startedAt:    null,
@@ -559,6 +565,9 @@ export function resetTournamentState(id: string): LoadedTournament | null {
     // 進行だけでなく「運営を開始した」も取り消す (bye も未対戦に戻る)
     startedAt:    null,
     matches:      buildMatches(loaded.def),
+    // loaded.def は振り直した並びを重ねた定義なので、並びも持ち越す。
+    // 落とすと次の読み込みで定義から組んだ骨組みと食い違い、進行状態が消える
+    seedOrder:    loaded.state.seedOrder ?? null,
     programs:     loaded.state.programs,
     decisions:    NO_OPERATOR_DECISIONS,
     updatedAt:    Date.now(),

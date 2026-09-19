@@ -866,6 +866,46 @@ describe('TournamentOrchestrator', () => {
       expect(loadTournament(CUP)!.state.matches.every(m => m.status !== 'done')).toBe(true);
     });
 
+    describe('デモモードの組み合わせシャッフル', () => {
+      const seedsOf = () => Object.fromEntries(
+        lastState()!.participants.map(p => [p.id, p.seed]));
+
+      /** 全試合終了 → デモモードで1周やり直させる。乱数を固定して入れ替えを起こす */
+      const runOneRestart = async () => {
+        orch.bind(ROOM, CUP);
+        orch.setWalkover(ROOM, 'FINAL', 0);
+        random = () => 0;     // Fisher-Yates の j が常に 0 → 2人なら必ず入れ替わる
+        orch.setAutoPlay(ROOM, true, true);
+        await waitFor('やり直し', () => matchOf('FINAL').status !== 'done');
+        orch.setAutoPlay(ROOM, false);
+      };
+
+      it('組み合わせが手動でなければ、繰り返すたびに選手番号を振り直す', async () => {
+        writeCup(soloCup());
+        await runOneRestart();
+
+        expect(seedsOf()).toEqual({ p1: 2, p2: 1 });
+        // 進行状態と一緒に state.json へ残り、再読み込みで組み合わせも進行も失われない
+        const reloaded = loadTournament(CUP)!;
+        expect(reloaded.def.participants.map(p => [p.id, p.seed])).toEqual([['p1', 2], ['p2', 1]]);
+        expect(reloaded.state.startedAt).not.toBeNull();
+        // tournament.json (配布物) は書き換えない
+        const onDisk = JSON.parse(
+          fs.readFileSync(path.join(tournamentRootDir(), CUP, 'tournament.json'), 'utf-8'));
+        expect(onDisk.participants.map((p: { seed: number }) => p.seed)).toEqual([1, 2]);
+      }, 60_000);
+
+      it('決勝トーナメントの並びを手で決めていれば、そのまま繰り返す', async () => {
+        writeCup(cupDef({
+          participants: soloCup().participants,
+          bracket: { size: 2, slots: ['p1', 'p2'] },
+        }));
+        await runOneRestart();
+
+        expect(seedsOf()).toEqual({ p1: 1, p2: 2 });
+      }, 60_000);
+    });
+
     it('デモモードでも回戦ごとのマップの差し替えは残る (進行だけ作り直す)', async () => {
       writeCup(soloCup());
       orch.bind(ROOM, CUP);
