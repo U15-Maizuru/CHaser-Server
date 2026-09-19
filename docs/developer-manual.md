@@ -2280,11 +2280,38 @@ Binding                       … 大会1つ (試合グラフ・自動進行の�
 - **失敗したら理由を添えて止める** (`autoPlay.stoppedReason`)。同じ操作を延々と
   再試行すると、運営が気づかないまま止まっているのと変わらない。
 
+#### デモモードの組み合わせシャッフル
+
+`restart` (デモモードの作り直し) は、組み合わせが手動でなければ選手番号 (`ParticipantDef.seed`) を
+振り直す (`seedShuffle.ts`)。番号を振り直すだけで、1回戦の並び・予選リーグの自動振り分け・
+リーグ戦の対戦順がまとめて変わる。
+
+- **「手動」の判定は `isPairingManual`。** `bracket.slots` / `schedule.pairs` / 参加者の `group` の
+  どれかがあれば手動。**大会作成 UI は予選リーグ形式で `group` を必ず明示して書く**
+  (自動振り分けの結果も) ので、UI で作った予選リーグ形式はリーグの振り分けを変えない
+  (選手番号と対戦順だけが変わる)。手書きの tournament.json で `group` を省略すると振り分けも変わる。
+  BOT対戦予選は組み合わせが無いので対象外
+- **振り直した並びは `TournamentState.seedOrder` に持ち、読み込み時に定義へ重ねる**
+  (`loadTournament` が `withSeedOrder` を通す。返す `def` は常に重ねたあと)。
+  tournament.json は書き戻さない。**state だけに持って def へ重ねないと、`stateMatchesDefinition` が
+  再スキャン/再起動のたびに骨組みの食い違いを検知して進行状態を消す**
+- `resetTournamentState` も `seedOrder` を持ち越す。落とすと上と同じ理由で次の読み込みで消える。
+  `seedOrder` が今の参加者の並べ替えになっていなければ無視する (参加者を差し替えた古い state.json)
+- 乱数は `AutoPlayEnv.random` から渡す (同点の抽選と共用)。テストは
+  `OrchestratorDeps.random` で固定する。**`Math.random` をグローバルに差し替えない** —
+  マップ生成など他の乱数の使い手が巻き込まれてテストが固まる
+
 #### 自動では決めないこと
 
-**勝ち上がりの試合が同点になったら止まる。** 公式ルールでは「マップを変更して再試合」か
+**勝ち上がりの試合が同点になったら、既定では止まる。** 公式ルールでは「マップを変更して再試合」か
 審判裁定で、どちらも運営の判断だから (13-4)。判定は形式ではなく試合ごと
 (`isKnockoutMatch`) なので、`group-then-bracket` の予選の引き分けはそのまま確定して進む。
+
+運営が `autoPlay.tieBreak = 'random'` を選んだときだけ、止まらずに抽選で勝者を決める
+(`{ kind: 'confirm-by-lot' }`)。**乱数は `nextAutoPlayAction` の中では引かない** —
+あちらは純関数のままにしたいので、`autoPlayRunner` が `env.random()` で side を決め、
+`confirmResult` に手動指定と同じ経路 (`decidedBy: 'manual'`、`note: '同点のため抽選で決定'`) で渡す。
+結果は `state.json` に入るので、再起動しても勝者は変わらない。
 
 `isKnockoutMatch` は `@u15/ws-types` の `tournamentFlow.ts` にある (オーケストレータと
 `autoPlay.ts` の両方が使うため。`autoPlay.ts` からオーケストレータを参照すると
