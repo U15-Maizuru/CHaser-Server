@@ -3,7 +3,8 @@ import type {
 } from '@u15/ws-types';
 import { groupStageCount, hasBracket, hasQualifying, isConsolationMatch } from '@u15/ws-types';
 import type { TournamentCommands } from '../../../hooks/useGameState';
-import { Button, Callout, ChipRow, Field, Hint, Section, Select } from '../../../ui';
+import { Button, ChipRow, Field, Hint, Section, Select } from '../../../ui';
+import { AutoPlaySection } from './AutoPlaySection';
 
 // 運営中に触る設定。どれも「今やること」からは外れているのでこのタブに退避する。
 
@@ -112,61 +113,7 @@ export function SettingsTab({ state, maps, commands }: SettingsTabProps) {
         <StageMapSection state={state} maps={maps} commands={commands} />
       )}
 
-      <Section title="オートプレイ">
-        <Hint>
-          「この試合を準備」→「ゲームスタート」→「結果を確定」を自動で行い、大会を最後まで進めます。
-          画面が切り替わるたびに数秒ずつ間を置くので、観客が対戦カードと結果を目で追えます。
-          <strong>同点で勝者が決まらないときは止まります</strong> —
-          再試合か審判裁定かは運営が決めるものなので、自動では決めません。
-        </Hint>
-        {/* 自動進行の開始／停止は設定ではなく操作なので、選択チップではなくボタンにする
-            (設定ダイアログ「対戦」タブのデモ開始ボタンと同じ考え方)。
-            **操作と、その振る舞いを決める2つのトグルは行を分ける** — 同じ行に混ぜると
-            押すと走り出すものと、次に走るときの設定でしかないものが見分けられない */}
-        <ChipRow>
-          <Button
-            variant={state.autoPlay.enabled ? 'danger' : 'accent'}
-            size="sm"
-            onClick={() => commands.setAutoPlay(!state.autoPlay.enabled)}
-          >
-            {state.autoPlay.enabled ? '■ 自動進行を止める' : '▶ 自動進行を始める'}
-          </Button>
-        </ChipRow>
-        <ChipRow>
-          <Button
-            variant="choice" size="sm"
-            selected={state.autoPlay.loop}
-            onClick={() => commands.setAutoPlay(state.autoPlay.enabled, !state.autoPlay.loop)}
-          >
-            デモモード（繰り返す）
-          </Button>
-          <Button
-            variant="choice" size="sm"
-            selected={state.autoPlay.announce}
-            onClick={() =>
-              commands.setAutoPlay(state.autoPlay.enabled, undefined, !state.autoPlay.announce)}
-          >
-            試合の間にアナウンスを挟む
-          </Button>
-        </ChipRow>
-        {state.autoPlay.announce && (
-          <Hint>
-            次の試合を準備する前に、<strong>毎回</strong>「合間のアナウンス」の文面を観客席へ出します。
-            自動進行中は試合ごとに選べないので、出すか出さないかだけの設定です
-            (文面が空のときは何も挟みません)。
-          </Hint>
-        )}
-        {state.autoPlay.loop && (
-          <Hint>
-            全試合が終わると表彰画面をしばらく出したあと、
-            <strong>進行状態を消して同じ大会データを最初からやり直します</strong>。
-            無人展示向けの設定なので、本番の運営では切ってください。
-          </Hint>
-        )}
-        {state.autoPlay.stoppedReason && (
-          <Callout tone="warn">自動進行を止めました: {state.autoPlay.stoppedReason}</Callout>
-        )}
-      </Section>
+      <AutoPlaySection state={state} commands={commands} />
     </>
   );
 }
