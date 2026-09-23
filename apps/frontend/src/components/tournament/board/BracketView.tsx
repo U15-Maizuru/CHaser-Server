@@ -4,7 +4,7 @@ import { centeredBracketLayout } from '../../../lib/centeredBracketLayout';
 import { FitArea } from '../../FitArea';
 import { PLAYER_CARD_W, playerCardHeight, PlayerCard } from './PlayerCard';
 import { hasAffiliation } from './ParticipantName';
-import { matchInfoHeight, MatchInfoCard } from './MatchInfoCard';
+import { MATCH_INFO_H, MatchInfoCard } from './MatchInfoCard';
 import { FONT_UI, TEXT_MUTED, TEXT_SECONDARY, WIN_BASE } from '../../../ui';
 
 // トーナメント表。決勝を中央に置き、左山は左→右、右山は右→左で決勝へ収束する。
@@ -22,7 +22,11 @@ export interface BracketViewProps {
   onSelect?:    (matchId: string) => void;
   /** 「この試合を準備」で確定した、これから行う試合 */
   upcomingId?:  string | null;
-  /** たった今「確定」した試合 */
+  /**
+   * たった今「確定」した試合。この試合そのものは通常の試合終了カード (勝敗の色) で
+   * 見せれば足りるので、ここでは使わない。代わりに、この試合の勝者/敗者が新しく
+   * 上がった**次のラウンドの枠**を金色で強調する (`advancedSlotsOf` 参照)。
+   */
   finishedId?:  string | null;
   /** 表示倍率 (プロジェクタ表示で使う)。fit のときは無視される */
   scale?:       number;
@@ -41,11 +45,28 @@ export function BracketView({
   const layout = useMemo(
     () => centeredBracketLayout(matches, {
       cardW: PLAYER_CARD_W, cardH: playerCardHeight(withAffiliation),
-      matchInfoHeightOf: matchInfoHeight,
+      matchInfoH: MATCH_INFO_H,
     }),
     [matches, withAffiliation],
   );
   const byId = useMemo(() => new Map(matches.map(m => [m.id, m])), [matches]);
+
+  // finishedId の試合を winner-of/loser-of で参照している次のラウンドの枠 (試合ID + side)。
+  // 準決勝が終われば決勝の枠だけでなく (3位決定戦があれば) 3位決定戦の枠も同時に上がるので、
+  // 参照している先をすべて集める (1つとは限らない)
+  const advancedSlots = useMemo(() => {
+    const slots = new Set<string>();
+    if (!finishedId) return slots;
+    for (const m of matches) {
+      if (m.slotA.kind === 'winner-of' || m.slotA.kind === 'loser-of') {
+        if (m.slotA.matchId === finishedId) slots.add(`${m.id}:0`);
+      }
+      if (m.slotB.kind === 'winner-of' || m.slotB.kind === 'loser-of') {
+        if (m.slotB.matchId === finishedId) slots.add(`${m.id}:1`);
+      }
+    }
+    return slots;
+  }, [matches, finishedId]);
 
   if (layout.nodes.length === 0) {
     return <div style={empty}>対戦カードがありません</div>;
@@ -91,7 +112,6 @@ export function BracketView({
             interactive={interactive}
             selected={selectedId === n.matchId}
             upcoming={upcomingId === n.matchId}
-            justFinished={finishedId === n.matchId}
             {...(onSelect ? { onSelect } : {})}
             style={{ position: 'absolute', left: n.x, top: n.y, width: n.w }}
           />
@@ -113,7 +133,7 @@ export function BracketView({
             selected={selectedId === n.matchId}
             upcoming={upcomingId === n.matchId}
             withAffiliation={withAffiliation}
-            justFinished={finishedId === n.matchId}
+            justFinished={advancedSlots.has(`${n.matchId}:${n.side}`)}
             {...(onSelect ? { onSelect } : {})}
             style={{ position: 'absolute', left: n.x, top: n.y }}
           />

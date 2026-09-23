@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { TournamentStatePayload } from '@u15/ws-types';
+import type { GroupStanding, TournamentStatePayload } from '@u15/ws-types';
 import { advancePerGroupOf, hasBotStage, hasQualifying } from '@u15/ws-types';
 import { isTournamentComplete } from '../../../lib/tournamentResult';
 import { FitArea } from '../../FitArea';
@@ -80,6 +80,32 @@ function overriddenQualifiers(
   return slots.map(q => q.participantId).filter((id): id is string => id !== null);
 }
 
+/**
+ * 1つのリーグを LeagueTable に渡すための props。単独で大きく見せる場合 (finishedGroup)
+ * と、全リーグを並べたグリッドの1マスとして見せる場合 (groupsGrid) の両方で使う —
+ * 「そのリーグの試合・参加者だけを渡す」「順位表は上位 advancePerGroup 人までを
+ * 強調する」という組み立て方自体は表示のしかたに関係なく同じなため。
+ */
+function groupTableProps(
+  state: TournamentStatePayload, g: GroupStanding,
+  finishedMatchId: string | null, interactive: boolean, onSelect?: (matchId: string) => void,
+) {
+  return {
+    title:            `${g.label}リーグ`,
+    // **そのリーグの試合・参加者だけを渡す。** 全体を渡すと星取表が
+    // 他リーグの参加者まで軸に並べ、決勝トーナメントの同じ顔合わせも拾ってしまう
+    matches:          state.matches.filter(m => m.group === g.group),
+    participants:     state.participants.filter(p => g.participantIds.includes(p.id)),
+    standings:        g.standings,
+    advanceCount:     advancePerGroupOf(state.stage),
+    qualifiedIds:     overriddenQualifiers(state, g.group),
+    upcomingMatchId:  state.armedMatchId,
+    finishedMatchId,
+    interactive,
+    ...(onSelect ? { onSelect } : {}),
+  };
+}
+
 /** 全工程が終わったうえで決勝トーナメント側を見ているか (= 表彰画面を出すべきか) */
 export function shouldShowFinale(state: TournamentStatePayload, phase: QualifyingPhase): boolean {
   return isTournamentComplete(state) && phase === 'bracket';
@@ -116,6 +142,18 @@ export function QualifyingView({
 
   const groups = state.groups ?? [];
 
+  // たった今終わった試合が予選リーグのものなら、そのリーグだけを大きく見せる。
+  // 全リーグを並べた表 (下の groupsGrid) は星取表の下に順位表を積むしかないが、
+  // 1リーグに絞れば LeagueTable の fit (横並び) が使えて、観客にはそちらのほうが
+  // 見やすい。試合が確定していない・確定した試合が決勝側のときは null のまま
+  // (=== 下の groupsGrid にフォールバック)
+  const finishedMatch = finishedMatchId != null
+    ? state.matches.find(m => m.id === finishedMatchId) ?? null
+    : null;
+  const finishedGroup = finishedMatch?.group != null
+    ? groups.find(g => g.group === finishedMatch.group) ?? null
+    : null;
+
   const board = phase === 'bracket' ? (
     <BracketView
       matches={bracketMatches}
@@ -137,6 +175,14 @@ export function QualifyingView({
       {...(onSelect ? { onSelect } : {})}
       finishedMatchId={finishedMatchId}
     />
+  ) : finishedGroup ? (
+    // 試合直後は当該リーグだけを、星取表と順位表を横に並べて出す
+    // (LeagueTable 自身の fit と同じ並び方 — 上の説明を参照)
+    <LeagueTable
+      {...groupTableProps(state, finishedGroup, finishedMatchId, interactive, onSelect)}
+      fit
+      maxScale={maxScale}
+    />
   ) : (
     // リーグ表は個別に fit させず、**まとめて1つの FitArea に入れる**。
     // 表ごとに拡大すると、参加者数の違うリーグが別々の倍率になって不揃いに見える
@@ -151,20 +197,8 @@ export function QualifyingView({
         {groups.map(g => (
           <LeagueTable
             key={g.group}
-            title={`${g.label}リーグ`}
             gridCells
-            // **そのリーグの試合・参加者だけを渡す。** 全体を渡すと星取表が
-            // 他リーグの参加者まで軸に並べ、決勝トーナメントの同じ顔合わせも拾ってしまう
-            matches={state.matches.filter(m => m.group === g.group)}
-            participants={state.participants.filter(p => g.participantIds.includes(p.id))}
-            standings={g.standings}
-            // 順位表は「決勝トーナメントへ上がる順位まで」を強調する
-            advanceCount={advancePerGroupOf(state.stage)}
-            qualifiedIds={overriddenQualifiers(state, g.group)}
-            upcomingMatchId={state.armedMatchId}
-            finishedMatchId={finishedMatchId}
-            interactive={interactive}
-            {...(onSelect ? { onSelect } : {})}
+            {...groupTableProps(state, g, finishedMatchId, interactive, onSelect)}
           />
         ))}
       </div>

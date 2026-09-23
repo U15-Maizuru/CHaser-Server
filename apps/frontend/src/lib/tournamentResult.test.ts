@@ -4,7 +4,7 @@ import type {
   TournamentFormat,
   ResolvedParticipant, StandingRow, TournamentMatch, TournamentStatePayload,
 } from '@u15/ws-types';
-import { isTournamentComplete, lastConfirmedMatch, podiumOf, winnerOf } from './tournamentResult';
+import { isTournamentComplete, lastConfirmedMatch, matchSideLabels, podiumOf, winnerOf } from './tournamentResult';
 
 // 表彰台はトーナメントとリーグで導き方が別なので、両方を通す。
 
@@ -156,6 +156,19 @@ describe('winnerOf', () => {
   it('決着なし (両者棄権) なら null', () => {
     const m = match('SF1', 0, 'p1', 'p2', { result: done(null) });
     expect(winnerOf(state('single-elimination', [m]), m)).toBeNull();
+  });
+});
+
+describe('matchSideLabels', () => {
+  it('side 0 / side 1 それぞれの名前と所属を、勝敗に関わらず返す', () => {
+    const m = match('SF1', 0, 'p1', 'p2', { result: done(1) });
+    expect(matchSideLabels(state('single-elimination', [m]), m))
+      .toEqual([{ name: 'A', affiliation: '舞鶴中学校' }, label('B')]);
+  });
+
+  it('不戦などで枠が空なら null', () => {
+    const m = match('R1M1', 0, 'p1', null, { byeB: true, result: done(0) });
+    expect(matchSideLabels(state('single-elimination', [m]), m)).toEqual([label('A'), null]);
   });
 });
 

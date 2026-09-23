@@ -82,6 +82,14 @@ export function winnerOf(
   return id ? labelLookup(state)(id) : null;
 }
 
+/** その試合の side 0 / side 1 の呼び名。「〜の勝ち」だけでなく両者の得点を並べる画面で使う */
+export function matchSideLabels(
+  state: TournamentStatePayload, m: TournamentMatch,
+): [ParticipantLabel | null, ParticipantLabel | null] {
+  const labelOf = labelLookup(state);
+  return [labelOf(m.resolvedA), labelOf(m.resolvedB)];
+}
+
 /**
  * 表彰台。該当者がいない段は行ごと省くので、勝者不在なら空配列になる。
  *

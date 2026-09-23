@@ -3,7 +3,8 @@ import { FitArea } from '../../FitArea';
 import { affiliationOf, ParticipantName } from './ParticipantName';
 import {
   BG_CARD, BG_ROOT, BORDER_COLOR, COOL_PALE, FONT_NUM, FONT_UI, GOLD_BASE, GOLD_LIGHT,
-  HOT_COLOR, RADIUS_SM, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WIN_BASE, WIN_LIGHT,
+  HOT_COLOR, HOT_DARK, HOT_PALE, RADIUS_SM, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
+  WARN_PALE, WARN_TEXT, WIN_BASE, WIN_LIGHT, WIN_PALE,
 } from '../../../ui';
 
 // リーグの星取表 + 順位表。素の DOM (既存方針どおり CSS ファイルは作らない)。
@@ -98,7 +99,7 @@ export function LeagueTable({
     const w = m.result.winnerSide;
     if (w === null) return { text: '△', match: m, tone: 'draw' };
     const aWon = (w === 0) === aIsSideA;
-    return { text: aWon ? '○' : '●', match: m, tone: aWon ? 'win' : 'loss' };
+    return { text: aWon ? '○' : '×', match: m, tone: aWon ? 'win' : 'loss' };
   };
 
   // ── 星取表 (凡例つき) ──
@@ -142,9 +143,9 @@ export function LeagueTable({
                       key={b}
                       style={{
                         ...td,
-                        ...(c.tone === 'win'  ? { color: WIN_BASE, fontWeight: 700 } : null),
-                        ...(c.tone === 'draw' ? { color: TEXT_SECONDARY } : null),
-                        ...(c.tone === 'loss' ? { color: TEXT_MUTED } : null),
+                        ...(c.tone === 'win'  ? cellWin  : null),
+                        ...(c.tone === 'draw' ? cellDraw : null),
+                        ...(c.tone === 'loss' ? cellLoss : null),
                         ...(c.tone === 'rematch' ? cellRematch : null),
                         ...(isFinished ? cellFinished : null),
                         ...(isUpcoming ? cellUpcoming : null),
@@ -163,8 +164,11 @@ export function LeagueTable({
         </table>
       </div>
       <div style={legend}>
-        ○ 勝ち ・ △ 引き分け ・ ● 負け
-        {hasRematchPending ? ' ・ ↻ 再試合待ち' : ''}
+        <span style={{ color: WIN_BASE, fontWeight: 700 }}>○ 勝ち</span>
+        {' ・ '}<span style={{ color: WARN_TEXT, fontWeight: 700 }}>△ 引き分け</span>
+        {' ・ '}<span style={{ color: HOT_DARK, fontWeight: 700 }}>× 負け</span>
+        {' ・ '}未実施
+        {hasRematchPending && <> ・ <span style={{ color: HOT_COLOR, fontWeight: 700 }}>↻ 再試合待ち</span></>}
         {upcoming ? ' ・ ▶ 次の試合' : ''}
       </div>
     </div>
@@ -324,10 +328,23 @@ const cellUpcoming: React.CSSProperties = {
   background: GOLD_BASE, color: '#fff', fontWeight: 700,
 };
 
-// たった今確定した試合。○●△ の文字は残したまま、枠と地色で「ここが終わった」を示す
+// たった今確定した試合。○×△ の文字は残したまま、枠と地色で「ここが終わった」を示す
 const cellFinished: React.CSSProperties = {
   background: WIN_LIGHT, fontWeight: 700,
   outline: `2px solid ${WIN_BASE}`, outlineOffset: -2,
+};
+
+// 星取表のマス。地色をつけて、文字色だけの違いより一目で勝敗が拾えるようにする
+// (以前は文字色だけの違いで、特に負けの薄いグレーが「未実施」と見分けにくかった)
+const cellWin: React.CSSProperties = {
+  background: WIN_PALE, color: WIN_BASE, fontWeight: 700,
+};
+const cellLoss: React.CSSProperties = {
+  background: HOT_PALE, color: HOT_DARK, fontWeight: 700,
+};
+// 引き分けは Callout の warn・同点の断り書きと同じ色で揃える (tokens.ts の WARN_PALE/WARN_TEXT)
+const cellDraw: React.CSSProperties = {
+  background: WARN_PALE, color: WARN_TEXT, fontWeight: 700,
 };
 
 // 同点で再試合待ちの試合。MatchCard の再試合バッジと同じ色で揃える

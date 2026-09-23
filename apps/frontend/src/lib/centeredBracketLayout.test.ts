@@ -211,6 +211,22 @@ describe('centeredBracketLayout', () => {
     expect(edge.kind).toBe('decided');
   });
 
+  // 両ゲーム終了・確定待ち (awaiting_confirm) の間も勝者は決まっている。運営の確定を
+  // 待つと、その間だけ勝ち上がり線が pending (灰色) のままになり、金色になった
+  // PlayerCard (cardJustFinished) と足並みが揃わなくなる
+  it('確定待ち (awaiting_confirm) でも勝者は決まっているので decided になる', () => {
+    const withResult = FOUR.map(x => x.id === 'SF1' ? {
+      ...x, status: 'awaiting_confirm' as const,
+      result: {
+        roundResults: [], set: null, decidedBy: 'wins' as const,
+        winnerSide: 0 as const, capturedAt: 0,
+      },
+    } : x);
+    const l = centeredBracketLayout(withResult, OPTS);
+    const edge = l.edges.find(e => e.from === 'SF1' && e.to === 'FINAL')!;
+    expect(edge.kind).toBe('decided');
+  });
+
   it('3位決定戦への線 (loser-of) は、決着していても decided にせず、敗者側のカードから出す', () => {
     const withThird = [
       ...FOUR.map(x => x.id === 'SF1' ? {
@@ -253,6 +269,26 @@ describe('centeredBracketLayout', () => {
     expect(finalInfo.h).toBe(TALL_INFO_H);
     expect(final.side1.y).toBe(final.side0.y + final.side0.h + TALL_INFO_H);
     expect(third.y).toBeGreaterThanOrEqual(final.side1.y + final.side1.h + OPTS.gapY);
+  });
+
+  // 実際に起きた不具合: 決勝と3位決定戦は同じ2つの準決勝を参照するので中点は同じだが、
+  // 3位決定戦が審判裁定 (裁定の注記) で決勝より背が高くなると、「中点 - 高さ/2」の y は
+  // 3位決定戦のほうが小さくなる。以前は list を y で並べ替えて重なりを解消していたため、
+  // この y の逆転がそのまま表示順の逆転になり、3位決定戦が決勝の上に描かれていた
+  it('3位決定戦が決勝より高さのあるカードになっても、決勝が上のまま', () => {
+    const withThird = [
+      ...FOUR,
+      m('THIRD', 1, 1, '3位決定戦', L('SF1'), L('SF2')),
+    ];
+    const TALL_INFO_H = 40;
+    const l = centeredBracketLayout(withThird, {
+      ...OPTS,
+      matchInfoHeightOf: match => match.id === 'THIRD' ? TALL_INFO_H : OPTS.matchInfoH,
+    });
+    const final = nodesOf(l, 'FINAL').side0;
+    const third = nodesOf(l, 'THIRD').side0;
+
+    expect(final.y).toBeLessThan(third.y);
   });
 
   it('8人でも左右3列ずつ + 中央の決勝1列になる', () => {

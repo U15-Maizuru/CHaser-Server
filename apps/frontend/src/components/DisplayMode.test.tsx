@@ -1,7 +1,75 @@
-import { describe, expect, it } from 'vitest';
-import type { TournamentMatch, TournamentStatePayload } from '@u15/ws-types';
+import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, render, screen, within } from '@testing-library/react';
+import { DEFAULT_DISPLAY_PREFS, NO_ANNOUNCEMENT, Reason, Winner } from '@u15/ws-types';
+import type { RoundResult, ServerStatusPayload, TournamentMatch, TournamentStatePayload } from '@u15/ws-types';
 import { stageRulesFor } from '../test/tournamentFixture';
-import { baseDisplayScene } from './DisplayMode';
+import { baseDisplayScene, SetupWaiting } from './DisplayMode';
+
+// 第1ゲームの結果 (2ゲーム制のインターミッション)。点数の並びだけでは観客が2つの数字を
+// 見比べないと勝敗が分からないので、勝った側を色で浮かせ・沈め、一文でも言い切る。
+
+afterEach(() => cleanup());
+
+function round(winner: Winner, scores: [number, number]): RoundResult {
+  return {
+    round: 0, winner, reason: Reason.SCORE, scores, remainingTurns: 10,
+    strikeBonus: [0, 0], sweepBonus: [0, 0], playerNames: ['A', 'B'],
+  };
+}
+
+function status(roundResults: RoundResult[]): ServerStatusPayload {
+  return {
+    phase: 'setup', localIP: '127.0.0.1',
+    clients: [
+      { type: 'cpu', state: 'ready', name: 'A', ip: '', port: 2009 },
+      { type: 'cpu', state: 'ready', name: 'B', ip: '', port: 2010 },
+    ],
+    doubleMode: true, repeatMode: false, demoMode: false,
+    currentRound: 1, roundResults, darkMode: false,
+    mapSource: { kind: 'random' }, displayPrefs: DEFAULT_DISPLAY_PREFS,
+    previewMapId: null, announcement: NO_ANNOUNCEMENT,
+  };
+}
+
+describe('SetupWaiting の第1ゲームリキャップ', () => {
+  it('勝った側の名前・得点を色で浮かせ、負けた側を沈める', () => {
+    const serverStatus = status([round(Winner.COOL, [10, 5])]);
+    render(
+      <SetupWaiting
+        serverStatus={serverStatus} displayTitle="U15 大会" theme="light" soloScoringMode="maizuru"
+      />,
+    );
+
+    expect(screen.getByText('A の勝ち')).toBeInTheDocument();
+    const [nameA, nameB] = within(screen.getByText('100pt').parentElement!)
+      .getAllByText(/^(A|B)$/);
+    expect(nameA!.style.color).not.toBe(nameB!.style.color);
+    expect(screen.getByText('100pt').style.color).not.toBe(screen.getByText('50pt').style.color);
+  });
+
+  it('引き分けは「勝った」わけではないので、緑にはしない', () => {
+    const serverStatus = status([round(Winner.DRAW, [8, 8])]);
+    render(
+      <SetupWaiting
+        serverStatus={serverStatus} displayTitle="U15 大会" theme="light" soloScoringMode="maizuru"
+      />,
+    );
+
+    expect(screen.getByText('引き分け')).toBeInTheDocument();
+    expect(screen.queryByText(/の勝ち/)).toBeNull();
+  });
+
+  it('第1ゲーム中 (インターミッションでない) はリキャップを出さない', () => {
+    const serverStatus = status([]);
+    render(
+      <SetupWaiting
+        serverStatus={serverStatus} displayTitle="U15 大会" theme="light" soloScoringMode="maizuru"
+      />,
+    );
+
+    expect(screen.queryByText('第1ゲームの結果')).toBeNull();
+  });
+});
 
 function match(id: string, extra: Partial<TournamentMatch> = {}): TournamentMatch {
   return {

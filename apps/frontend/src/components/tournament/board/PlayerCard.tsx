@@ -3,7 +3,7 @@ import type {
 } from '@u15/ws-types';
 import { slotPlaceholder } from '@u15/ws-types';
 import {
-  BG_CARD, BORDER_COLOR, COOL_COLOR, COOL_PALE, FONT_NUM, FONT_UI,
+  BG_CARD, BG_ROOT, BORDER_COLOR, COOL_COLOR, COOL_PALE, FONT_NUM, FONT_UI,
   GOLD_BASE, GOLD_LIGHT, HOT_COLOR, HOT_LIGHT, HOT_PALE, RADIUS_SM, SHADOW_SM,
   TEXT_MUTED, TEXT_PRIMARY, WIN_BASE, WIN_PALE,
 } from '../../../ui';
@@ -47,7 +47,11 @@ export interface PlayerCardProps {
   upcoming?:    boolean;
   /** 所属の行を出すか。**表の全カードで同じ値にすること** (playerCardHeight と揃える) */
   withAffiliation?: boolean;
-  /** たった今「確定」した試合。次の試合が始まるまで、どれが終わったのかを示す */
+  /**
+   * この枠に、直前に確定した試合の勝者/敗者がちょうど上がってきたところであることを示す
+   * (BracketView が算出する — このカード自身の試合が確定したかどうかではない)。
+   * 次の試合が準備されるまで、表のどこが更新されたのかを金色で示す。
+   */
   justFinished?: boolean;
   onSelect?:    (matchId: string) => void;
   style?:       React.CSSProperties;
@@ -77,8 +81,14 @@ export function PlayerCard({
 
   const winner  = match.result?.winnerSide ?? null;
   const won     = winner === side;
+  const lost    = winner !== null && !won;
   const pending = !resolvedId && !isBye;
   const points  = match.result?.set?.totals[side] ?? null;
+  // 2ゲーム (試合) の勝敗数は、合計ポイントの数字だけでは伝わらない
+  // (「1勝1敗、ポイントで決着」なのか「2勝0敗」なのかが違う)。1ゲームだけの試合は
+  // 勝った側が必ず1勝0敗になり自明なので、2ゲーム消化したときだけ出す
+  const isTwoGame = (match.result?.roundResults.length ?? 0) > 1;
+  const wins = isTwoGame ? match.result!.set?.wins[side] ?? null : null;
 
   // 不戦の扱い。参加人数の都合で片側/両側が不在の枠が生じるが、実際の対戦ではないので
   // 表に出さない。片側だけ不在でも「誰が勝ち上がったか」は次の回戦のカードが解決済みの
@@ -91,15 +101,14 @@ export function PlayerCard({
   return (
     <div
       style={{
-        // upcoming/justFinished/rematch は同じ試合に同時には付かない (確定した瞬間に
-        // upcoming は外れ、rematchPending は同点の結果を discardResult で捨てたときだけ
-        // 立つが、その時点で result も一緒に消えるので justFinished の元になる
-        // confirmedAt も無くなる) ので、この3つの間で上書き順は問題にならない。
-        // won (勝者強調) だけは justFinished と共存しうるが、cardJustFinished が
-        // border/background に触れないよう作ってあるので cardWon の緑と衝突しない
+        // justFinished はこのカード自身の試合の勝敗とは無関係 (直前に確定した「別の」
+        // 試合の勝者/敗者が、この枠に新しく上がってきたことを示す)。この枠の試合自体は
+        // 一つ前の回戦の結果を待っている途中なので、won/lost は基本的に立たず、
+        // upcoming (この枠がまだ準備されていない) と同じ理由で同時には起きない
         ...card,
         height: playerCardHeight(withAffiliation),
         ...(side === 0 ? cardCool : cardHot),
+        ...(lost ? cardLost : null),
         ...(won ? cardWon : null),
         ...(rematch ? cardRematch : null),
         ...(justFinished ? cardJustFinished : null),
@@ -122,7 +131,14 @@ export function PlayerCard({
         style={{ minWidth: 0 }}
         nameStyle={{ ...name, ...(won ? nameWon : null), ...(pending ? namePending : null) }}
       />
-      <span style={pointsStyle}>{points ?? '—'}</span>
+      {wins !== null ? (
+        <span style={scoreGroup}>
+          <span style={winsNum}>{wins}勝</span>
+          <span style={pointsSub}>{points ?? '—'}pt</span>
+        </span>
+      ) : (
+        <span style={pointsStyle}>{points ?? '—'}</span>
+      )}
     </div>
   );
 }
@@ -155,6 +171,16 @@ const cardWon: React.CSSProperties = {
   background: WIN_PALE,
 };
 
+// 負けた方のカード。COOL/HOT の帯色は「先攻・後攻どちらだったか」の情報でしかなく、
+// 敗退した以上もう追う理由が無いので落とし、表全体の地色 (BG_ROOT) に沈める。
+// 対になる勝者の枠 (cardWon) がくっきり浮くほど、消えたこちらとの対比で「どちらが
+// 勝ち上がったか」が一目で分かる。文字の色・太さはそのまま — 誰に負けたかは
+// 読み取れて当然なので、薄い opacity で名前ごと読みにくくはしない
+const cardLost: React.CSSProperties = {
+  borderLeftColor: 'transparent',
+  background: BG_ROOT,
+};
+
 const cardClickable: React.CSSProperties = { cursor: 'pointer' };
 
 const cardSelected: React.CSSProperties = {
@@ -170,14 +196,14 @@ const cardUpcoming: React.CSSProperties = {
   animation: 'u15-upcoming 1.6s ease-in-out infinite',
 };
 
-// たった今確定した試合。勝者・敗者の両方のカードに付く (「この対戦が直近に終わった」
-// という試合単位の情報のため)。勝者はすでに cardWon の緑を持っているので、ここで
-// 枠や背景まで緑にすると敗者のカードも「勝った」ように見えてしまう
-// (決勝なら、勝者と敗者の両方が勝者色で並ぶ)。
-// 枠・背景は一切変えず、勝敗と紛れない金色 (upcoming と同系統だが脈動しない静的なリング)
-// だけを足して「この試合が直近に終わった」ことだけを示す
+// 直前に確定した試合の勝者/敗者が新しく上がってきた、次のラウンドの枠。
+// 「この試合が終わった」ではなく「この表がここで更新された」ことを示す色なので、
+// これから対戦する試合の cardUpcoming と同じ金色にして見た目の強さ・色味を揃える。
+// 準決勝が終われば、決勝の枠と (3位決定戦があれば) 3位決定戦の枠の**両方**が同時に
+// この扱いになる (BracketView の advancedSlots が両方を拾う)
 const cardJustFinished: React.CSSProperties = {
-  boxShadow: `0 0 0 3px ${GOLD_LIGHT}, ${SHADOW_SM}`,
+  background: GOLD_LIGHT,
+  boxShadow: `0 0 0 3px ${GOLD_BASE}, ${SHADOW_SM}`,
 };
 
 // 同点で再試合待ちの試合。運営の判断が要ることを枠でも伝える (バッジと同じ HOT 色)
@@ -210,4 +236,16 @@ const namePending: React.CSSProperties = { color: TEXT_MUTED, fontStyle: 'italic
 const pointsStyle: React.CSSProperties = {
   fontSize: 15, lineHeight: `${ROW_LINE_H}px`, fontFamily: FONT_NUM, color: TEXT_PRIMARY,
   flexShrink: 0,
+};
+
+// 2ゲーム消化した試合の得点欄。勝敗数を主役にし、合計ポイントは内訳として小さく添える
+const scoreGroup: React.CSSProperties = {
+  display: 'flex', alignItems: 'baseline', gap: 4, flexShrink: 0,
+};
+const winsNum: React.CSSProperties = {
+  fontSize: 15, lineHeight: `${ROW_LINE_H}px`, fontFamily: FONT_NUM, fontWeight: 700,
+  color: TEXT_PRIMARY,
+};
+const pointsSub: React.CSSProperties = {
+  fontSize: 11, lineHeight: `${ROW_LINE_H}px`, fontFamily: FONT_NUM, color: TEXT_MUTED,
 };

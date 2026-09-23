@@ -2,26 +2,20 @@ import type { TournamentMatch } from '@u15/ws-types';
 import {
   BG_ROOT, BORDER_COLOR, COOL_COLOR, FONT_UI,
   GOLD_BASE, HOT_COLOR, RADIUS_SM,
-  TEXT_MUTED, TEXT_SECONDARY, WIN_BASE,
+  TEXT_SECONDARY, WIN_BASE, WIN_PALE,
 } from '../../../ui';
 import { MATCH_STATUS_LABEL, MATCH_STATUS_COLOR } from './matchStatusStyle';
 
 // トーナメント表で、対になる2枚の PlayerCard の間に挟む「対戦」そのものの情報カード。
 // 試合ラベル (「準決勝 第1試合」) と状態バッジ (「試合終了」など) はここにしか出さない
 // — PlayerCard に付けると対戦者ごとに重複して出てしまうため。
+// 勝敗数や裁定理由といった試合結果そのものはここには出さない (結果はトーナメント表の役目ではない)。
 
-const PAD_V       = 5;
-const ROW_H       = 19;
-const NOTE_LINE_H = 13;
-const GAP         = 2;
+const PAD_V = 5;
+const ROW_H = 19;
+const GAP   = 2;
 
 export const MATCH_INFO_H = PAD_V * 2 + ROW_H;
-const NOTE_H = GAP + NOTE_LINE_H;
-
-/** その試合の対戦カードが実際に必要とする高さ。centeredBracketLayout に渡して重なりを防ぐ */
-export function matchInfoHeight(match: TournamentMatch): number {
-  return match.result?.decidedBy === 'manual' ? MATCH_INFO_H + NOTE_H : MATCH_INFO_H;
-}
 
 export interface MatchInfoCardProps {
   match: TournamentMatch;
@@ -48,7 +42,11 @@ export function MatchInfoCard({
     <div
       style={{
         ...card,
-        height: matchInfoHeight(match),
+        height: MATCH_INFO_H,
+        // 試合終了は枠と背景を PlayerCard の cardWon と同じ WIN 色に沈め、間に挟まる
+        // このカードごと「決着済みの1組」として浮くようにする。ラベル・バッジの色だけでは
+        // 縮小表示のときに気づきにくい (PlayerCard.tsx の cardCool/cardHot と同じ理由)
+        ...(match.status === 'done' ? cardDone : null),
         ...(selected ? cardSelected : null),
         ...(clickable ? cardClickable : null),
         ...(hasBye ? cardHidden : null),
@@ -70,10 +68,6 @@ export function MatchInfoCard({
           {rematch ? '再試合待ち' : MATCH_STATUS_LABEL[match.status]}
         </span>
       </div>
-
-      {match.result?.decidedBy === 'manual' && (
-        <div style={note}>裁定{match.result.note ? `: ${match.result.note}` : ''}</div>
-      )}
     </div>
   );
 }
@@ -85,6 +79,13 @@ const card: React.CSSProperties = {
   padding: `${PAD_V}px 8px`, fontFamily: FONT_UI,
   display: 'flex', flexDirection: 'column', gap: GAP,
   justifyContent: 'center',
+};
+
+// PlayerCard の cardWon と同じ WIN 色。border だけ足すと card の 1px 実線と
+// ショートハンドが混ざるので border ごと上書きする
+const cardDone: React.CSSProperties = {
+  border: `1px solid ${WIN_BASE}`,
+  background: WIN_PALE,
 };
 
 const cardClickable: React.CSSProperties = { cursor: 'pointer' };
@@ -115,9 +116,3 @@ const badge: React.CSSProperties = {
 const badgeUpcoming: React.CSSProperties = { color: GOLD_BASE };
 const badgeJustFinished: React.CSSProperties = { color: WIN_BASE };
 const badgeRematch: React.CSSProperties = { color: HOT_COLOR };
-
-// 長い裁定理由は折り返さず省略する — 折り返すとカードの実際の高さが NOTE_H からずれてしまう
-const note: React.CSSProperties = {
-  fontSize: 12, color: TEXT_MUTED, textAlign: 'center', lineHeight: `${NOTE_LINE_H}px`,
-  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-};

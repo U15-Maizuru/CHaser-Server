@@ -85,3 +85,14 @@ export const TEAM_PALETTE = [
 export function teamGradient(color: string, dark: string): string {
   return `linear-gradient(135deg, ${color}, ${dark})`;
 }
+
+/**
+ * 内訳の数字を並べただけでは勝敗が分からないので、勝った側を色で浮かせ、
+ * 負けた側を沈める文字色。勝者が決まっていなければ (引き分け・未決着) どちらも地の色のまま — {}。
+ */
+export function winLoseTextStyle(
+  winnerSide: 0 | 1 | null, side: 0 | 1,
+): { color?: string; fontWeight?: number } {
+  if (winnerSide === null) return {};
+  return winnerSide === side ? { color: WIN_BASE, fontWeight: 800 } : { color: TEXT_MUTED };
+}

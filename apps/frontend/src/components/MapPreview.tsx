@@ -9,9 +9,15 @@ import {
   FONT_NUM,
 } from '../ui';
 
-/** これから戦うマップ。第2ゲーム前は対戦画面と同じ向き (反転) で見せる */
-export function MapPreview({ map, theme, flip, label }: {
-  map: InlineMapData; theme: string; flip: boolean; label: string;
+/**
+ * これから戦うマップ。第2ゲーム前は対戦画面と同じ向き (反転) で見せる。
+ *
+ * `compact` はマップ名・ターン数/アイテム数・盤面反転バッジを省いて盤面だけにする。
+ * 運営席のコントロールパネルで同じ情報を確認できる場面 (SetupWaiting) で、
+ * 縦に余裕が無いときに使う。手動プレビュー (画面いっぱいに使う) では付けたままにする。
+ */
+export function MapPreview({ map, theme, flip, label, compact = false }: {
+  map: InlineMapData; theme: string; flip: boolean; label: string; compact?: boolean;
 }) {
   const tex = useTextures(theme);
   // 15×17 のマップでプレイヤーカードと釣り合う大きさ
@@ -19,7 +25,7 @@ export function MapPreview({ map, theme, flip, label }: {
   const itemCount = map.field.flat().filter(c => c === MapObject.ITEM).length;
   return (
     <div style={mp.card}>
-      <div style={mp.name}>{label}</div>
+      {!compact && <div style={mp.name}>{label}</div>}
       <MapThumbnail
         field={map.field as MapObject[][]}
         size={map.size}
@@ -28,8 +34,8 @@ export function MapPreview({ map, theme, flip, label }: {
         cellSize={cellSize}
         flip={flip}
       />
-      <div style={mp.meta}>ターン {map.turn} ・ アイテム {itemCount}</div>
-      {flip && <div style={mp.flip}>盤面反転</div>}
+      {!compact && <div style={mp.meta}>ターン {map.turn} ・ アイテム {itemCount}</div>}
+      {!compact && flip && <div style={mp.flip}>盤面反転</div>}
     </div>
   );
 }

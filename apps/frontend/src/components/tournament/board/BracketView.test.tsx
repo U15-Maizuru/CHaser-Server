@@ -3,6 +3,8 @@ import { cleanup, render, screen } from '@testing-library/react';
 import type { ResolvedParticipant, TournamentMatch } from '@u15/ws-types';
 import { BracketView } from './BracketView';
 import { playerCardHeight } from './PlayerCard';
+import { GOLD_LIGHT } from '../../../ui';
+import { toRgb } from '../../../test/colorAssertions';
 
 // トーナメント表は「1人1カード」を絶対配置で並べ、対になる2枚の間に対戦カードを挟む。
 // レイアウト (centeredBracketLayout) はカードの高さを**1つの値**として受け取るので、
@@ -66,5 +68,56 @@ describe('BracketView の所属表示', () => {
     const heights = cardHeights(container).filter(h => h >= short);
     expect(new Set(heights)).toEqual(new Set([short]));
     expect(short).toBeLessThan(playerCardHeight(true));
+  });
+});
+
+const isGold = (el: HTMLElement) => el.style.background === toRgb(GOLD_LIGHT);
+
+// finishedId (直前に確定した試合) は、その試合の勝者/敗者が新しく上がった
+// 「次のラウンドの枠」を金色にする。試合そのものではなく、参照している先を金色にする
+describe('BracketView の直近の注目枠 (finishedId)', () => {
+  const semisFinalThird: TournamentMatch[] = [
+    match('SF1', 0, 'p1', 'p2'),
+    match('SF2', 0, 'p3', 'p4'),
+    {
+      ...match('FINAL', 1, 'p1', 'p3'),
+      label: '決勝',
+      slotA: { kind: 'winner-of' as const, matchId: 'SF1' },
+      slotB: { kind: 'winner-of' as const, matchId: 'SF2' },
+    },
+    {
+      ...match('THIRD', 1, 'p2', 'p4'),
+      label: '3位決定戦',
+      order: 1,
+      slotA: { kind: 'loser-of' as const, matchId: 'SF1' },
+      slotB: { kind: 'loser-of' as const, matchId: 'SF2' },
+    },
+  ];
+
+  it('準決勝が終わると、決勝と3位決定戦の当該枠の両方が金色になる', () => {
+    render(<BracketView matches={semisFinalThird} participants={participants} finishedId="SF1" />);
+
+    // FINAL/THIRD ともに side0 (SF1 を参照する側) だけが金色、side1 (SF2 側) は金色でない
+    const [finalSide0, finalSide1] = screen.getAllByTitle('決勝');
+    const [thirdSide0, thirdSide1] = screen.getAllByTitle('3位決定戦');
+    expect(isGold(finalSide0!)).toBe(true);
+    expect(isGold(finalSide1!)).toBe(false);
+    expect(isGold(thirdSide0!)).toBe(true);
+    expect(isGold(thirdSide1!)).toBe(false);
+  });
+
+  it('終わった準決勝自身のカードは金色にならない (通常の試合終了カードの色で足りる)', () => {
+    render(<BracketView matches={semisFinalThird} participants={participants} finishedId="SF1" />);
+
+    const [sf1Side0, sf1Side1] = screen.getAllByTitle('SF1');
+    expect(isGold(sf1Side0!)).toBe(false);
+    expect(isGold(sf1Side1!)).toBe(false);
+  });
+
+  it('finishedId が無ければ、どの枠も金色にならない', () => {
+    render(<BracketView matches={semisFinalThird} participants={participants} />);
+
+    expect(screen.getAllByTitle('決勝').some(isGold)).toBe(false);
+    expect(screen.getAllByTitle('3位決定戦').some(isGold)).toBe(false);
   });
 });

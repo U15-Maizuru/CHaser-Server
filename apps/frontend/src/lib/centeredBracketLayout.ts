@@ -38,7 +38,9 @@ export interface BracketMatchNode {
 /**
  * この線が表す状態。BracketView の描画 (強調 / 通常 / 非表示) の元になる。
  *
- * - 'decided': 子の試合が実際の対戦で決着し、勝者がこの線の先へ進んだ (強調表示の対象)
+ * - 'decided': 子の試合の勝者が決まり、この線の先へ進んだ (強調表示の対象)。運営の確定
+ *   (status: 'done') を待たず、両ゲーム終了・確定待ち (awaiting_confirm) の時点で強調する
+ *   — PlayerCard の cardJustFinished が同じタイミングで金色になるのに合わせている
  * - 'hidden':  子の試合が不戦 (片側 or 両側とも不在) — カードごと表に出さないので線も隠す
  * - 'pending': 子の試合がまだ決着していない (通常表示)
  *
@@ -217,7 +219,11 @@ export function centeredBracketLayout(
       const mid = x1 + (x2 - x1) / 2;
 
       const childBye = childMatch.byeA || childMatch.byeB;
-      const decided = childMatch.status === 'done' && winnerSide != null;
+      // 両ゲーム終了・確定待ち (awaiting_confirm) の間も勝者は決まっているので、
+      // 確定を待たずに勝ち上がり線を強調する (PlayerCard の cardJustFinished と同じ
+      // タイミングで金色のカードと緑の線がそろって見えるようにする)
+      const decided = (childMatch.status === 'done' || childMatch.status === 'awaiting_confirm')
+        && winnerSide != null;
       const kind: BracketEdgeKind =
         childBye ? 'hidden' :
         (decided && ref.kind === 'winner-of') ? 'decided' :
@@ -290,8 +296,15 @@ function layoutColumn(
     pos.set(m.id, { matchId: m.id, x, y, w, h });
   });
 
-  // 同じ列で重なったカード (3位決定戦など) を下へ押し下げる
-  const placed = list.map(m => pos.get(m.id)!).sort((a, b) => a.y - b.y);
+  // 同じ列で重なったカード (決勝 + 3位決定戦など) を下へ押し下げる。
+  // **list の並び順のまま処理すること — 計算した y で並べ替えないこと。**
+  // list は呼び出し側で既に「表示位置 (order)」の昇順になっており (決勝が3位決定戦より
+  // 必ず前)、これが唯一の正しい上下関係。決勝と3位決定戦は同じ2つの準決勝を参照するので
+  // 中点は同じだが、matchInfoHeightOf (裁定の注記で伸びる) で高さが違うと
+  // 「中点 - 高さ/2」の y はどちらが高いかに関係なく逆転しうる — 3位決定戦だけが
+  // 審判裁定で伸びた瞬間、y だけで並べ替えると3位決定戦が決勝より上に来てしまっていた
+  // (実際に4回戦制のCPU戦で再現した不具合)。
+  const placed = list.map(m => pos.get(m.id)!);
   for (let i = 1; i < placed.length; i++) {
     const min = placed[i - 1]!.y + placed[i - 1]!.h + gapY;
     if (placed[i]!.y < min) placed[i]!.y = min;

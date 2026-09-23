@@ -4,7 +4,7 @@ import type {
   SoloScoringMode, TournamentStatePayload,
 } from '@u15/ws-types';
 import {
-  DEFAULT_DISPLAY_PREFS, hasQualifying, idxForSide, NO_ANNOUNCEMENT, SCENE_FADE_MS,
+  DEFAULT_DISPLAY_PREFS, hasQualifying, idxForSide, NO_ANNOUNCEMENT, roundWonBy, SCENE_FADE_MS, Winner,
 } from '@u15/ws-types';
 import { useGameState } from '../hooks/useGameState';
 import { useMuteOverride } from '../hooks/useMuteOverride';
@@ -20,7 +20,6 @@ import { MultiLaneDisplay } from './MultiLaneDisplay';
 import { FitArea } from './FitArea';
 import { MapPreview } from './MapPreview';
 import { AnnouncementScreen } from './AnnouncementScreen';
-import { sourceLabel } from './MapSourceSection';
 import { BracketView } from './tournament/board/BracketView';
 import { QualifyingView, displayQualifyingPhase } from './tournament/board/QualifyingView';
 import type { QualifyingPhase } from './tournament/board/QualifyingView';
@@ -31,14 +30,13 @@ import { armedMatchNames, isTournamentComplete } from '../lib/tournamentResult';
 import { roundDisplayScore, scoringContextOf, type ScoringContext } from '../lib/koryuDisplay';
 import {
   BG_ROOT, BG_CARD,
-  TURN_BASE, TURN_LIGHT,
-  WIN_BASE, WIN_LIGHT,
-  GOLD_BASE, GOLD_LIGHT,
+  TURN_BASE, TURN_LIGHT, TURN_PALE,
+  WIN_BASE, WIN_LIGHT, WIN_PALE,
   TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
   SHADOW_MD, SHADOW_SM,
-  RADIUS_MD,
+  RADIUS_MD, RADIUS_LG,
   FONT_UI, FONT_NUM,
-  TEAM_PALETTE, teamGradient, Splash,
+  TEAM_PALETTE, teamGradient, Splash, winLoseTextStyle,
 } from '../ui';
 
 // ── 観客に出している画面 ──────────────────────────────────────────────────────
@@ -350,7 +348,7 @@ function recapScore(rr: RoundResult, side: 0 | 1, ctx: ScoringContext): string {
   return ctx.ruleSet === 'koryu' ? `${value}` : `${value}pt`;
 }
 
-function SetupWaiting({
+export function SetupWaiting({
   serverStatus, displayTitle, tournament, groupPhase, currentMap, theme, soloScoringMode,
 }: {
   serverStatus: ServerStatusPayload | null;
@@ -389,6 +387,12 @@ function SetupWaiting({
   );
   const recapDisplayNames = intermission ? (recapNames ?? intermission.playerNames) : null;
 
+  // 第1ゲームの勝者 (引き分けなら null)。点数の並びだけでは見比べないと勝敗が分からないので、
+  // 勝った側を色で浮かせ、負けた側を沈める (winLoseTextStyle)
+  const gameWinnerSide: 0 | 1 | null = intermission && intermission.winner !== Winner.DRAW
+    ? (roundWonBy(intermission, 0) ? 0 : 1)
+    : null;
+
   // カードの左右は MainWindow と同じく idxForSide で決める。そうしないと swapSlotConfigs 後の
   // 待機画面だけプログラムの左右が入れ替わって見え、第2ゲームが始まるとまた元に戻ってしまう。
   // 第1ゲーム前 (currentRound=0) は恒等写像なので COOL が左・HOT が右になる。
@@ -401,43 +405,85 @@ function SetupWaiting({
 
   // 対戦カードの並びと勝ち上がり表は、画面の残りを分け合って**どちらも**空きいっぱいに拡大する。
   // 片方を自然な大きさのまま置くと、第1ゲームの結果が出ている間だけ勝ち上がり表が潰れてしまう。
+  //
+  // リキャップ (終わったゲーム) と対戦カード (これから始まるゲーム) は文で説明せず、
+  // 大小・色の沈み/浮き・枠の有無で読み分けさせる。リキャップは「済んだ記録」なので
+  // 小さく沈んだ色調の付箋のように、対戦カードは「これからの主役」なので一段大きく
+  // 金枠 (= このアプリ全体で「次に行う」を表す色) で囲む
+  const teamsRow = (
+    <div style={sw.teams}>
+      {clients && (
+        <TeamCard
+          idx={leftIdx} state={clients[leftIdx].state}
+          name={tournamentNames?.[leftIdx] ?? (clients[leftIdx].name || '---')}
+          large={!!intermission}
+        />
+      )}
+      {/* マップ名・ターン数/アイテム数・盤面反転バッジは省く (compact) —
+          運営はコントロールパネルで同じ情報を確認できるうえ、この画面は縦の余白が
+          リキャップと取り合いになる。手動プレビュー (画面いっぱいに使う) では出したままにする */}
+      {currentMap
+        ? <MapPreview map={currentMap} theme={theme} flip={flip} label="" compact />
+        : <div style={{ ...sw.vs, ...(intermission ? sw.vsLg : null) }}>VS</div>}
+      {clients && (
+        <TeamCard
+          idx={rightIdx} state={clients[rightIdx].state}
+          name={tournamentNames?.[rightIdx] ?? (clients[rightIdx].name || '---')}
+          large={!!intermission}
+        />
+      )}
+    </div>
+  );
+
   const meeting = (
-    <div style={sw.meeting}>
-      {/* 第1ゲームの結果 (2ゲーム制のインターミッション中のみ) */}
+    <div style={{ ...sw.meeting, ...(intermission ? sw.meetingGapWide : null) }}>
+      {/* 第1ゲームの結果 (2ゲーム制のインターミッション中のみ)。小さな付箋として上に置く —
+          TournamentStandby の「たった今終わった試合」カードとは違い、ここでは主役ではない */}
       {intermission && (
         <div style={sw.recap}>
-          <div style={sw.recapTitle}>第1ゲームの結果</div>
+          <div style={sw.recapHead}>
+            <span style={sw.recapTitle}>第1ゲームの結果</span>
+            {/* 点数の並びだけでは、観客が2つの数字を見比べないと勝敗が分からない。
+                一文で結果を言い切る (引き分けは「勝った」わけではないので地の色のまま) */}
+            <span style={{
+              ...sw.recapWinner,
+              ...(intermission.winner === Winner.DRAW ? sw.recapWinnerDraw : null),
+            }}>
+              {intermission.winner === Winner.DRAW
+                ? '引き分け'
+                : `${recapDisplayNames![gameWinnerSide!]} の勝ち`}
+            </span>
+          </div>
+          <div style={sw.recapDivider} />
           <div style={sw.recapRow}>
-            <span style={sw.recapName}>{recapDisplayNames![idxForSide(0, intermission.round)]}</span>
-            <span style={sw.recapScore}>{recapScore(intermission, 0, scoring)}</span>
+            <span style={{ ...sw.recapName, ...winLoseTextStyle(gameWinnerSide, 0) }}>
+              {recapDisplayNames![idxForSide(0, intermission.round)]}
+            </span>
+            <span style={{ ...sw.recapScore, ...winLoseTextStyle(gameWinnerSide, 0) }}>
+              {recapScore(intermission, 0, scoring)}
+            </span>
             <span style={sw.recapDash}>—</span>
-            <span style={sw.recapScore}>{recapScore(intermission, 1, scoring)}</span>
-            <span style={sw.recapName}>{recapDisplayNames![idxForSide(1, intermission.round)]}</span>
+            <span style={{ ...sw.recapScore, ...winLoseTextStyle(gameWinnerSide, 1) }}>
+              {recapScore(intermission, 1, scoring)}
+            </span>
+            <span style={{ ...sw.recapName, ...winLoseTextStyle(gameWinnerSide, 1) }}>
+              {recapDisplayNames![idxForSide(1, intermission.round)]}
+            </span>
           </div>
         </div>
       )}
 
-      {/* COOL / マップ / HOT (セットアップ画面と同じ骨格) */}
-      <div style={sw.teams}>
-        {clients && (
-          <TeamCard
-            idx={leftIdx} state={clients[leftIdx].state}
-            name={tournamentNames?.[leftIdx] ?? (clients[leftIdx].name || '---')}
-          />
-        )}
-        {currentMap
-          ? <MapPreview
-              map={currentMap} theme={theme} flip={flip}
-              label={serverStatus ? sourceLabel(serverStatus.mapSource) : ''}
-            />
-          : <div style={sw.vs}>VS</div>}
-        {clients && (
-          <TeamCard
-            idx={rightIdx} state={clients[rightIdx].state}
-            name={tournamentNames?.[rightIdx] ?? (clients[rightIdx].name || '---')}
-          />
-        )}
-      </div>
+      {/* これから戦うカード。リキャップと見分けがつくよう、インターミッション中だけ
+          金枠のフレームに収めて主役として浮かせる (フレーム無しの通常時と地続きにしない)。
+          枠の中にも「第◯ゲーム」を小さく置く — リキャップの見出し (第1ゲームの結果) と
+          対になる位置 (マップの真上) に置くことで、対戦カード・マップがどちらのゲームの
+          ものかを、文で説明せずカードの構造の対称性だけで読み取れるようにする */}
+      {intermission ? (
+        <div style={sw.teamsFrame}>
+          <div style={sw.teamsFrameLabel}>{`第${currentRound + 1}ゲーム`}</div>
+          {teamsRow}
+        </div>
+      ) : teamsRow}
     </div>
   );
 
@@ -447,16 +493,25 @@ function SetupWaiting({
       <div style={sw.titleWrap}>
         <div style={sw.title}>{displayTitle}</div>
         <div style={sw.sub}>
-          {doubleMode ? `第${currentRound + 1}ゲーム — ` : ''}対戦開始をお待ちください
+          {/* インターミッション中は「第◯ゲーム」を下の金枠側 (マップの真上) で言うので、
+              ここでは重ねて言わない (第1ゲーム開始前など、金枠がまだ無い間だけここで言う) */}
+          {doubleMode && !intermission ? `第${currentRound + 1}ゲーム — ` : ''}対戦開始をお待ちください
         </div>
       </div>
 
-      <FitArea maxScale={1.4} style={tournament ? sw.meetingArea : sw.meetingAreaAlone}>
+      {/* リキャップが出ている間は勝ち上がり表を出さない (下の分岐) ので、その分の高さを
+          そのままリキャップ側に渡せる。第1ゲームの結果は観客に見せたい情報の主役で、
+          縮んだ勝ち上がり表と場所を取り合わせる理由が無い */}
+      <FitArea
+        maxScale={1.4}
+        style={!tournament || intermission ? sw.meetingAreaAlone : sw.meetingArea}
+      >
         {meeting}
       </FitArea>
 
-      {/* 大会運営中は勝ち上がりを観客に見せる (待機中の間だけ) */}
-      {tournament && (
+      {/* 大会運営中は勝ち上がりを観客に見せる (待機中の間だけ)。
+          第1ゲームの結果を見せている間は出さない (上の理由) */}
+      {tournament && !intermission && (
         <div style={sw.bracket}>
           {hasQualifying(tournament.stage.format) ? (
             <QualifyingView state={tournament} phase={groupPhase} />
@@ -482,16 +537,18 @@ function SetupWaiting({
   );
 }
 
-function TeamCard({ idx, name, state }: { idx: 0 | 1; name: string; state: string }) {
+function TeamCard({
+  idx, name, state, large = false,
+}: { idx: 0 | 1; name: string; state: string; large?: boolean }) {
   const { label, color, dark, pale } = TEAM_PALETTE[idx];
   const badge = stateBadgeStyle(state);
   return (
-    <div style={{ ...tc.card, background: pale }}>
-      <div style={{ ...tc.header, background: teamGradient(color, dark) }}>
+    <div style={{ ...tc.card, ...(large ? tc.cardLg : null), background: pale }}>
+      <div style={{ ...tc.header, ...(large ? tc.headerLg : null), background: teamGradient(color, dark) }}>
         {label}
       </div>
-      <div style={{ ...tc.name, color: dark }}>{name}</div>
-      <div style={{ ...tc.badge, ...badge }}>{STATE_LABEL[state] ?? state}</div>
+      <div style={{ ...tc.name, ...(large ? tc.nameLg : null), color: dark }}>{name}</div>
+      <div style={{ ...tc.badge, ...(large ? tc.badgeLg : null), ...badge }}>{STATE_LABEL[state] ?? state}</div>
     </div>
   );
 }
@@ -515,7 +572,12 @@ const sw: Record<string, React.CSSProperties> = {
   meeting: {
     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20,
   },
+  // リキャップ (済んだゲーム) と対戦カード (次のゲーム) の間の余白を広く取る。
+  // 隙間の大きさそのものを「別の場面」の合図にする — 文で「次は」と言わずに済む
+  meetingGapWide: { gap: 40 },
   meetingArea:      { flex: '0 0 45%' },
+  // 勝ち上がり表と場所を分け合わない場合 (大会に紐付かない / リキャップ表示中)。
+  // 残りの高さを丸ごと渡す
   meetingAreaAlone: { flex: 1 },
   // 待機中に見せる勝ち上がり表。残りの高さを渡し、その中で図を最大化させる
   bracket: {
@@ -529,25 +591,54 @@ const sw: Record<string, React.CSSProperties> = {
     fontSize: 28, fontWeight: 800, color: TEXT_MUTED,
     fontFamily: FONT_NUM, letterSpacing: '0.1em',
   },
+  // インターミッション中は下のプレイヤーカードも一段大きくするので、VS も釣り合わせる
+  vsLg: { fontSize: 34 },
 
-  // 第1ゲームの結果 (2ゲーム制のインターミッション)。左右の並びは下のプレイヤーカードと揃える
+  // これから戦うカードを収める枠。**インターミッション中だけ**使う。
+  //
+  // 金 (GOLD_BASE) は「準備完了だが運営の対応待ち」(結果確認・同点裁定) を表す色として
+  // このアプリ全体で使っており、ここに使うと観客に「運営の対応待ち」の誤信号になりかねない。
+  // カードの中身の COOL/HOT バッジがすでに「準備完了」を緑 (WIN) で示しているので、枠の色は
+  // 状態を表す必要が無い。代わりに、この画面の「対戦カード」自体が使う中立の紫
+  // (MATCH_STATUS_COLOR の ready = TURN_BASE、「対戦カード決定」= 対戦の準備が整った状態) を
+  // 枠にも使い、上の緑カード (済んだ記録) と対になる「もう1枚のカード」として並べる
+  teamsFrame: {
+    padding: '24px 32px', borderRadius: RADIUS_LG,
+    border: `2px solid ${TURN_LIGHT}`, background: TURN_PALE, boxShadow: SHADOW_MD,
+  },
+  // 枠の見出し。リキャップの見出し (recapTitle) と全く同じ大きさ・色にそろえる —
+  // 同じ「カードの見出し」の形にすることで、2枚が対の関係だと伝わる
+  teamsFrameLabel: {
+    textAlign: 'center', fontSize: 14, fontWeight: 600, color: TEXT_SECONDARY,
+    marginBottom: 14,
+  },
+
+  // 第1ゲームの結果 (2ゲーム制のインターミッション)。TournamentStandby の
+  // 「たった今終わった試合」カード (matchResultCard) と同じ緑の骨格 (決着済みの色) に
+  // 揃える — 振り返りとして観客がきちんと読める大きさ・濃さのまま出す。
+  // 下の対戦カード (金枠) との違いは大きさではなく枠の色と並び順で付ける
   recap: {
-    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
-    padding: '18px 32px',
-    background: BG_CARD, borderRadius: RADIUS_MD, boxShadow: SHADOW_SM,
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
+    padding: '14px 32px 20px',
+    background: WIN_PALE, border: `2px solid ${WIN_LIGHT}`,
+    borderRadius: RADIUS_MD, boxShadow: SHADOW_SM,
   },
-  recapTitle: {
-    fontSize: 13, fontWeight: 700, color: WIN_BASE, letterSpacing: '0.1em',
-  },
+  recapHead: { display: 'flex', alignItems: 'center', gap: 14 },
+  recapTitle: { fontSize: 14, fontWeight: 600, color: TEXT_SECONDARY },
+  recapDivider: { width: '100%', borderTop: `1px solid ${WIN_LIGHT}` },
   recapRow:   { display: 'flex', alignItems: 'baseline', gap: 16 },
   // 左右で幅を揃えて初めて中央の score/dash が動かない。狭すぎると読めないので
   // 160px 確保しつつ、それでも収まらない名前は省略せず折り返す (文字が切り捨てられないように)
   recapName:  {
-    fontSize: 18, fontWeight: 700, color: TEXT_PRIMARY, textAlign: 'center',
+    fontSize: 20, fontWeight: 700, color: TEXT_SECONDARY, textAlign: 'center',
     width: 160, flexShrink: 0, lineHeight: 1.25, wordBreak: 'break-word',
   },
-  recapScore: { fontSize: 34, fontWeight: 800, color: TEXT_PRIMARY, fontFamily: FONT_NUM },
-  recapDash:  { fontSize: 22, color: TEXT_MUTED },
+  recapScore: { fontSize: 30, fontWeight: 800, color: TEXT_SECONDARY, fontFamily: FONT_NUM },
+  recapDash:  { fontSize: 20, color: TEXT_MUTED },
+  // 「勝った」という結論そのものが観客に一番伝えたい情報なので、点数の内訳より小さくしすぎない
+  recapWinner: { fontSize: 24, fontWeight: 800, color: WIN_BASE },
+  // 引き分けは「勝った」わけではないので、勝者と同じ緑にはしない
+  recapWinnerDraw: { color: TEXT_PRIMARY },
 };
 
 const tc: Record<string, React.CSSProperties> = {
@@ -573,4 +664,11 @@ const tc: Record<string, React.CSSProperties> = {
     fontWeight: 700, fontSize: 12,
     padding: '5px 18px', borderRadius: 99, letterSpacing: '0.06em',
   },
+
+  // インターミッション中 (金枠フレームの中) だけ使う一段大きいサイズ。
+  // リキャップの付箋より確実に大きくして、「こちらが主役」を大きさだけで伝える
+  cardLg:   { width: 250 },
+  headerLg: { fontSize: 23, padding: '16px 0' },
+  nameLg:   { fontSize: 25 },
+  badgeLg:  { fontSize: 13, padding: '6px 20px' },
 };
