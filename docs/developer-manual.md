@@ -1501,8 +1501,16 @@ server/tournament/<大会id>/
 アイテム×10 のみになる。1勝1敗や2引き分けで合計が並ぶのは**通常運用の範囲**で起こる。
 
 - **リーグ / 予選リーグの試合**: 引き分けは正当な結果。そのまま確定でき、勝ち点1が付く。
-- **勝ち上がりの試合**: `confirmResult` は勝者不在のままの確定を**拒否する** (詰み防止)。UI では
-  ①マップを変更して再試合 ②審判裁定で勝者を指定 ③両者敗退 の3択を出す。
+- **勝ち上がりの試合**: `confirmResult` は勝者不在のままの確定を**拒否する** (詰み防止)。UI は
+  まず「この結果で確定」(`acknowledgeTie`) だけを出し、これを押すと ①マップを変更して再試合
+  ②審判裁定で勝者を指定 ③両者敗退 の3択が開く。`acknowledgeTie` は勝者を決めず
+  `TournamentMatch.tieAcknowledged` を立てるだけの軽量な操作で、`armedMatchId` は
+  そのまま残る (`status` は `awaiting_confirm` のまま)。観客の対戦表示画面はこのフラグを見て、
+  運営が実際に再試合/裁定のどちらを選ぶかを待つ間もスコアと「引き分け」を見せてよいと判断する
+  (`baseDisplayScene` / `TournamentStandby` 参照)。**この段階を挟まないと、運営が3択のどれかを
+  選ぶまで観客には対戦中の続きのような盤面が出続ける。**
+  `discardResult` / 巻き戻しは `tieAcknowledged` も `rematchPending` と同じく必ず落とす
+  (`progress.ts` の `withoutTransientFlags`)。
   固定マップ運用 (その試合の実効マップが `null` でない = `mapForStage()` が返す) では、
   公式ルール「マップを変更して再試合」に従い別マップを指定しないと `discardResult` が通らない。
   大会全体はランダムでも、その回戦だけマップを指定していれば同じ扱いになる。
@@ -1519,7 +1527,8 @@ server/tournament/<大会id>/
 
 `FrontendMessage` は大会運営のコマンドとして
 `tournament_bind` / `tournament_unbind` / `tournament_arm_match` /
-`tournament_confirm_result` / `tournament_discard_result` / `tournament_reopen_match` /
+`tournament_confirm_result` / `tournament_acknowledge_tie` / `tournament_discard_result` /
+`tournament_reopen_match` /
 `tournament_set_walkover` / `tournament_swap_sides` / `tournament_assign_program` /
 `tournament_set_stage_map` / `tournament_set_match_map` / `tournament_set_qualifier` /
 `tournament_exclude_qualifier` / `tournament_confirm_qualifiers` /
@@ -1630,18 +1639,19 @@ ZIP を書く実装 (`zip.writeZip`) は元々テスト用ヘルパー (`test/bu
 |---|---|
 | `board/BracketView.tsx` | トーナメント表。接続線は SVG、カードは絶対配置の DOM |
 | `board/LeagueTable.tsx` | リーグの星取表 + 順位表 (素の DOM)。予選では**そのリーグの試合・参加者だけ**を渡す |
-| `board/QualifyingView.tsx` | 予選の表 ⇄ 決勝トーナメント表の切り替え。観戦画面の出し分け (`displayQualifyingPhase`) もここ。**位相の判断は予選リーグ / BOT対戦予選で共通** |
+| `board/QualifyingView.tsx` | 予選の表 ⇄ 決勝トーナメント表の切り替え。観戦画面の出し分け (`displayQualifyingPhase`) もここ。**位相の判断は予選リーグ / BOT対戦予選で共通**。予選リーグ・BOT対戦予選とも、1試合も確定していない間は星取表の代わりに `GroupIntroBoard` (組み分けと参加者名だけの紹介画面) を出す |
+| `board/GroupIntroBoard.tsx` | 予選開始前の紹介画面。対戦成績を一切出さず、リーグ分け (BOT対戦予選はエントリー1本) と参加者名だけを見せる |
 | `board/BotStageBoard.tsx` | BOT対戦予選の表。エントリーリスト + 順位リスト (終わった人だけ載る) |
 | `board/MatchCard.tsx` | 1試合のカード。3画面で共用 (`interactive` で操作の有無を切替) |
-| `board/PlayerCard.tsx` | トーナメント表の1枠 (1試合の片側 = 1人)。名前と得点だけを持つ |
-| `board/MatchInfoCard.tsx` | 対になる2枚の `PlayerCard` の間に挟む「対戦」そのものの情報 (試合ラベル・状態バッジ・裁定注記)。**1試合につきカードは3枚** — 試合単位の情報を対戦者ごとに重複させないため |
+| `board/PlayerCard.tsx` | トーナメント表の1枠 (1試合の片側 = 1人)。名前と得点 (2ゲーム消化していれば勝敗数も) だけを持つ |
+| `board/MatchInfoCard.tsx` | 対になる2枚の `PlayerCard` の間に挟む「対戦」そのものの情報 (試合ラベル・状態バッジ)。勝敗数や裁定理由といった試合結果そのものはここには出さない。**1試合につきカードは3枚** — 試合単位の情報を対戦者ごとに重複させないため |
 | `board/matchStatusStyle.ts` | 試合状態の日本語ラベルと色。`MatchCard` と `MatchInfoCard` の唯一の情報源 |
 | `board/TournamentStandby.tsx` / `TournamentFinale.tsx` | 観客席の待機画面と表彰画面 |
 | `panel/TournamentPanel.tsx` | 運営パネルの骨格。「今やること」を固定し、下をタブで切り替える |
 | `panel/NextActionCard.tsx` | 「今やること」1枚。`nextOperatorAction` の返り値をそのまま描く |
 | `panel/LibraryTab.tsx` / `ProgressTab.tsx` / `SettingsTab.tsx` | 各タブの中身 (同時に行う試合数は「設定」タブ / 13-9) |
 | `panel/AnnouncementCard.tsx` | 試合の合間に観客席へ出すアナウンスの文面と出し入れ (`set_announcement`) |
-| `panel/ResultConfirmDialog.tsx` | 結果確定。同点時の3択を出す |
+| `panel/ResultConfirmDialog.tsx` | 結果確定。勝ち上がりの同点はまず「この結果で確定」(`acknowledgeTie`) だけを出し、押すと3択が開く (13-4) |
 | `qualifier/QualifierSection.tsx` | 決勝進出者の一覧と差し替え (予選リーグ。`QualifierPicker` は表のカードからも使う) |
 | `qualifier/BotQualifierSection.tsx` | 決勝進出者の最終決定確認リスト (BOT対戦予選。多めに出して削る) |
 | `editor/TournamentEditorDialog.tsx` | 大会データ作成・編集フォームの骨格 (13-7) |
@@ -1952,7 +1962,9 @@ id は予選が `G1-D1M1` (Gリーグ番号-D節-M試合)、決勝が `SF1` / `F
 - 予選が終わっていない → 予選表
 - **予選が終わっても自動では決勝表へ移らない。運営が決勝進出者を確定する
   (`qualifiersConfirmed`) まで予選の最終結果を出し続ける** (`holdingResult: true` →
-  `TournamentStandby` の見出しが「予選リーグ 最終結果」になる)
+  `TournamentStandby` は最終試合の結果カード (勝者・スコア) は出したまま、
+  ラベルだけ「予選リーグ 最終結果」に差し替える。カードごと消すと、最後の試合だけ
+  結果を見せずに表へ飛んだように見えてしまう)
 - 確定済み → 決勝トーナメント表
 - 全工程が終わったうえで決勝側を見ていれば表彰画面 (`shouldShowFinale`)
 
@@ -1991,8 +2003,8 @@ id は予選が `G1-D1M1` (Gリーグ番号-D節-M試合)、決勝が `SF1` / `F
 **`grid-auto-flow` を `column` にすること** — 既定の `row` だと1リーグぶんの3つが
 横に並んでしまい、見出しと表が入り乱れる。
 
-凡例 (○ 勝ち / △ 引き分け / ● 負け) は星取表のすぐ下に置く。順位表の下だと何の記号の
-説明なのか離れて分かりにくい。「未消化」は表の `・` を見れば分かるので載せない。
+凡例 (○ 勝ち / △ 引き分け / × 負け / ・ 未実施) は星取表のすぐ下に置く。順位表の下だと
+何の記号の説明なのか離れて分かりにくい。
 
 ##### 通過ラインの強調
 
@@ -2007,6 +2019,38 @@ id は予選が `G1-D1M1` (Gリーグ番号-D節-M試合)、決勝が `SF1` / `F
 `QualifyingView` が `qualifiedIds` に実際に上がる人を渡し、色をその人へ移す。
 **通過ラインの位置 (線) は差し替えがあっても動かさない** — 線は順位の境目であって、
 誰が上がったかとは別の情報だから。
+
+##### リーグごとのマップ
+
+総当たり (`league` 全般、`group-then-bracket` の予選) は「①勝ち点 → ②合計ポイント →
+③直接対決」で順位を決めるため、②はマップのアイテム数・配置に依存する。**同じリーグ内で
+対戦カードごとに違うマップを使うと②の比較が壊れる**ので、マップは常にリーグ単位 (`group`)
+でしか決められない。判定は `isLeaguePointsMatch` (`@u15/ws-types`) 1箇所 — `league` は常に対象、
+`group-then-bracket` は予選 (`group` あり) だけが対象で、`bot-then-bracket` の予選は対象外
+(全参加者が同一マップを使う前提を別軸の `validateBotStage` が強制している)。
+
+`StageRules.groupMaps` (index = group) が per-league の指定で、要素は
+`catalogId` (固定) / `'random'` (そのリーグだけ別にランダム生成) / `null` (大会全体の設定に
+従う)。`TournamentStore.roundRobinMapPlanFor` がこれと `stage.map.catalogId` から実効方針
+(`{ kind: 'fixed' }` / `{ kind: 'random' }`) を1つに解決し、`matchCommands.applyMapTo` が
+`mapForMatch` より優先して使う。
+
+ランダムのときは「初回に生成してライブラリへ保存し、以後は同じマップを使い回す」
+(`resolveRandomRoundRobinMap`)。決定値は `state.decisions.decidedRoundRobinMaps` に
+`decisionKey` (リーグごとなら group 番号の10進文字列、全リーグ共通なら `'*'`) で固定する
+— 対戦カードごとに `generateRandomMap()` を呼び直すと、リーグ内なのに条件が変わってしまう。
+**競合の心配が無い根拠は `canRunInSideLane`**: `isLeaguePointsMatch` が true の試合は
+常に主レーンで1試合ずつ進むので、「無ければ生成して保存」を複数レーンが同時に行うことは
+構造的に起きない。
+
+やり直し (`discardResult` の `rematchMapCatalogId`) はこの種の試合には効かせない —
+`isLeaguePointsMatch` が true の試合にマップ指定を渡すと拒否する。効かせるとリーグ内で
+1試合だけ違うマップになり、上の前提が崩れる。
+
+作成 UI (`FormatRulesEditor.tsx` の `GroupMaps`) はリーグごとに
+「大会の設定に従う」/「このリーグだけランダム生成に固定」/ ライブラリのマップ、を選べる。
+参加者を減らしてリーグ数が減ったときの残骸は `TournamentStore.sanitizeDecidedRoundRobinMaps`
+が捨てる (`'*'` は group 数に関係なく常に残す)。
 
 
 #### BOT対戦予選 (`bot-then-bracket`)
@@ -2130,7 +2174,7 @@ qualifiers.autoPick が「除外を除いた並びの rank 番目」を返す
 |---|---|
 | `QualifyingView.tsx` | 予選 + 決勝の全体像。**位相の判断 (`autoQualifyingPhase` / `displayQualifyingPhase` / `shouldShowFinale`) は両形式で完全に共通**で、差し替わるのは予選ボードだけ。分けると片方だけ確定待ちを実装し忘れる |
 | `BotStageBoard.tsx` | 予選の表。エントリーリスト (左) + 順位リスト (右)。**順位リストには終わった人だけを載せる** — 予選が進むにつれ伸びるのがこの画面の要点で、未実施を0ポイントで並べると通過ラインが動かなくなる |
-| `BotQualifierSection.tsx` | 最終決定確認リスト。定員を超えている間は確定ボタンを無効化する |
+| `BotQualifierSection.tsx` | 最終決定確認リスト。定員を超えている間は確定ボタンを無効化する。判定は `qualifierOverCount` (`@u15/ws-types`) 1箇所に置いてあり、「今やること」(`NextActionCard`) の確定ボタンも `nextOperatorAction` が同じ関数で返す `over` を見て同じ条件で出し分ける — 別々に数えると片方だけ直したときにボタンの有効・無効がずれる |
 
 ##### オートプレイ
 
