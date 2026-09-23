@@ -502,6 +502,16 @@ export interface TournamentMatch {
    * 戻ってしまうため、これが無いと「同点で再試合になった」ことが表からもう分からない。
    */
   rematchPending?: boolean;
+  /**
+   * 同点 (winnerSide が null) の結果を、運営が「この結果で確定」で認めた。
+   *
+   * 決勝トーナメントの同点はそのまま confirmResult できない (再試合するか勝者を指定する
+   * 必要がある) が、対戦は終わっているので観客にはスコアと「引き分け」を見せてよい。
+   * このフラグが立った時点で armedMatchId はまだ残っているが、対戦表示画面は盤面の
+   * 結果画面からトーナメント表へ進めてよい、という合図に使う (DisplayMode.tsx 参照)。
+   * discardResult / clearFrom (巻き戻し) で結果ごと消える。
+   */
+  tieAcknowledged?: boolean;
 }
 
 /**

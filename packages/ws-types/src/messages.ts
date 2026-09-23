@@ -59,6 +59,8 @@ export type FrontendMessage =
   | { type: 'tournament_arm_match';       payload: { matchId: string } }
   | { type: 'tournament_confirm_result';  payload: { matchId: string; winnerSide?: 0 | 1; note?: string } }
   | { type: 'tournament_discard_result';  payload: { matchId: string; rematchMapCatalogId?: string } }
+  /** 同点の結果を「この結果で確定」で認める。再試合/審判裁定はまだ選ばない (tieAcknowledged を立てるだけ) */
+  | { type: 'tournament_acknowledge_tie'; payload: { matchId: string } }
   | { type: 'tournament_reopen_match';    payload: { matchId: string; cascade?: boolean } }
   | { type: 'tournament_set_walkover';    payload: { matchId: string; winnerSide: 0 | 1 | null } }
   | { type: 'tournament_assign_program';  payload: { participantId: string; catalogId: string | null } }

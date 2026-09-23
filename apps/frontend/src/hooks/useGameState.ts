@@ -24,6 +24,8 @@ export interface TournamentCommands {
   unbind:   () => void;
   arm:      (matchId: string) => void;
   confirm:  (matchId: string, winnerSide?: 0 | 1, note?: string) => void;
+  /** 同点の結果を「この結果で確定」でいったん認める (勝者は決めない — TournamentMatch.tieAcknowledged を立てるだけ) */
+  acknowledgeTie: (matchId: string) => void;
   discard:  (matchId: string, rematchMapCatalogId?: string) => void;
   reopen:   (matchId: string, cascade?: boolean) => void;
   walkover: (matchId: string, winnerSide: 0 | 1 | null) => void;
@@ -239,6 +241,8 @@ export function useGameState(wsUrl: string, roomId: string): GameStateHook {
       arm:      (matchId)             => send({ type: 'tournament_arm_match',      payload: { matchId } }),
       confirm:  (matchId, winnerSide, note) =>
         send({ type: 'tournament_confirm_result', payload: { matchId, winnerSide, note } }),
+      acknowledgeTie: (matchId) =>
+        send({ type: 'tournament_acknowledge_tie', payload: { matchId } }),
       discard:  (matchId, rematchMapCatalogId) =>
         send({ type: 'tournament_discard_result', payload: { matchId, rematchMapCatalogId } }),
       reopen:   (matchId, cascade)    => send({ type: 'tournament_reopen_match',   payload: { matchId, cascade } }),

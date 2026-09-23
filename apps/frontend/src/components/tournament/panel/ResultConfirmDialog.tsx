@@ -9,7 +9,10 @@ import { affiliationOf, ParticipantName } from '../board/ParticipantName';
 
 // 試合結果の確定ダイアログ。
 //
-// 同点 (winnerSide === null) のときは「確定」を無効化し、公式ルールに沿った3つの出口を出す:
+// 同点 (winnerSide === null) のときは通常の「この結果で確定」を出さず、まず
+// 「この結果で確定」(= acknowledgeTie。勝者は決めない) を出す。これを押す前は対戦表示画面が
+// 盤面の結果画面のままなので、押した瞬間に観客にもスコアと「引き分け」が伝わる。
+// 押した後 (match.tieAcknowledged) に、公式ルールに沿った3つの出口を出す:
 //   ① マップを変更して再試合  ② 審判裁定で勝者を指定  ③ 両者敗退
 // これが無いとトーナメントが進まなくなるため、UI 側でも詰みを防ぐ。
 
@@ -27,13 +30,15 @@ export interface ResultConfirmDialogProps {
    */
   ruleSet?:   RuleSet;
   onConfirm:  (winnerSide?: 0 | 1, note?: string) => void;
+  /** 同点の結果をいったん認める (勝者は決めない)。この後 tieAcknowledged が立って3つの出口が開く */
+  onAcknowledgeTie: () => void;
   onRematch:  (rematchMapCatalogId?: string) => void;
   onWalkover: (winnerSide: 0 | 1 | null) => void;
 }
 
 export function ResultConfirmDialog({
   match, participants, isLeague, httpBase, requireMapChangeOnRematch, ruleSet = 'maizuru',
-  onConfirm, onRematch, onWalkover,
+  onConfirm, onAcknowledgeTie, onRematch, onWalkover,
 }: ResultConfirmDialogProps) {
   const isKoryu = ruleSet === 'koryu';
   const totalsLabel = isKoryu ? (isLeague ? '得点' : '獲得アイテム数') : '合計ポイント';
@@ -104,7 +109,16 @@ export function ResultConfirmDialog({
           </p>
         )}
 
-        {blocked ? (
+        {blocked && !match.tieAcknowledged ? (
+          // 同点でもまず「この結果で確定」を出す。ここを押すまでは対戦表示画面が盤面の
+          // 結果画面のまま — 押した瞬間に観客にもスコアと「引き分け」が伝わり、
+          // このあと運営が再試合・審判裁定のどちらを選ぶかをじっくり決められる
+          <div style={actions}>
+            <button style={{ ...btn, background: WIN_BASE }} onClick={onAcknowledgeTie}>
+              この結果で確定 ▶
+            </button>
+          </div>
+        ) : blocked ? (
           <div style={tieBox}>
             <div style={tieTitle}>同点です</div>
             <p style={hint}>

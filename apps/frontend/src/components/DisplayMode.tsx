@@ -92,14 +92,26 @@ function displayScene(
   return base;
 }
 
-function baseDisplayScene(
+export function baseDisplayScene(
   phase:      ServerPhase,
   tournament: TournamentStatePayload | null | undefined,
   groupPhase: QualifyingPhase,
 ): Exclude<DisplayScene, 'preview'> {
+  // 両ゲーム終了・確定待ち (awaiting_confirm) の間も armedMatchId は残ったままだが、
+  // トーナメント表 (standby) へは進めない。運営が「この結果で確定」を押す前の状態を
+  // 観客に見せると、運営が裁定で結果を変える可能性のある間に確定済みのような表示を
+  // 出すことになる。確定を押すまでは盤面の結果画面 (result) を見せ続け、
+  // armedMatchId が外れた瞬間 (= 確定した瞬間) にだけトーナメント表へ切り替える。
+  //
+  // ただし同点は確定できない (再試合か審判裁定が要る) ので、armedMatchId は
+  // すぐには外れない。運営が「この結果で確定」で同点を認めた (tieAcknowledged) 時点で、
+  // このあと再試合/裁定のどちらを選ぶかを待つ間も、トーナメント表 (スコアと「引き分け」)
+  // へ進めてよい — 盤面に留め置く理由はもう無い
   if (tournament && phase !== 'playing') {
     if (groupPhase === 'bracket' && isTournamentComplete(tournament)) return 'award';
     if (!tournament.armedMatchId)                                     return 'standby';
+    const armed = tournament.matches.find(m => m.id === tournament.armedMatchId);
+    if (armed?.status === 'awaiting_confirm' && armed.tieAcknowledged) return 'standby';
   }
   if (phase === 'playing')  return 'playing';
   if (phase === 'finished') return 'result';

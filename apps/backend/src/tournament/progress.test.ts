@@ -190,6 +190,20 @@ describe('discardResult', () => {
     ms = discardResult(ms, 'SF1', 'map-xyz');
     expect(ms.find(m => m.id === 'SF1')!.rematchMapCatalogId).toBe('map-xyz');
   });
+
+  // tieAcknowledged (運営が「この結果で確定」で同点を認めた印) は今の結果に対する
+  // 一時的な印でしかないので、結果を捨てたら rematchPending と同じく必ず消える。
+  // 残ったままだと、再試合の新しい結果を待たずに観客画面が古いスコアを見せ続けてしまう
+  it('tieAcknowledged も rematchPending と同じく一緒に消える', () => {
+    let ms = resolveMatches(buildBracket(people(4), OPTS));
+    ms = captureResult(ms, 'SF1', result(null));
+    ms = ms.map(m => (m.id === 'SF1' ? { ...m, tieAcknowledged: true } : m));
+    ms = discardResult(ms, 'SF1', undefined, {}, true);
+
+    const sf1 = ms.find(m => m.id === 'SF1')!;
+    expect(sf1.tieAcknowledged).toBeUndefined();
+    expect(sf1.rematchPending).toBe(true);
+  });
 });
 
 describe('downstreamOf / reopenMatch', () => {

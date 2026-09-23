@@ -255,6 +255,28 @@ export function swapSides(env: CommandEnv, b: Binding, matchId: string): void {
   env.publish(b.roomId);
 }
 
+/**
+ * 同点の結果を「この結果で確定」でいったん認める。confirmResult と違って勝者を決めるのでは
+ * なく、再試合か審判裁定かをこのあと運営が選ぶための前段 — `TournamentMatch.tieAcknowledged`
+ * を立てるだけの軽量な操作 (swapSides と同じ形)。
+ *
+ * armedMatchId はまだ残ったまま (winnerSide が決まっていないので resolveMatches は status を
+ * awaiting_confirm のままにする)。対戦表示画面はこのフラグを見て、運営が実際に再試合/裁定の
+ * どちらを選ぶかを待つ間も、盤面の結果画面からトーナメント表 (スコアと「引き分け」の表示) へ
+ * 進めてよいと判断する (DisplayMode.tsx の baseDisplayScene 参照)。
+ */
+export function acknowledgeTie(env: CommandEnv, b: Binding, matchId: string): void {
+  const match = requireMatch(b, matchId);
+  if (match.status !== 'awaiting_confirm' || !match.result) {
+    throw new TournamentError('確定できる結果がありません');
+  }
+  if (match.result.winnerSide !== null) {
+    throw new TournamentError('同点ではない試合には使えません (この結果で確定 を使ってください)');
+  }
+  updateMatch(b, matchId, m => ({ ...m, tieAcknowledged: true }));
+  env.publish(b.roomId);
+}
+
 export function confirmResult(
   env: CommandEnv, b: Binding, matchId: string, winnerSide?: 0 | 1, note?: string,
 ): void {

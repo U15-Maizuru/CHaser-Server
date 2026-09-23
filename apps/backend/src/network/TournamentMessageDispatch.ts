@@ -41,6 +41,9 @@ export class TournamentMessageDispatch {
         this.tournament(ws, t =>
           t.discardResult(roomId, msg.payload.matchId, msg.payload.rematchMapCatalogId));
         break;
+      case 'tournament_acknowledge_tie':
+        this.tournament(ws, t => t.acknowledgeTie(roomId, msg.payload.matchId));
+        break;
       case 'tournament_reopen_match':
         this.tournament(ws, t =>
           t.reopenMatch(roomId, msg.payload.matchId, msg.payload.cascade ?? false));

@@ -544,6 +544,52 @@ describe('TournamentOrchestrator', () => {
       expect([matchOf('FINAL').resolvedA, matchOf('FINAL').resolvedB]).toContain('p4');
     });
 
+    describe('acknowledgeTie (同点を「この結果で確定」でいったん認める)', () => {
+      /** 対戦を最後まで走らせて awaiting_confirm にする (「結果の取り込みと確定」と同じ定義) */
+      async function playMatch(matchId: string): Promise<void> {
+        await orch.armMatch(ROOM, matchId);
+        await rm.getRoom(ROOM)!.manager.requestStart();
+      }
+
+      it('確定できる結果が無い試合には使えない (setWalkover は即 done になるため)', () => {
+        writeCup(cupDef());
+        orch.bind(ROOM, CUP);
+        orch.setWalkover(ROOM, 'SF1', null); // 両者棄権はその場で done になる (awaiting_confirm を経ない)
+
+        expect(() => orch.acknowledgeTie(ROOM, 'SF1'))
+          .toThrow(/確定できる結果がありません/);
+      });
+
+      it('勝敗がついた試合には使えない (この結果で確定 を使う場面)', async () => {
+        writeCup(cupDef());
+        orch.bind(ROOM, CUP);
+        await playMatch('SF1');
+
+        const winner = matchOf('SF1').result!.winnerSide;
+        // CPU 同士なので勝敗は決まる (同点なら別のテストで扱う)
+        if (winner === null) return;
+
+        expect(() => orch.acknowledgeTie(ROOM, 'SF1'))
+          .toThrow(/同点ではない試合には使えません/);
+      }, 20_000);
+
+      it('同点の試合を認めると tieAcknowledged が立ち、armedMatchId は残ったまま', async () => {
+        writeCup(cupDef());
+        orch.bind(ROOM, CUP);
+        await playMatch('SF1');
+
+        const winner = matchOf('SF1').result!.winnerSide;
+        // CPU 同士が同点になったときだけ検証できる (非決定的。別テストが決着ありを扱う)
+        if (winner !== null) return;
+
+        orch.acknowledgeTie(ROOM, 'SF1');
+        const m = matchOf('SF1');
+        expect(m.tieAcknowledged).toBe(true);
+        expect(m.status).toBe('awaiting_confirm'); // 再試合/裁定はまだ選んでいない
+        expect(lastState()!.armedMatchId).toBe('SF1'); // 盤面の結果画面から進めてよい合図はこのフラグ側で持つ
+      }, 20_000);
+    });
+
     it('リーグでは引き分けをそのまま確定できる', () => {
       writeCup(cupDef({ format: 'league' }));
       orch.bind(ROOM, CUP);

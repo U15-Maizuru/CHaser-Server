@@ -130,6 +130,7 @@ export function TournamentPanel({
           }
           ruleSet={state.ruleSet}
           onConfirm={(winnerSide, note) => commands.confirm(awaiting.id, winnerSide, note)}
+          onAcknowledgeTie={() => commands.acknowledgeTie(awaiting.id)}
           onRematch={mapId => commands.discard(awaiting.id, mapId)}
           onWalkover={winnerSide => commands.walkover(awaiting.id, winnerSide)}
         />

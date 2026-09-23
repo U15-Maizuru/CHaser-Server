@@ -14,8 +14,8 @@ import {
   type Binding, type Lane,
 } from './binding.js';
 import {
-  armMatch, cancelArm, confirmResult, discardResult, pickLaneFor, reopenMatch, setMatchMap,
-  setStageMap, setWalkover, swapSides,
+  acknowledgeTie, armMatch, cancelArm, confirmResult, discardResult, pickLaneFor, reopenMatch,
+  setMatchMap, setStageMap, setWalkover, swapSides,
 } from './matchCommands.js';
 import { confirmQualifiers, setQualifier, setQualifierExclusion } from './qualifierCommands.js';
 import { applyServerStatus } from './statusBridge.js';
@@ -367,6 +367,10 @@ export class TournamentOrchestrator {
   /** matchId を省略すると、準備中のレーンをすべて取り消す */
   cancelArm(roomId: string, matchId?: string): void {
     cancelArm(this.env, this.require(roomId), matchId);
+  }
+
+  acknowledgeTie(roomId: string, matchId: string): void {
+    acknowledgeTie(this.env, this.require(roomId), matchId);
   }
 
   confirmResult(roomId: string, matchId: string, winnerSide?: 0 | 1, note?: string): void {

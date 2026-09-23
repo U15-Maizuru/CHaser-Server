@@ -40,10 +40,14 @@ export interface ResolveContext {
   started?:             boolean;
 }
 
-/** rematchPending を落とした複製。「もう再試合待ちではない」経路 (確定・巻き戻し) で使う */
-function withoutRematchPending(m: TournamentMatch): TournamentMatch {
+/**
+ * rematchPending・tieAcknowledged を落とした複製。どちらも「今の結果に対する一時的な印」
+ * なので、結果が確定する・巻き戻るなど状態が変わる経路では必ず落とす
+ */
+function withoutTransientFlags(m: TournamentMatch): TournamentMatch {
   const next = { ...m };
   delete next.rematchPending;
+  delete next.tieAcknowledged;
   return next;
 }
 
@@ -220,7 +224,7 @@ export function confirmResult(
       note:        patch.note       ?? m.result.note,
       confirmedAt: now,
     };
-    return withoutRematchPending({ ...m, result, status: 'done' as const });
+    return withoutTransientFlags({ ...m, result, status: 'done' as const });
   }), now, ctx);
 }
 
@@ -239,7 +243,7 @@ export function setWalkover(
       capturedAt:   now,
       confirmedAt:  now,
     };
-    return withoutRematchPending({ ...m, result, status: 'done' as const });
+    return withoutTransientFlags({ ...m, result, status: 'done' as const });
   }), now, ctx);
 }
 
@@ -323,7 +327,7 @@ function clearFrom(
   return matches.map(m => {
     const target = (includeSelf && m.id === matchId) || ds.has(m.id);
     if (!target) return m;
-    const next = withoutRematchPending({ ...m, status: 'pending' });
+    const next = withoutTransientFlags({ ...m, status: 'pending' });
     delete next.result;
     delete next.rematchMapCatalogId;
     return next;
