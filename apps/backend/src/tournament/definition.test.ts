@@ -257,6 +257,25 @@ describe('予選リーグ + 決勝トーナメント', () => {
     })).toThrow(/group は 0〜1/);
   });
 
+  it('groupMaps は省略すると空配列 (全リーグ共通の設定に従う)', () => {
+    expect(parseGroup({}).stage).toMatchObject({ groupMaps: [] });
+  });
+
+  it('groupMaps はリーグごとの catalogId / "random" / null を読める', () => {
+    const def = parseGroup({ stage: { groupMaps: ['map-a', 'random', null] } });
+    expect(def.stage).toMatchObject({ groupMaps: ['map-a', 'random', null] });
+  });
+
+  it('groupMaps の不正な要素は弾く', () => {
+    expect(() => parseGroup({ stage: { groupMaps: [42] } }))
+      .toThrow(/groupMaps\[0\]/);
+  });
+
+  it('groupMaps が配列でなければ弾く', () => {
+    expect(() => parseGroup({ stage: { groupMaps: 'map-a' } }))
+      .toThrow(/groupMaps は配列/);
+  });
+
   it('1回戦は予選の結果で決まるので bracket / schedule は指定できない', () => {
     expect(() => parseGroup({ bracket: { slots: ['p1', 'p2'] } })).toThrow(/bracket/);
     expect(() => parseGroup({ schedule: { pairs: [['p1', 'p2']] } })).toThrow(/schedule/);

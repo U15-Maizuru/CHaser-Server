@@ -22,7 +22,7 @@ import type {
 import {
   BOT_PARTICIPANT_ID, DEFAULT_LEAGUE_POINTS, NO_OPERATOR_DECISIONS,
   advancePerGroupOf, groupLabel, groupStageCount, hasQualifying, isConsolationMatch,
-  isGroupStageDone, leagueRulesOf, ruleSetOf, stageLabel,
+  isGroupStageDone, isLeaguePointsMatch, leagueRulesOf, ruleSetOf, stageLabel,
 } from '@u15/ws-types';
 import { addCatalogEntry, getCatalogEntry, setDemoEnabled } from '../programCatalog.js';
 import { buildBracket } from './bracket.js';
@@ -199,8 +199,12 @@ export function resolveContextOf(loaded: LoadedTournament): ResolveContext {
 function sanitizeDecisions(
   def: TournamentDefinition, decisions: OperatorDecisions,
 ): OperatorDecisions {
+  const decidedRoundRobinMaps = sanitizeDecidedRoundRobinMaps(def, decisions.decidedRoundRobinMaps);
+
   if (!hasQualifying(def.stage.format)) {
-    return { ...decisions, qualifiers: {}, exclusions: [], qualifiersConfirmed: false };
+    return {
+      ...decisions, qualifiers: {}, exclusions: [], qualifiersConfirmed: false, decidedRoundRobinMaps,
+    };
   }
 
   const groups = groupsOf(def);
@@ -219,7 +223,27 @@ function sanitizeDecisions(
     ...decisions,
     qualifiers,
     exclusions: decisions.exclusions.filter(id => ids.has(id)),
+    decidedRoundRobinMaps,
   };
+}
+
+/**
+ * group-then-bracket で groupCount が減ったときに孤立した決定値を捨てる。
+ * `'*'` (全リーグ共通のランダムマップ) は groupCount に関係なく常に残す。
+ */
+function sanitizeDecidedRoundRobinMaps(
+  def: TournamentDefinition, decided: Record<string, string>,
+): Record<string, string> {
+  if (def.stage.format !== 'group-then-bracket') return decided;
+  const { groupCount } = def.stage;
+
+  const result: Record<string, string> = {};
+  for (const [key, catalogId] of Object.entries(decided)) {
+    if (key === '*') { result[key] = catalogId; continue; }
+    const g = Number(key);
+    if (Number.isInteger(g) && g >= 0 && g < groupCount) result[key] = catalogId;
+  }
+  return result;
 }
 
 // ── 回戦ごとのマップ ──────────────────────────────────────────────────────
@@ -328,6 +352,42 @@ export function mapForThirdPlace(loaded: LoadedTournament): string | null {
   const third = loaded.state.matches.find(isConsolationMatch);
   if (!third) return null;
   return loaded.state.decisions.matchMaps[third.id] ?? mapForStage(loaded, third.stage);
+}
+
+// ── 総当たり (league / 予選リーグ) のマップ ─────────────────────────────────
+//
+// 上の「回戦ごとのマップ」とは別軸。あちらはトーナメント表の回戦専用で、予選の節には
+// 触れない設計のまま (group-then-bracket の予選 stage は resolveStageMaps が常に null を
+// 返す)。総当たりは「対戦カードごとに条件が変わってはいけない」ので、mapForStage/mapForMatch
+// のような stage 単位ではなく、常にリーグ単位 (group) で解決する。
+
+export type RoundRobinMapPlan =
+  | { kind: 'fixed';  catalogId: string }
+  | { kind: 'random'; decisionKey: string };
+
+/**
+ * 総当たり試合の実効マップ方針。対象外の試合 (勝ち上がり・BOT対戦予選) は null
+ * (呼び出し側は null なら従来どおり mapForMatch/generateRandomMap に任せる)。
+ *
+ * `kind: 'random'` はまだ何も決まっていない、という意味。`decisionKey` はその状態を
+ * `state.decisions.decidedRoundRobinMaps` に保存するときのキーで、初回に生成したマップを
+ * 使い回すための手がかり (`matchCommands.resolveRandomRoundRobinMap` が使う)。
+ */
+export function roundRobinMapPlanFor(
+  loaded: LoadedTournament, match: TournamentMatch,
+): RoundRobinMapPlan | null {
+  const { def } = loaded;
+  if (!isLeaguePointsMatch(def.stage.format, match)) return null;
+
+  if (def.stage.format === 'group-then-bracket' && match.group !== undefined) {
+    const perGroup = def.stage.groupMaps[match.group] ?? null;
+    if (perGroup === 'random') return { kind: 'random', decisionKey: String(match.group) };
+    if (typeof perGroup === 'string') return { kind: 'fixed', catalogId: perGroup };
+    // null → 大会全体の設定に従う (下へ)
+  }
+  const globalFixed = def.stage.map.catalogId;
+  if (globalFixed) return { kind: 'fixed', catalogId: globalFixed };
+  return { kind: 'random', decisionKey: '*' };
 }
 
 /** 試合グラフの骨組みを1本の文字列にする (結果は含めない) */

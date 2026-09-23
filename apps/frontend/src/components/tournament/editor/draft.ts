@@ -75,6 +75,12 @@ export interface TournamentDraft {
   mapCatalogId:     string;
   /** index = 決勝トーナメントの回戦。'' は「大会の設定に従う」 */
   stageMaps:        string[];
+  /**
+   * 予選リーグの各リーグのマップ (group-then-bracket のみ意味を持つ)。index = group。
+   * '' は「大会の設定に従う」、'random' は「このリーグだけランダム生成に固定」、
+   * それ以外はライブラリの catalogId。同じリーグ内は必ず同じマップになる。
+   */
+  groupMaps:        string[];
 
   groupCount:   number;
   /**
@@ -132,7 +138,7 @@ export function emptyDraft(id = defaultId()): TournamentDraft {
     id, name: '', format: 'single-elimination', ruleSet: 'maizuru',
     doubleMode: true, qualifyingDoubleMode: true, thirdPlaceMatch: false, doubleRoundRobin: false,
     leaguePoints: DEFAULT_LEAGUE_POINTS,
-    mapCatalogId: '', stageMaps: [],
+    mapCatalogId: '', stageMaps: [], groupMaps: [],
     groupCount: 2, advanceCount: 2, groupScheduleMode: 'parallel',
     bot: { program: '', name: '', map: '', participantSide: 0 },
     participants: [], manualBracket: false, slots: [],
@@ -187,6 +193,9 @@ export function draftFromDefinition(
     leaguePoints:     league?.points ?? d.leaguePoints,
     mapCatalogId:     stage.map.catalogId ?? '',
     stageMaps:        stage.map.bracketStages.map(m => m ?? ''),
+    groupMaps:        stage.format === 'group-then-bracket'
+      ? stage.groupMaps.map(m => m ?? '')
+      : d.groupMaps,
 
     groupCount: stage.format === 'group-then-bracket' ? stage.groupCount : d.groupCount,
     advanceCount:
@@ -288,6 +297,11 @@ function stageRulesFromDraft(d: TournamentDraft, map: MapPlan): StageRules {
         groupCount: d.groupCount, advancePerGroup: d.advanceCount,
         qualifyingDoubleMode: d.qualifyingDoubleMode,
         groupScheduleMode: d.groupScheduleMode,
+        // リーグ数ぶんだけ保存する (参加者を減らしてリーグ数が減ったときの残骸を持ち越さない)
+        groupMaps: Array.from({ length: d.groupCount }, (_, i) => {
+          const v = d.groupMaps[i];
+          return v === 'random' ? 'random' : (v || null);
+        }),
       };
     case 'bot-then-bracket':
       return {

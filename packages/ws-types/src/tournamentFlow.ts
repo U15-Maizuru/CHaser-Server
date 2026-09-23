@@ -140,6 +140,21 @@ export function isKnockoutMatch(format: TournamentFormat, m: TournamentMatch): b
 }
 
 /**
+ * 総当たり (勝ち点 → 合計ポイント → 直接対決でランキングする) 試合か。
+ *
+ * `league` は常に対象、`group-then-bracket` は予選の試合 (group を持つ) だけが対象。
+ * `bot-then-bracket` の予選は対象外 — 合計ポイントそのもので順位を付ける別形式で、
+ * 「全参加者が同じマップ」は `validateBotStage` が定義の時点で必須にしている。
+ *
+ * この述語が true の試合は `canRunInSideLane` が false になる (BOT対戦予選しか
+ * 副レーンに流れない) ので、リーグ単位でマップを1回だけ決めて使い回す処理に競合の
+ * 心配は無い。
+ */
+export function isLeaguePointsMatch(format: TournamentFormat, m: TournamentMatch): boolean {
+  return format === 'league' || (format === 'group-then-bracket' && m.group !== undefined);
+}
+
+/**
  * その試合を先後入替の2ゲームで行うか。
  *
  * 予選のある形式は予選・決勝で別々に選べる (StageRules.qualifyingDoubleMode)。

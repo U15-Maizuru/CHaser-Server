@@ -154,6 +154,17 @@ export type StageRules =
        * 先に試合をこなせてしまう偏りを避けたいときは既定の `parallel` を使う。
        */
       groupScheduleMode: 'parallel' | 'sequential';
+      /**
+       * 予選リーグの各リーグのマップ。index = group。
+       *   - catalogId (string) : そのリーグはこのライブラリマップに固定
+       *   - 'random'           : そのリーグ専用に1回だけランダム生成し、全試合で使い回す
+       *   - null (既定)         : 大会全体の設定に従う (map.catalogId があればそれ、
+       *                          無ければ全リーグ共通のランダムマップを1回だけ生成して使い回す)
+       *
+       * 「リーグ内で異なるマップを使うと合計ポイントの比較が壊れる」という制約のため、
+       * マップは常にリーグ単位でしか決められない (対戦カードごとの指定は無い)。
+       */
+      groupMaps: (string | 'random' | null)[];
     }
   | {
       format:          'bot-then-bracket';
@@ -817,10 +828,17 @@ export interface OperatorDecisions {
    * 巻き戻しのたびにこのフラグを消して回る必要はない。
    */
   qualifiersConfirmed: boolean;
+  /**
+   * 総当たり (league / 予選リーグ) で自動的に決めたランダムマップ (初回決定時に固定・以後使い回す)。
+   * key: `league` 形式は常に `'*'`。`group-then-bracket` はリーグごとに決めた場合は group番号
+   * (10進文字列)、全リーグ共通で決めた場合は `'*'`。
+   */
+  decidedRoundRobinMaps: Record<string, string>;
 }
 
 export const NO_OPERATOR_DECISIONS: OperatorDecisions = {
   stageMaps: {}, matchMaps: {}, qualifiers: {}, exclusions: [], qualifiersConfirmed: false,
+  decidedRoundRobinMaps: {},
 };
 
 /** 大会のルールセット。省略時は既定の 'maizuru' */

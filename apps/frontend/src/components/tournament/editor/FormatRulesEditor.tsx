@@ -1,5 +1,5 @@
-import type { CatalogEntry, MapCatalogEntry, RuleSet } from '@u15/ws-types';
-import { hasQualifying, stageLabel } from '@u15/ws-types';
+import type { CatalogEntry, MapCatalogEntry, RuleSet, TournamentFormat } from '@u15/ws-types';
+import { groupLabel, hasQualifying, stageLabel } from '@u15/ws-types';
 import {
   Button, Checkbox, ChipRow, Field, Hint, NumberInput, Section, Select, TextInput,
 } from '../../../ui';
@@ -252,17 +252,77 @@ export function FormatRulesEditor({ draft, programs, maps, patch }: FormatRulesE
           aria-label="固定マップ" value={draft.mapCatalogId}
           onChange={e => patch({ mapCatalogId: e.target.value })}
         >
-          <option value="">毎回ランダム生成</option>
+          <option value="">{randomMapLabel(format)}</option>
           {maps.map(m => <option key={m.id} value={m.id}>{m.displayName}</option>)}
         </Select>
       </Field>
       <Hint>
         固定マップにすると全試合が同じマップになります。同点で再試合になったときは
         運営が別のマップを選び直す必要があります。
+        {(format === 'league' || format === 'group-then-bracket') && (
+          ' 総当たりは合計ポイントで順位を比べるため、ランダム生成でも対戦カードごとには'
+          + '引き直さず、同じマップを使い回します。'
+        )}
       </Hint>
 
+      <GroupMaps draft={draft} maps={maps} patch={patch} />
       <StageMaps draft={draft} maps={maps} patch={patch} />
     </Section>
+  );
+}
+
+/** 「固定マップ」欄の空欄 (ランダム生成) の説明文。形式によって挙動が違うため出し分ける */
+function randomMapLabel(format: TournamentFormat): string {
+  if (format === 'league') return '大会全体で1回だけランダム生成';
+  if (format === 'group-then-bracket') return '予選は1回だけランダム生成（下のリーグごとの指定が優先されます）';
+  return '毎回ランダム生成';
+}
+
+/**
+ * リーグごとのマップ (group-then-bracket のみ)。
+ *
+ * 「リーグ内で違うマップを使うと合計ポイントの比較が壊れる」ため、対戦カードごとの指定は
+ * 無く、リーグ単位でしか選べない。何も指定しなければ大会全体の設定 (固定マップ、
+ * 無ければ全リーグ共通の1つのランダムマップ) に従う。
+ */
+function GroupMaps({ draft, maps, patch }: Omit<FormatRulesEditorProps, 'programs'>) {
+  if (draft.format !== 'group-then-bracket') return null;
+
+  const setAt = (group: number, value: string) => {
+    const next = Array.from(
+      { length: Math.max(draft.groupMaps.length, group + 1) },
+      (_, i) => draft.groupMaps[i] ?? '');
+    next[group] = value;
+    patch({ groupMaps: next });
+  };
+
+  return (
+    <>
+      <div style={s.subTitle}>リーグごとのマップ</div>
+      {Array.from({ length: draft.groupCount }, (_, group) => {
+        const label = `${groupLabel(group)}リーグ`;
+        return (
+          <Field key={group} label={label}>
+            <Select
+              aria-label={`${label} のマップ`}
+              value={draft.groupMaps[group] ?? ''}
+              onChange={e => setAt(group, e.target.value)}
+              style={{ flex: 1, minWidth: 0 }}
+            >
+              <option value="">
+                大会の設定に従う（{draft.mapCatalogId === '' ? '全リーグ共通のランダムマップ' : '固定マップ'}）
+              </option>
+              <option value="random">このリーグだけランダム生成に固定</option>
+              {maps.map(m => <option key={m.id} value={m.id}>{m.displayName}</option>)}
+            </Select>
+          </Field>
+        );
+      })}
+      <Hint>
+        同じリーグ内は必ず同じマップで戦います(合計ポイントの比較を公平にするため)。
+        「大会の設定に従う」のまま何も指定しなければ、全リーグが共通の1つのランダムマップを使います。
+      </Hint>
+    </>
   );
 }
 

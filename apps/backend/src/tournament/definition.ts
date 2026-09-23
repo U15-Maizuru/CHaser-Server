@@ -149,6 +149,26 @@ function parseBracketStages(v: unknown): (string | null)[] {
   });
 }
 
+/**
+ * 予選リーグの各リーグのマップ (index = group)。要素は catalogId / 'random' / null のいずれか。
+ * `groupCount` との長さ整合は要求しない — 参照側 (`roundRobinMapPlanFor`) が範囲外を
+ * `?? null` で吸収するので、`bracketStages` と同じ緩さで受け付ける。
+ */
+function parseGroupMaps(v: unknown): (string | 'random' | null)[] {
+  if (v === undefined || v === null) return [];
+  if (!Array.isArray(v)) {
+    throw new DefinitionError('stage.groupMaps は配列である必要があります');
+  }
+  return v.map((s, i) => {
+    if (s === null || s === undefined || s === '') return null;
+    if (s === 'random') return 'random';
+    if (typeof s !== 'string') {
+      throw new DefinitionError(`stage.groupMaps[${i}] はマップの ID か "random" か null である必要があります`);
+    }
+    return s;
+  });
+}
+
 function parseLeagueRules(v: unknown): LeagueRules {
   const o = v === undefined || v === null ? {} : asRecord(v, 'stage.league');
   return {
@@ -205,6 +225,7 @@ function parseStageRules(format: TournamentFormat, v: unknown, matchDoubleMode: 
         advancePerGroup:      asNumber(o['advancePerGroup'], DEFAULT_ADVANCE_PER_GROUP),
         qualifyingDoubleMode: asBool(o['qualifyingDoubleMode'], matchDoubleMode),
         groupScheduleMode:    o['groupScheduleMode'] === 'sequential' ? 'sequential' : 'parallel',
+        groupMaps:            parseGroupMaps(o['groupMaps']),
       };
 
     case 'bot-then-bracket':

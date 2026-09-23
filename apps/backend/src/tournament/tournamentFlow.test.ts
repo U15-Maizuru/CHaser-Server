@@ -1,12 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import type {
-  ParticipantDef, ResolvedParticipant, StageRules, TournamentFormat,
+  ParticipantDef, QualifierCandidate, ResolvedParticipant, StageRules, TournamentFormat,
   TournamentMatch, TournamentMatchResult, TournamentStatePayload,
 } from '@u15/ws-types';
 import {
   DEFAULT_LEAGUE_POINTS, blockedByQualifiers, isGroupStageDone, isKnockoutMatch,
-  compareByPlayOrder, nextOperatorAction, nextReadyMatch, playedCountOf,
+  isLeaguePointsMatch, compareByPlayOrder, nextOperatorAction, nextReadyMatch, playedCountOf,
 } from '@u15/ws-types';
+import { buildBotStage } from './botStage.js';
 import { buildBracket } from './bracket.js';
 import { buildGroupStage } from './groupStage.js';
 import { confirmResult, captureResult, resolveMatches } from './progress.js';
@@ -236,6 +237,32 @@ describe('isKnockoutMatch', () => {
   });
 });
 
+describe('isLeaguePointsMatch', () => {
+  const bracketMatch = resolveMatches(buildBracket(people(2), OPTS))[0]!;
+
+  it('リーグの試合は対象', () => {
+    expect(isLeaguePointsMatch('league', bracketMatch)).toBe(true);
+  });
+
+  it('トーナメントの試合は対象外', () => {
+    expect(isLeaguePointsMatch('single-elimination', bracketMatch)).toBe(false);
+  });
+
+  it('予選リーグは group の有無で分ける (予選だけが対象)', () => {
+    const ms = buildGroupStage(people(4), {
+      groupCount: 2, advancePerGroup: 1, doubleRoundRobin: false, thirdPlaceMatch: false,
+    });
+    const group   = ms.find(m => m.group !== undefined)!;
+    const bracket = ms.find(m => m.group === undefined)!;
+    expect(isLeaguePointsMatch('group-then-bracket', group)).toBe(true);
+    expect(isLeaguePointsMatch('group-then-bracket', bracket)).toBe(false);
+  });
+
+  it('BOT対戦予選は group を持っていても対象外 (別軸で全員同じマップを強制する)', () => {
+    expect(isLeaguePointsMatch('bot-then-bracket', { ...bracketMatch, group: 0 })).toBe(false);
+  });
+});
+
 describe('isGroupStageDone', () => {
   const groupMatches = () => resolveMatches(buildGroupStage(people(4), {
     groupCount: 2, advancePerGroup: 1, doubleRoundRobin: false, thirdPlaceMatch: false,
@@ -293,7 +320,7 @@ function stageOf(format: TournamentFormat): StageRules {
     return {
       format, map, thirdPlaceMatch: false, groupCount: 2, advancePerGroup: 1,
       league: { points: DEFAULT_LEAGUE_POINTS, doubleRoundRobin: false },
-      qualifyingDoubleMode: false, groupScheduleMode: 'parallel',
+      qualifyingDoubleMode: false, groupScheduleMode: 'parallel', groupMaps: [],
     };
   }
   if (format === 'bot-then-bracket') {

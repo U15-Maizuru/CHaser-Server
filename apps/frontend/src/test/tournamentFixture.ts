@@ -30,7 +30,7 @@ function build(format: TournamentFormat): StageRules {
       return {
         format, map: MAP, thirdPlaceMatch: false, league: LEAGUE,
         groupCount: 2, advancePerGroup: 2, qualifyingDoubleMode: true,
-        groupScheduleMode: 'parallel',
+        groupScheduleMode: 'parallel', groupMaps: [],
       };
     case 'bot-then-bracket':
       return {

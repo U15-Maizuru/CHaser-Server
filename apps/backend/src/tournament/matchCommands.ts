@@ -1,10 +1,12 @@
 import type { ClientType, ProcessConfig, ResolvedParticipant, TournamentMatch } from '@u15/ws-types';
 import {
-  blockedByQualifiers, canRunInSideLane, doubleModeFor, groupStageCount, hasBracket,
-  isConsolationMatch, isKnockoutMatch,
+  blockedByQualifiers, canRunInSideLane, doubleModeFor, groupLabel, groupStageCount, hasBracket,
+  isConsolationMatch, isKnockoutMatch, isLeaguePointsMatch,
 } from '@u15/ws-types';
 import { buildProcessConfig } from '../game/processConfig.js';
 import { getCatalogEntry } from '../programCatalog.js';
+import { addMapCatalogEntryFromInline } from '../mapCatalog.js';
+import type { ServerManager } from '../game/ServerManager.js';
 import {
   TournamentError, commit, ctxOf, decide, disarmIfCleared, laneOfMatch, managerOf, primaryLane,
   requireMatch, requireParticipant, updateMatch, type Binding, type CommandEnv, type Lane,
@@ -17,7 +19,8 @@ import {
   setWalkover as walkoverInGraph,
 } from './progress.js';
 import {
-  mapForMatch, mapForStage, qualifiersConfirmedOf, resolveParticipants, saveState, stageCountOf,
+  mapForMatch, mapForStage, qualifiersConfirmedOf, resolveParticipants, roundRobinMapPlanFor,
+  saveState, stageCountOf,
 } from './TournamentStore.js';
 
 // 1つの試合に対する運営操作。準備 → 確定 → やり直し と、その試合が使うマップ。
@@ -154,12 +157,56 @@ export function cancelArm(env: CommandEnv, b: Binding, matchId?: string): void {
   env.publish(b.roomId);
 }
 
-/** そのレーンで準備中の試合のマップを引き直す (指定が無ければランダム生成に戻す) */
+/**
+ * そのレーンで準備中の試合のマップを引き直す (指定が無ければランダム生成に戻す)。
+ *
+ * 総当たり (league / 予選リーグ) の試合は `roundRobinMapPlanFor` が優先する — 対戦カードごと
+ * ではなくリーグ単位で1つのマップに固定するため、`mapForMatch` (再試合の個別指定を含む)
+ * は総当たりの試合には効かせない。
+ */
 function applyMapTo(env: CommandEnv, b: Binding, lane: Lane, match: TournamentMatch): void {
   const manager = managerOf(env, lane.roomId);
-  const mapId   = mapForMatch(b.loaded, match);
+  const rr = roundRobinMapPlanFor(b.loaded, match);
+  if (rr) {
+    const catalogId = rr.kind === 'fixed' ? rr.catalogId : resolveRandomRoundRobinMap(b, manager, rr.decisionKey, match);
+    if (catalogId) manager?.loadMap(catalogId);
+    return;
+  }
+
+  const mapId = mapForMatch(b.loaded, match);
   if (mapId) manager?.loadMap(mapId);
   else manager?.generateRandomMap();
+}
+
+/**
+ * 総当たり試合用のランダムマップを決める。既に決定済みならその catalogId を返すだけ。
+ * 未決定なら生成してライブラリへ保存し、以後同じリーグ (または大会全体) の全試合が
+ * 同じ catalogId を使うよう `state.decisions.decidedRoundRobinMaps` に固定する。
+ *
+ * `canRunInSideLane` は league/予選リーグの総当たり試合を対象にしないため
+ * (`isLeaguePointsMatch` が true の試合は常に主レーンで1試合ずつ進む)、
+ * 「無ければ生成して保存」を複数レーンが同時に行う競合は起きない。
+ */
+function resolveRandomRoundRobinMap(
+  b: Binding, manager: ServerManager | undefined, decisionKey: string, match: TournamentMatch,
+): string | null {
+  const existing = b.loaded.state.decisions.decidedRoundRobinMaps[decisionKey];
+  if (existing) return existing;
+  if (!manager) return null;
+
+  manager.generateRandomMap();
+  const data = manager.getCurrentMapData();
+  const displayName = decisionKey === '*'
+    ? `${b.loaded.def.name} 予選 (自動生成)`
+    : `${b.loaded.def.name} ${groupLabel(match.group!)}リーグ (自動生成)`;
+  const entry = addMapCatalogEntryFromInline(displayName, data);
+
+  decide(b, d => ({
+    ...d, decidedRoundRobinMaps: { ...d.decidedRoundRobinMaps, [decisionKey]: entry.id },
+  }));
+  saveState(b.loaded.state);
+
+  return entry.id;
 }
 
 /**
@@ -243,11 +290,21 @@ export function confirmResult(
  *
  * 「固定かどうか」は回戦ごとのマップも含めた実効値で見る — 大会全体はランダムでも
  * その回戦だけマップを指定していれば、やはり引き直されない。
+ *
+ * **総当たり (league / 予選リーグ) の試合はマップを個別に選べない。** リーグ内で違う
+ * マップを使うと合計ポイントの比較が壊れるため、やり直しても常にそのリーグに割り当てた
+ * マップ (roundRobinMapPlanFor が解決する) をそのまま使う。
  */
 export function discardResult(
   env: CommandEnv, b: Binding, matchId: string, rematchMapCatalogId?: string,
 ): void {
   const match = requireMatch(b, matchId);
+
+  if (rematchMapCatalogId !== undefined && isLeaguePointsMatch(b.loaded.def.stage.format, match)) {
+    throw new TournamentError(
+      '予選リーグ・リーグ戦の試合はマップを個別に変更できません (リーグ内は同じマップで統一します)',
+    );
+  }
 
   const wasTie   = match.result?.winnerSide === null;
   const fixedMap = mapForStage(b.loaded, match.stage);

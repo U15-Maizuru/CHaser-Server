@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TournamentStatePayload, WsMessage } from '@u15/ws-types';
 import { RoomManager } from '../RoomManager.js';
 import { catalogDir, ensureCatalogDir } from '../programCatalog.js';
+import { ensureMapCatalogDir, mapCatalogDir } from '../mapCatalog.js';
 import { TournamentError, TournamentOrchestrator } from './TournamentOrchestrator.js';
 import { ensureTournamentDir, loadTournament, tournamentRootDir } from './TournamentStore.js';
 
@@ -55,6 +56,7 @@ describe('TournamentOrchestrator', () => {
   beforeEach(() => {
     ensureTournamentDir();
     ensureCatalogDir();
+    ensureMapCatalogDir();
     sent = [];
     random = Math.random;
     rm   = new RoomManager();
@@ -79,6 +81,7 @@ describe('TournamentOrchestrator', () => {
     rm.shutdown();
     fs.rmSync(tournamentRootDir(), { recursive: true, force: true });
     fs.rmSync(catalogDir(), { recursive: true, force: true });
+    fs.rmSync(mapCatalogDir(), { recursive: true, force: true });
   });
 
   describe('観戦画面の表示 (予選なしの大会)', () => {
@@ -1162,6 +1165,111 @@ describe('TournamentOrchestrator', () => {
       orch.confirmQualifiers(ROOM, true);
       await orch.armMatch(ROOM, 'SF1');
       expect(rm.getRoom(ROOM)!.manager.getStatus().doubleMode).toBe(true);
+    });
+
+    it('同じリーグの異なる対戦カードを連続 arm すると、初回だけランダム生成し以後は同じマップを使い回す', async () => {
+      writeCup(groupCup());
+      orch.bind(ROOM, CUP);
+      const manager = rm.getRoom(ROOM)!.manager;
+      const [m1, m2] = lastState()!.matches.filter(m => m.group === 0);
+      expect(m1).toBeDefined();
+      expect(m2).toBeDefined();
+
+      const genSpy = vi.spyOn(manager, 'generateRandomMap');
+      await orch.armMatch(ROOM, m1!.id);
+      expect(genSpy).toHaveBeenCalledTimes(1);
+      const decidedMapId = manager.getStatus().mapSource.catalogId;
+      orch.setWalkover(ROOM, m1!.id, 0);
+
+      const loadSpy = vi.spyOn(manager, 'loadMap');
+      await orch.armMatch(ROOM, m2!.id);
+      expect(genSpy).toHaveBeenCalledTimes(1); // 2回目は生成し直さない
+      expect(loadSpy).toHaveBeenLastCalledWith(decidedMapId);
+      vi.restoreAllMocks();
+    });
+
+    it('既定 (リーグごとの指定なし) では別リーグの試合でも同じ自動生成マップを使う', async () => {
+      writeCup(groupCup());
+      orch.bind(ROOM, CUP);
+      const manager = rm.getRoom(ROOM)!.manager;
+      const g0 = lastState()!.matches.find(m => m.group === 0)!;
+      const g1 = lastState()!.matches.find(m => m.group === 1)!;
+
+      await orch.armMatch(ROOM, g0.id);
+      const decidedMapId = manager.getStatus().mapSource.catalogId;
+      orch.setWalkover(ROOM, g0.id, 0);
+
+      const genSpy = vi.spyOn(manager, 'generateRandomMap');
+      await orch.armMatch(ROOM, g1.id);
+      expect(genSpy).not.toHaveBeenCalled(); // 別リーグでも生成し直さず、共通のマップを使う
+      expect(manager.getStatus().mapSource.catalogId).toBe(decidedMapId);
+      vi.restoreAllMocks();
+    });
+
+    it('リーグごとに groupMaps で "random" を指定すると、そのリーグだけ別のマップになる', async () => {
+      writeCup(groupCup({ stage: { groupCount: 2, advancePerGroup: 2, groupMaps: ['random'] } }));
+      orch.bind(ROOM, CUP);
+      const manager = rm.getRoom(ROOM)!.manager;
+      const g0 = lastState()!.matches.find(m => m.group === 0)!;
+      const g1 = lastState()!.matches.find(m => m.group === 1)!;
+
+      await orch.armMatch(ROOM, g0.id);
+      const g0MapId = manager.getStatus().mapSource.catalogId;
+      orch.setWalkover(ROOM, g0.id, 0);
+
+      await orch.armMatch(ROOM, g1.id);
+      const g1MapId = manager.getStatus().mapSource.catalogId;
+
+      expect(g0MapId).not.toBe(g1MapId);
+    });
+
+    it('予選リーグの試合はやり直すときにマップを個別指定できない', () => {
+      writeCup(groupCup());
+      orch.bind(ROOM, CUP);
+      const g0 = lastState()!.matches.find(m => m.group === 0)!;
+      orch.setWalkover(ROOM, g0.id, 0);
+
+      expect(() => orch.discardResult(ROOM, g0.id, 'some-other-map')).toThrow(TournamentError);
+      expect(() => orch.discardResult(ROOM, g0.id)).not.toThrow();
+    });
+  });
+
+  // ── リーグ (総当たり) ────────────────────────────────────────────────────
+  describe('リーグ (総当たり)', () => {
+    const leagueCup = (overrides: Record<string, unknown> = {}) => cupDef({
+      format: 'league',
+      participants: Array.from({ length: 4 }, (_, i) => ({
+        id: `p${i + 1}`, name: `T${i + 1}`, seed: i + 1, program: { builtin: 'cpu' },
+      })),
+      ...overrides,
+    });
+
+    it('総当たりの試合を連続 arm すると、初回だけランダム生成し以後は同じマップを使い回す', async () => {
+      writeCup(leagueCup());
+      orch.bind(ROOM, CUP);
+      const manager = rm.getRoom(ROOM)!.manager;
+      const [m1, m2] = lastState()!.matches;
+
+      const genSpy = vi.spyOn(manager, 'generateRandomMap');
+      await orch.armMatch(ROOM, m1!.id);
+      expect(genSpy).toHaveBeenCalledTimes(1);
+      const decidedMapId = manager.getStatus().mapSource.catalogId;
+      orch.setWalkover(ROOM, m1!.id, 0);
+
+      await orch.armMatch(ROOM, m2!.id);
+      expect(genSpy).toHaveBeenCalledTimes(1);
+      expect(manager.getStatus().mapSource.catalogId).toBe(decidedMapId);
+      vi.restoreAllMocks();
+    });
+
+    it('リーグの試合はやり直すときにマップを個別指定できない', () => {
+      writeCup(leagueCup());
+      orch.bind(ROOM, CUP);
+      const m1 = lastState()!.matches[0]!;
+      orch.setWalkover(ROOM, m1.id, 0);
+
+      expect(() => orch.discardResult(ROOM, m1.id, 'some-other-map')).toThrow(TournamentError);
+      expect(() => orch.discardResult(ROOM, m1.id)).not.toThrow();
     });
   });
 
