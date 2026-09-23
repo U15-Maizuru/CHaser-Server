@@ -169,4 +169,25 @@ describe('NextActionCard', () => {
     fireEvent.click(screen.getByText('この決勝進出者で確定 ▶'));
     expect(commands.confirmQualifiers).toHaveBeenCalledWith(true);
   });
+
+  it('BOT対戦予選で候補が定員を超えている間は確定ボタンを出さない', () => {
+    // BotQualifierSection (進行タブ) 側の disabled={over > 0} を素通りして
+    // 同点のボーダーを1人も削らずに確定できてしまっていた回帰を防ぐ
+    const groupMatch = match({ id: 'G1', group: 0, status: 'done' });
+    const candidate = (id: string, onBorder: boolean) => ({
+      participantId: id, rank: 4, totalPoints: 100, strikePoints: 0, itemPoints: 100,
+      items: 10, remainingTurns: 0, excluded: false, onBorder,
+    });
+    show(state({
+      stage:   stageRulesFor('bot-then-bracket'),
+      matches: [groupMatch, match({ id: 'FINAL', stage: 1, status: 'pending' })],
+      qualifierCandidates: [
+        candidate('p1', true), candidate('p2', true), candidate('p3', true),
+        candidate('p4', true), candidate('p5', true),
+      ],
+    }));
+    expect(screen.getByText('決勝進出者を確定する')).toBeInTheDocument();
+    expect(screen.queryByText('この決勝進出者で確定 ▶')).not.toBeInTheDocument();
+    expect(screen.getByText(/あと1名を削ってください/)).toBeInTheDocument();
+  });
 });

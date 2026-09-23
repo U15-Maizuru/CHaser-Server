@@ -2,7 +2,10 @@ import type {
   MatchRules, ResolvedParticipant, StageRules, TournamentFormat, TournamentMatch,
   TournamentStatePayload,
 } from './tournament.js';
-import { compareByPlayOrder, hasBotStage, hasBracket, hasQualifying } from './tournament.js';
+import {
+  advancePerGroupOf, compareByPlayOrder, hasBotStage, hasBracket, hasQualifying,
+  qualifierOverCount,
+} from './tournament.js';
 
 // 試合グラフから「今どうなっているか」を読み取る述語。
 //
@@ -207,8 +210,15 @@ export type OperatorAction =
   | { kind: 'confirm';             match: TournamentMatch }
   /** 割り当て済み。フッターの「ゲームスタート」を押す */
   | { kind: 'start';               match: TournamentMatch }
-  /** 予選が終わった。決勝進出者を確定する */
-  | { kind: 'confirm-qualifiers' }
+  /**
+   * 予選が終わった。決勝進出者を確定する。
+   *
+   * `over` は BOT対戦予選の確認リストが定員を何人超えているか (それ以外の形式は常に0)。
+   * 0より大きい間は運営に確定を押させない — 削る手段は「進行」タブの確認リスト
+   * (`BotQualifierSection`) にしか無いので、ここで無条件に確定できると
+   * 同点のボーダーを1人も削らずに決勝トーナメントへ進めてしまう。
+   */
+  | { kind: 'confirm-qualifiers'; over: number }
   /** 次の試合を準備する */
   | { kind: 'arm';                 match: TournamentMatch }
   /** 次の試合の出場者にプログラムが割り当たっていない */
@@ -246,7 +256,10 @@ export function nextOperatorAction(state: TournamentStatePayload): OperatorActio
 
   // ③ 予選が終わっていれば、決勝へ進む前に決勝進出者を確定する
   if (hasQualifying(format) && isGroupStageDone(state.matches) && !state.qualifiersConfirmed) {
-    return { kind: 'confirm-qualifiers' };
+    const over = hasBotStage(format)
+      ? qualifierOverCount(state.qualifierCandidates ?? [], advancePerGroupOf(state.stage))
+      : 0;
+    return { kind: 'confirm-qualifiers', over };
   }
 
   // ④ 次の試合を準備する (他のレーンが走らせている試合は候補から外す)

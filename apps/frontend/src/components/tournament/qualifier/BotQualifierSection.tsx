@@ -1,5 +1,5 @@
 import type { TournamentStatePayload } from '@u15/ws-types';
-import { advancePerGroupOf } from '@u15/ws-types';
+import { advancePerGroupOf, qualifierOverCount } from '@u15/ws-types';
 import { confirmDialog } from '../../../lib/nativeDialog';
 import {
   BG_CARD, BG_ROOT, BORDER_COLOR, FONT_NUM, FONT_UI, GOLD_BASE, HOT_COLOR, RADIUS_SM,
@@ -36,7 +36,7 @@ export function BotQualifierSection({ state, onExclude, onConfirm }: BotQualifie
   const waiting = candidates.length === 0;
 
   const remaining = candidates.filter(c => !c.excluded);
-  const over      = remaining.length - advance;
+  const over      = qualifierOverCount(candidates, advance);
   const confirmed = state.qualifiersConfirmed;
 
   /** その削除で決勝進出者が変わる決勝トーナメントが、もう動いてしまっているか */
@@ -81,55 +81,60 @@ export function BotQualifierSection({ state, onExclude, onConfirm }: BotQualifie
             </div>
           )}
 
-          <table style={table}>
-            <thead>
-              <tr>
-                <th style={th}>順位</th>
-                <th style={{ ...th, textAlign: 'left' }}>プレイヤー</th>
-                <th style={th}>{isKoryu ? '得点' : 'ポイント'}</th>
-                {isKoryu && <th style={th}>アイテム数</th>}
-                {isKoryu && <th style={th}>残りターン</th>}
-                {!isKoryu && <th style={th}>一撃</th>}
-                {!isKoryu && <th style={th}>アイテム</th>}
-                <th style={th} />
-              </tr>
-            </thead>
-            <tbody>
-              {candidates.map(c => (
-                <tr key={c.participantId} style={c.excluded ? rowExcluded : undefined}>
-                  <td style={{ ...td, fontWeight: 700 }}>{c.rank}</td>
-                  <td style={{ ...td, textAlign: 'left' }}>
-                    {nameOf(c.participantId)}
-                    {c.onBorder && <span style={borderTag}>同点</span>}
-                  </td>
-                  <td style={{ ...tdNum, fontWeight: 700 }}>{c.totalPoints}</td>
-                  {isKoryu && <td style={tdNum}>{c.items}</td>}
-                  {isKoryu && <td style={tdNum}>{c.remainingTurns}</td>}
-                  {!isKoryu && <td style={tdNum}>{c.strikePoints}</td>}
-                  {!isKoryu && <td style={tdNum}>{c.itemPoints}</td>}
-                  <td style={td}>
-                    {c.excluded ? (
-                      <button
-                        style={btnUndo}
-                        aria-label={`${nameOf(c.participantId)} を戻す`}
-                        onClick={() => toggle(c.participantId, false)}
-                      >
-                        戻す
-                      </button>
-                    ) : (
-                      <button
-                        style={btnRemove}
-                        aria-label={`${nameOf(c.participantId)} を削除`}
-                        onClick={() => toggle(c.participantId, true)}
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </td>
+          {/* 運営パネルは細い窓でも使うので、列 (特に末尾の削除ボタン) が画面外へ
+              はみ出さないよう横スクロールを許す (LeagueTable.tsx の scroller と同じ考え方)。
+              無いと、はみ出した削除ボタンに触れる手段が無いまま「編集できない」ように見える */}
+          <div style={scroller}>
+            <table style={table}>
+              <thead>
+                <tr>
+                  <th style={th}>順位</th>
+                  <th style={{ ...th, textAlign: 'left' }}>プレイヤー</th>
+                  <th style={th}>{isKoryu ? '得点' : 'ポイント'}</th>
+                  {isKoryu && <th style={th}>アイテム数</th>}
+                  {isKoryu && <th style={th}>残りターン</th>}
+                  {!isKoryu && <th style={th}>一撃</th>}
+                  {!isKoryu && <th style={th}>アイテム</th>}
+                  <th style={th} />
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {candidates.map(c => (
+                  <tr key={c.participantId} style={c.excluded ? rowExcluded : undefined}>
+                    <td style={{ ...td, fontWeight: 700 }}>{c.rank}</td>
+                    <td style={{ ...td, textAlign: 'left' }}>
+                      {nameOf(c.participantId)}
+                      {c.onBorder && <span style={borderTag}>同点</span>}
+                    </td>
+                    <td style={{ ...tdNum, fontWeight: 700 }}>{c.totalPoints}</td>
+                    {isKoryu && <td style={tdNum}>{c.items}</td>}
+                    {isKoryu && <td style={tdNum}>{c.remainingTurns}</td>}
+                    {!isKoryu && <td style={tdNum}>{c.strikePoints}</td>}
+                    {!isKoryu && <td style={tdNum}>{c.itemPoints}</td>}
+                    <td style={td}>
+                      {c.excluded ? (
+                        <button
+                          style={btnUndo}
+                          aria-label={`${nameOf(c.participantId)} を戻す`}
+                          onClick={() => toggle(c.participantId, false)}
+                        >
+                          戻す
+                        </button>
+                      ) : (
+                        <button
+                          style={btnRemove}
+                          aria-label={`${nameOf(c.participantId)} を削除`}
+                          onClick={() => toggle(c.participantId, true)}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
 
@@ -176,6 +181,8 @@ const hint: React.CSSProperties = {
 };
 
 const noteText: React.CSSProperties = { fontSize: 12, flexShrink: 0 };
+
+const scroller: React.CSSProperties = { overflowX: 'auto', maxWidth: '100%' };
 
 const table: React.CSSProperties = {
   borderCollapse: 'collapse', fontSize: 12, width: '100%',

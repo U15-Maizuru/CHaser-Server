@@ -427,7 +427,20 @@ describe('nextOperatorAction', () => {
 
     it('予選が終われば決勝進出者の確定を促す', () => {
       expect(nextOperatorAction(payload(finishGroups(), {}, 'group-then-bracket')))
-        .toEqual({ kind: 'confirm-qualifiers' });
+        .toEqual({ kind: 'confirm-qualifiers', over: 0 });
+    });
+
+    it('BOT対戦予選は確認リストが定員を超えているぶんを over に返す', () => {
+      const ms = buildBotStage(people(3), {
+        advanceCount: 2, participantSide: 0, thirdPlaceMatch: false,
+      }).map(m => m.group !== undefined ? { ...m, status: 'done' as const } : m);
+      const candidates: QualifierCandidate[] = people(3).map((p, i) => ({
+        participantId: p.id, rank: i + 1, totalPoints: 0, strikePoints: 0, itemPoints: 0,
+        items: 0, remainingTurns: 0, excluded: false, onBorder: true,
+      }));
+      // stageOf('bot-then-bracket') の advanceCount は2固定。3人とも未削除なので over = 1
+      expect(nextOperatorAction(payload(ms, { qualifierCandidates: candidates }, 'bot-then-bracket')))
+        .toEqual({ kind: 'confirm-qualifiers', over: 1 });
     });
 
     it('確定すれば決勝トーナメントの試合を準備できる', () => {

@@ -590,6 +590,19 @@ export interface StandingRow {
 }
 
 /**
+ * BOT対戦予選の勝敗マーク。全参加者が同じ BOT と1試合だけ戦うので、
+ * ○ (勝ち) / △ (引き分け) / × (負け) の1文字で足りる。
+ * バックエンドの結果CSV出力とフロントエンドの進行画面 (BotStageBoard) の両方が使う —
+ * 別々に書くと記号がずれる (実際に一方だけ ● のまま取り残されたことがある)。
+ */
+export function botResultMark(s: StandingRow): string {
+  if (s.played === 0) return '';
+  if (s.wins   > 0)   return '○';
+  if (s.draws  > 0)   return '△';
+  return '×';
+}
+
+/**
  * 観戦画面に何を出すか (予選のある形式のみ)。
  *
  * `'auto'` は進行に追従する。運営が明示的に選んだときだけ固定され、
@@ -701,6 +714,19 @@ export interface QualifierCandidate {
   excluded:     boolean;
   /** 通過ラインと並び、タイブレークでも決着しなかった = 運営が決めるべき */
   onBorder:     boolean;
+}
+
+/**
+ * 確認リスト (削除されていない候補) が定員を何人超えているか。0以下なら確定してよい。
+ *
+ * BOT対戦予選の確定ボタンは「進行」タブの `BotQualifierSection` と、「今やること」の
+ * `NextActionCard` の両方に出る (前者は確認リストのすぐそば、後者はまず目に入る導線)。
+ * 別々に数えると、片方だけを直したときにボタンの有効・無効がずれる。
+ */
+export function qualifierOverCount(
+  candidates: QualifierCandidate[], advancePerGroup: number,
+): number {
+  return candidates.filter(c => !c.excluded).length - advancePerGroup;
 }
 
 export interface TournamentSummary {

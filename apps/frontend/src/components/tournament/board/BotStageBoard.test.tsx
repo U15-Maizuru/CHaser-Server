@@ -143,14 +143,23 @@ describe('BotStageBoard', () => {
     expect(borderOf(2)).not.toBe('2px');
   });
 
-  it('確認リストで削除された人は順位リストから外れ、下が繰り上がる', () => {
+  it('確認リストで削除された人も行はそのまま残る (戦った記録は消さない・印も付けない)、通過の計算からだけ外れて下が繰り上がる', () => {
     const excluded: QualifierCandidate[] = [{
       participantId: 'p2', rank: 2, totalPoints: 90, strikePoints: 0, itemPoints: 90,
       items: 90, remainingTurns: 0,
       excluded: true, onBorder: false,
     }];
     render(<BotStageBoard state={state(6, { candidates: excluded })} />);
-    expect(rankedNames()).toEqual(['A', 'C', 'D', 'E', 'F']);
+    // 行自体は6人ぶんとも、他と見分けの付かない普通の表示のまま残る
+    expect(rankedNames()).toEqual(NAMES);
+
+    // 通過ラインは、削除された B を除いた順位で4番目 = E (行index 4) に引かれる
+    const table = screen.getByText(/^試合結果/).parentElement!.querySelector('table')!;
+    const rows  = within(table).getAllByRole('row').slice(1);
+    const borderOf = (i: number) =>
+      (rows[i]!.children[0] as HTMLElement).style.borderBottomWidth;
+    expect(borderOf(4)).toBe('2px');
+    expect(borderOf(3)).not.toBe('2px');
   });
 
   it('交流大会ルールでは得点の内訳としてアイテム数・残りターン数の列を出す (一撃/アイテムポイントは出さない)', () => {

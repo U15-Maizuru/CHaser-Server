@@ -1,7 +1,7 @@
 import type { CatalogEntry, TournamentMatch, TournamentStatePayload } from '@u15/ws-types';
 import {
-  armedLaneMatchIds, canRunInSideLane, doubleModeFor, nextOperatorAction, nextReadyMatches,
-  type OperatorAction,
+  armedLaneMatchIds, canRunInSideLane, doubleModeFor, nextOperatorAction,
+  nextReadyMatches, type OperatorAction,
 } from '@u15/ws-types';
 import type { TournamentCommands } from '../../../hooks/useGameState';
 import { MatchCard } from '../board/MatchCard';
@@ -121,15 +121,25 @@ function Body({ state, action, commands, programs }: {
       );
 
     case 'confirm-qualifiers':
+      // action.over (BOT対戦予選だけ意味を持つ。nextOperatorAction が判定する) が
+      // 0より大きい間はボタンを出さない。ここで無条件に出すと、BotQualifierSection 側の
+      // disabled={over > 0} を素通りして、同点のボーダーを1人も削らずに確定できてしまう
+      // (削る手段はそちらにしか無い)
       return (
         <>
           <p style={s.note}>
             予選が終わりました。下の「決勝進出者」を確認し、確定すると決勝トーナメントへ進みます。
             確定するまで観客席には予選の最終結果が出続けます。
           </p>
-          <Button variant="primary" onClick={() => commands.confirmQualifiers(true)}>
-            この決勝進出者で確定 ▶
-          </Button>
+          {action.over > 0 ? (
+            <Hint>
+              同点で並んでいます。「進行」タブの「決勝進出者」から、あと{action.over}名を削ってください。
+            </Hint>
+          ) : (
+            <Button variant="primary" onClick={() => commands.confirmQualifiers(true)}>
+              この決勝進出者で確定 ▶
+            </Button>
+          )}
         </>
       );
 

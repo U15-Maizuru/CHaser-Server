@@ -1,5 +1,5 @@
 import type { StandingRow, TournamentMatch } from '@u15/ws-types';
-import { compareByPlayOrder, groupLabel, hasBotStage } from '@u15/ws-types';
+import { botResultMark, compareByPlayOrder, groupLabel, hasBotStage } from '@u15/ws-types';
 import { computeStandings } from './standings.js';
 import {
   groupStandingsOf, leaguePointsOf, qualifiersOf, rankByOf, resolveParticipants,
@@ -132,7 +132,7 @@ export function standingsCsv(loaded: LoadedTournament): string {
 
   const row = (s: StandingRow): unknown[] => (bot
     ? [
-        s.rank, nameOf(s.participantId), affOf(s.participantId), resultMark(s),
+        s.rank, nameOf(s.participantId), affOf(s.participantId), botResultMark(s),
         s.totalPoints, s.strikePoints, s.itemPoints, s.sweepPoints, s.tied ? 'はい' : '',
       ]
     : [
@@ -157,14 +157,6 @@ export function standingsCsv(loaded: LoadedTournament): string {
   }
 
   return toCsv([header, ...standingsOf(loaded).map(row)]);
-}
-
-/** BOT に勝ったか (1試合しかないので○△●の1文字で足りる) */
-function resultMark(s: StandingRow): string {
-  if (s.played === 0) return '';
-  if (s.wins   > 0)   return '○';
-  if (s.draws  > 0)   return '△';
-  return '●';
 }
 
 function standingsOf(loaded: LoadedTournament): StandingRow[] {

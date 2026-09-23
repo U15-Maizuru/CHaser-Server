@@ -1,5 +1,5 @@
 import type { StandingRow, TournamentMatch, TournamentStatePayload } from '@u15/ws-types';
-import { advancePerGroupOf, armedLaneMatchIds } from '@u15/ws-types';
+import { advancePerGroupOf, armedLaneMatchIds, botResultMark } from '@u15/ws-types';
 import { FitArea } from '../../FitArea';
 import { affiliationOf, ParticipantName } from './ParticipantName';
 import {
@@ -55,10 +55,18 @@ export function BotStageBoard({
 
   const advanceCount = advancePerGroupOf(state.stage);
   // 通過圏は「削除されていない人の中での位置」で塗る。削除は運営が確認リストで行う操作なので、
-  // その結果がそのまま観客の見る通過ラインに反映される
+  // その結果がそのまま観客の見る通過ラインに反映される。
+  // **ただし行そのものは消さない。** 削除された人も BOT と対戦した記録は本物なので、
+  // 一覧から消すと「戦った試合が無かったことになる」ように見える
+  // (運営側の確認リスト (BotQualifierSection) も取り消し線つきで行を残す設計と揃える)
   const ranked = standings.filter(s => !excluded.has(s.participantId));
   const advances = (id: string) => ranked.findIndex(s => s.participantId === id) < advanceCount
     && ranked.some(s => s.participantId === id);
+  // 通過ラインを引く行。削除されていない人の中で advanceCount 番目にあたる人の行に引く
+  // (下に誰も残っていなければ線に意味が無いので引かない)
+  const cutParticipantId = advanceCount - 1 < ranked.length - 1
+    ? ranked[advanceCount - 1]?.participantId ?? null
+    : null;
 
   // **順位表に載るのは「確定済み」だけ** (standings.played は確定した試合しか数えない)。
   // 対戦が終わってから運営が確定するまでの間、その人を「—」(未実施) に戻さないための集合を
@@ -149,10 +157,9 @@ export function BotStageBoard({
             </tr>
           </thead>
           <tbody>
-            {ranked.filter(s => s.played > 0).map((s, i) => {
-              const up = advances(s.participantId);
-              // 通過ラインは位置で引く。最下位の下には引かない (全員通過なら線に意味が無い)
-              const cut = i === advanceCount - 1 && i < ranked.length - 1;
+            {standings.filter(s => s.played > 0).map(s => {
+              const up  = advances(s.participantId);
+              const cut = s.participantId === cutParticipantId;
               const cell    = { ...td,    ...(cut ? cutLine : null) };
               const cellNum = { ...tdNum, ...(cut ? cutLine : null) };
               const m = matchOf(s.participantId);
@@ -166,7 +173,7 @@ export function BotStageBoard({
                 >
                   <td style={{ ...cell, fontWeight: 700 }}>{s.rank}{s.tied ? '=' : ''}</td>
                   <td style={{ ...cell, textAlign: 'left' }}>{cellName(s.participantId)}</td>
-                  <td style={cell}>{resultMark(s)}</td>
+                  <td style={cell}>{botResultMark(s)}</td>
                   <td style={{ ...cellNum, fontWeight: 700 }}>{s.totalPoints}</td>
                   {isKoryu && <td style={cellNum}>{s.items}</td>}
                   {isKoryu && <td style={cellNum}>{s.remainingTurns}</td>}
@@ -180,7 +187,7 @@ export function BotStageBoard({
       )}
       <div style={note}>
         <span style={advanceSwatch} />上位 {advanceCount} 名が決勝トーナメントへ進出
-        {' ・ '}○ BOTに勝ち / △ 引き分け / ● 負け
+        {' ・ '}○ BOTに勝ち / △ 引き分け / × 負け
       </div>
     </div>
   );
@@ -193,14 +200,6 @@ export function BotStageBoard({
       </div>
     </FitArea>
   );
-}
-
-/** BOT に勝ったか。1試合しかないので1文字で足りる */
-function resultMark(s: StandingRow): string {
-  if (s.played === 0) return '';
-  if (s.wins   > 0)   return '○';
-  if (s.draws  > 0)   return '△';
-  return '●';
 }
 
 const row: React.CSSProperties = {
