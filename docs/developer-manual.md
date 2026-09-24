@@ -218,7 +218,7 @@ U15-server-maizuru/
 │   │       │   ├── Lobby.tsx           ロビー画面 (Web モード)
 │   │       │   ├── DisplayMode.tsx     観戦画面。出す画面を決め、BGM と SE もその場面に合わせる
 │   │       │   ├── StartupDialog.tsx
-│   │       │   ├── MapLibraryDialog.tsx     マップライブラリの管理モーダル (追加・DL・編集・削除と観客席への手動プレビュー。対戦で使うマップの選択はしない)
+│   │       │   ├── MapLibraryDialog.tsx     マップライブラリの管理モーダル (追加・DL・編集・削除と観戦画面への手動プレビュー。対戦で使うマップの選択はしない)
 │   │       │   ├── MapSourceSection.tsx     使うマップの選択 (ライブラリ/ランダム生成/エディタ) — マップ列にインライン展開
 │   │       │   ├── MapEditorDialog.tsx      Canvas ベースのマップ編集 (現在のマップを起点に編集し、適用/ライブラリ保存/ダウンロードを分離)
 │   │       │   ├── MapEditorMode.tsx        ?mode=mapEditor のルート。編集の中身は MapEditorDialog の
@@ -230,13 +230,13 @@ U15-server-maizuru/
 │   │       │   ├── FitArea.tsx              中身を親の空きいっぱいまで拡大・縮小して中央に置く入れ物 (観戦画面・大会の表)
 │   │       │   ├── MainWindow.tsx      盤面・スコア・進行状況の表示 (対戦表示/コントロール共用)
 │   │       │   ├── MultiLaneDisplay.tsx 並列実行中の分割画面。レーンの数だけ盤面を並べる (13-9)
-│   │       │   ├── AnnouncementScreen.tsx 試合の合間に観客席へ出す運営アナウンス
+│   │       │   ├── AnnouncementScreen.tsx 試合の合間に観戦画面へ出す運営アナウンス
 │   │       │   ├── GameBoardCanvas.tsx 盤面描画 (テクスチャ・探索範囲・決着演出・ダーク幕)
 │   │       │   ├── PlayerSidePanel.tsx 左右のスコアパネル (ゲームごとの明細と総合)
 │   │       │   ├── BottomBar.tsx       フッター (ライブラリ管理 / 次の一手 / 大会運営・設定・リセット)
 │   │       │   ├── tournament/        大会運営 (13章)
 │   │       │   │   ├── TournamentMode.tsx  ?mode=tournament のルート
-│   │       │   │   ├── board/              表を描く部品 (観客席と運営席で共用)
+│   │       │   │   ├── board/              表を描く部品 (観戦画面と運営席で共用)
 │   │       │   │   ├── panel/              運営パネル (今やること + 大会/進行/設定タブ)
 │   │       │   │   ├── qualifier/          決勝進出者の確認と差し替え
 │   │       │   │   └── editor/             大会データの作成・編集フォーム
@@ -323,7 +323,7 @@ U15-server-maizuru/
 
 > 上記に加えて、大会運営機能のファイルがある (詳細は [13章](#13-大会運営-トーナメント--リーグ--予選リーグ--bot対戦予選)):
 > `apps/backend/src/tournament/` (試合グラフ・永続化・オーケストレータ) /
-> `apps/frontend/src/components/tournament/` + `lib/centeredBracketLayout.ts` (トーナメント表の座標計算) /
+> `apps/frontend/src/components/tournament/` + `lib/centeredBracketLayout.ts` (トーナメント表の座標計算) + `lib/bracketBlock.ts` (観戦画面の表の絞り込み) /
 > `packages/ws-types/src/{protocol,scoring,tournament,tournamentFlow,messages}.ts` (共有型と純関数) /
 > 実行時データは `server/tournament/<大会id>/`。
 
@@ -465,6 +465,10 @@ type StageRules =
 interface TournamentState { tournamentId, startedAt, matches, programs, decisions, updatedAt }
 interface OperatorDecisions { stageMaps, matchMaps, qualifiers, exclusions, qualifiersConfirmed }
 
+// 観戦画面の表示 (tournament.ts)。運営が選ぶ3つの軸は 13章「観戦画面に何を出すか」
+type TournamentDisplayView / TournamentBracketView / TournamentGroupView
+displayViewAvailable / isListDisplayView / isTableDisplayView
+
 // 試合グラフを読む述語 (tournamentFlow.ts)
 nextReadyMatch / nextReadyMatches / isKnockoutMatch / groupStageCount / isGroupStageDone
 blockedByQualifiers / nextOperatorAction / canRunInSideLane / armedLaneMatchIds
@@ -539,7 +543,7 @@ shutdown(): void
 (`RoomManager.createRoom` の第3引数)、表示・BGM/SE・対戦ルール・合間アナウンスの文面を
 `localSettingsStore.ts` 経由で `server/local-settings.json` に保存し、起動時に読み込む。
 アナウンスは**文面だけ**を保存する — 表示状態まで復元すると、起動直後に前回の休憩の
-案内が観客席へ出てしまう。
+案内が観戦画面へ出てしまう。
 Web モードの room は対戦のたびに作られては消えるため対象外。
 
 **WsServer** — ルーム対応の WebSocket サーバー
@@ -644,7 +648,7 @@ ws.onopen = () => {
 | `set_map_params` | `{...}` | ランダム生成に切り替え、パラメータを記憶して生成 |
 | `load_map_data` | `{...}` | マップデータ直接送信 (エディタ由来) |
 | `preview_map` | `{mapId}` | マップ管理からの手動プレビュー。対戦設定は変えず観戦画面の表示だけ差し替える (`null` で解除、`request_start` で自動解除) |
-| `set_announcement` | `Partial<AnnouncementState>` | 試合の合間に観客席へ出す運営アナウンス。文面 (`title`/`body`) と表示 (`visible`) を別々に送れる。文面だけ `local-settings.json` に永続化し、`visible` は `armMatch` / `request_start` で自動的に落ちる |
+| `set_announcement` | `Partial<AnnouncementState>` | 試合の合間に観戦画面へ出す運営アナウンス。文面 (`title`/`body`) と表示 (`visible`) を別々に送れる。文面だけ `local-settings.json` に永続化し、`visible` は `armMatch` / `request_start` で自動的に落ちる |
 
 > **重要**: ゲームメッセージはルームに `join_room` してから有効になります。未入室のソケットからのメッセージは無視されます。
 
@@ -927,6 +931,7 @@ App.tsx (ErrorBoundary でラップ)
 │   ├── TournamentStandby   (standby = 大会運営中で次の試合が未準備。表だけを大きく見せる)
 │   ├── MapPreview.tsx      (preview = マップ管理からの手動プレビュー。上と同じ部品で waiting/standby を差し替える)
 │   ├── AnnouncementScreen.tsx (announce = 運営の合間アナウンス。preview と同じく waiting/standby を差し替える)
+│   ├── ParticipantListScreen  (list = 運営が選んだ名簿 (参加者一覧 / 決勝進出者)。announce と同じく waiting/standby を差し替える)
 │   ├── TournamentFinale    (award   = 全試合が確定したあとの表彰)
 │   ├── MultiLaneDisplay.tsx (lanes  = 並列実行中。レーンの数だけ盤面を並べる / 13-9)
 │   │   └── LanePane × N              枠ごとに別ルームへ join し、細いヘッダーと盤面だけを描く
@@ -949,7 +954,7 @@ App.tsx (ErrorBoundary でラップ)
 │
 ├── TournamentMode.tsx       (?room=xxx&mode=tournament — 大会運営ウィンドウ / 13章)
 │   ├── BracketView / LeagueTable / QualifyingView   左: 大会の表
-│   └── TournamentPanel                              右: 今やること + 大会/進行/設定タブ
+│   └── TournamentPanel                              右: 今やること + 大会/進行/表示/設定タブ
 │
 ├── ManualMode.tsx           (?room=xxx&mode=manual&slot=0|1 — 手動操作ウィンドウ)
 │   └── ManualControls.tsx
@@ -1267,10 +1272,10 @@ pnpm --filter @u15/frontend test
 | フック | `hooks/useTextures.test.ts`, `hooks/useGamePhaseSound.test.ts`, `hooks/usePersistedState.test.ts`, `hooks/useFitCorrection.test.ts` |
 | 画面の分岐 | `lib/appMode.test.ts` |
 | 得点・演出のロジック | `lib/decisiveEffect.test.ts`, `lib/roundRow.test.ts`, `lib/resultText.test.ts`<br>競技ルールそのものは `packages/ws-types` 側 (下記) |
-| 大会運営のロジック | `lib/centeredBracketLayout.test.ts`, `lib/bracketSlots.test.ts`, `lib/tournamentResult.test.ts` |
+| 大会運営のロジック | `lib/centeredBracketLayout.test.ts`, `lib/bracketBlock.test.ts`, `lib/bracketSlots.test.ts`, `lib/tournamentResult.test.ts` |
 | コンポーネント (対戦) | `components/PlayerSidePanel.test.tsx` |
-| コンポーネント (大会の表) | `components/tournament/board/` の `BracketView` / `LeagueTable` / `QualifyingView` / `BotStageBoard` / `TournamentStandby` / `TournamentFinale` |
-| コンポーネント (運営パネル) | `components/tournament/panel/` の `TournamentPanel` / `NextActionCard` / `ProgressTab` / `AnnouncementCard`、`qualifier/BotQualifierSection`、`editor/TournamentEditorDialog` |
+| コンポーネント (大会の表) | `components/tournament/board/` の `BracketView` / `LeagueTable` / `QualifyingView` / `BotStageBoard` / `TournamentStandby` / `TournamentFinale` / `ParticipantListScreen` |
+| コンポーネント (運営パネル) | `components/tournament/panel/` の `TournamentPanel` / `NextActionCard` / `ProgressTab` / `DisplayTab` / `AnnouncementCard`、`qualifier/BotQualifierSection`、`editor/TournamentEditorDialog` |
 
 大会運営のテストは `test/tournamentFixture.ts` を雛形にする。形式ごとに意味のある既定値が
 入った `StageRules` を1箇所で組んであり、各テストは違いのある項目だけを上書きする。
@@ -1532,7 +1537,8 @@ server/tournament/<大会id>/
 `tournament_set_walkover` / `tournament_swap_sides` / `tournament_assign_program` /
 `tournament_set_stage_map` / `tournament_set_match_map` / `tournament_set_qualifier` /
 `tournament_exclude_qualifier` / `tournament_confirm_qualifiers` /
-`tournament_set_display_view` / `tournament_set_auto_play` /
+`tournament_set_display_view` / `tournament_set_bracket_view` / `tournament_set_group_view` /
+`tournament_set_auto_play` /
 `tournament_set_lane_count` / `tournament_arm_next` / `tournament_start_lanes` (13-9) /
 `tournament_rescan` を持つ。
 失敗は握りつぶさず `error` メッセージで理由を返す。
@@ -1617,6 +1623,7 @@ ZIP を書く実装 (`zip.writeZip`) は元々テスト用ヘルパー (`test/bu
 | ファイル | 役割 |
 |---|---|
 | `lib/centeredBracketLayout.ts` | 【純関数】試合グラフ → カード座標と接続線のパス。決勝から winner-of / loser-of を逆に辿って左右2つの山に分け、決勝を中央の列に置く |
+| `lib/bracketBlock.ts` | 【純関数】観戦画面のトーナメント表を、運営が選んだ型 (`TournamentBracketView`) に従って絞る (`focusBracketBlock`)。左右は `centeredBracketLayout` の `splitBranches` と同じ規則で決め、1回戦の山に絞った表は元の表での左右のまま描く (`soloSide`) |
 | `lib/bracketSlots.ts` | 【純関数】組み合わせ編集のスロット操作 (`autoSlots` / `fitSlots` / 試合数の見積り) |
 | `lib/tournamentResult.ts` | 【純関数】配信済みの `TournamentStatePayload` だけから表彰台を求める |
 | `lib/koryuDisplay.ts` | 【純関数】得点の内訳をどちらのルールの式で見せるかの判定 (`ruleSet` + その試合が予選か決勝か) |
@@ -1630,7 +1637,7 @@ ZIP を書く実装 (`zip.writeZip`) は元々テスト用ヘルパー (`test/bu
 
 | ディレクトリ | 中身 |
 |---|---|
-| `board/` | 表示部品。観客席 (`DisplayMode`) と運営席が共用する |
+| `board/` | 表示部品。観戦画面 (`DisplayMode`) と運営席が共用する |
 | `panel/` | 運営パネル。「今やること」+ 3タブ |
 | `qualifier/` | 決勝進出者の確認と差し替え |
 | `editor/` | 大会データの作成・編集フォーム (13-7) |
@@ -1639,18 +1646,21 @@ ZIP を書く実装 (`zip.writeZip`) は元々テスト用ヘルパー (`test/bu
 |---|---|
 | `board/BracketView.tsx` | トーナメント表。接続線は SVG、カードは絶対配置の DOM |
 | `board/LeagueTable.tsx` | リーグの星取表 + 順位表 (素の DOM)。予選では**そのリーグの試合・参加者だけ**を渡す |
-| `board/QualifyingView.tsx` | 予選の表 ⇄ 決勝トーナメント表の切り替え。観戦画面の出し分け (`displayQualifyingPhase`) もここ。**位相の判断は予選リーグ / BOT対戦予選で共通**。予選リーグ・BOT対戦予選とも、1試合も確定していない間は星取表の代わりに `GroupIntroBoard` (組み分けと参加者名だけの紹介画面) を出す |
-| `board/GroupIntroBoard.tsx` | 予選開始前の紹介画面。対戦成績を一切出さず、リーグ分け (BOT対戦予選はエントリー1本) と参加者名だけを見せる |
+| `board/QualifyingView.tsx` | 予選の表 ⇄ 決勝トーナメント表の切り替え。観戦画面へは運営の指定 `groupView` (出すリーグ) と `bracketView` (決勝表の型) を渡す。観戦画面の出し分け (`displayQualifyingPhase`) もここ。**位相の判断は予選リーグ / BOT対戦予選で共通**。予選リーグ・BOT対戦予選とも、1試合も確定していない間は星取表の代わりに `GroupIntroBoard` (組み分けと参加者名だけの紹介画面) を出す |
+| `board/GroupIntroBoard.tsx` | 予選開始前の紹介画面と、参加者一覧の中身。対戦成績を一切出さず、リーグ分け (BOT対戦予選はエントリー1本。リーグ分けの無い形式は全員を1枚) と参加者名だけを見せる |
+| `board/QualifierListBoard.tsx` | 決勝進出者の一覧の中身。`state.qualifiers` (実際に枠へ入る人) から組むので、決勝表の顔ぶれと必ず一致する |
+| `board/EntryCardsBoard.tsx` | 名前の一覧をカードで見せる共通の盤面 (上の2つが使う)。10人を超えると列を増やす |
+| `board/ParticipantListScreen.tsx` | 運営が選んだ名簿の画面。`displayView` が `'participants'` なら参加者一覧、`'qualifiers'` なら決勝進出者 |
 | `board/BotStageBoard.tsx` | BOT対戦予選の表。エントリーリスト + 順位リスト (終わった人だけ載る) |
 | `board/MatchCard.tsx` | 1試合のカード。3画面で共用 (`interactive` で操作の有無を切替) |
 | `board/PlayerCard.tsx` | トーナメント表の1枠 (1試合の片側 = 1人)。名前と得点 (2ゲーム消化していれば勝敗数も) だけを持つ |
 | `board/MatchInfoCard.tsx` | 対になる2枚の `PlayerCard` の間に挟む「対戦」そのものの情報 (試合ラベル・状態バッジ)。勝敗数や裁定理由といった試合結果そのものはここには出さない。**1試合につきカードは3枚** — 試合単位の情報を対戦者ごとに重複させないため |
 | `board/matchStatusStyle.ts` | 試合状態の日本語ラベルと色。`MatchCard` と `MatchInfoCard` の唯一の情報源 |
-| `board/TournamentStandby.tsx` / `TournamentFinale.tsx` | 観客席の待機画面と表彰画面 |
+| `board/TournamentStandby.tsx` / `TournamentFinale.tsx` | 観戦画面の待機画面と表彰画面。待機画面は、運営が表を固定している間は直前の試合の結果 (見出しのカード・表の強調・リーグの絞り込み) を出さない |
 | `panel/TournamentPanel.tsx` | 運営パネルの骨格。「今やること」を固定し、下をタブで切り替える |
 | `panel/NextActionCard.tsx` | 「今やること」1枚。`nextOperatorAction` の返り値をそのまま描く |
-| `panel/LibraryTab.tsx` / `ProgressTab.tsx` / `SettingsTab.tsx` | 各タブの中身 (同時に行う試合数は「設定」タブ / 13-9) |
-| `panel/AnnouncementCard.tsx` | 試合の合間に観客席へ出すアナウンスの文面と出し入れ (`set_announcement`) |
+| `panel/LibraryTab.tsx` / `ProgressTab.tsx` / `DisplayTab.tsx` / `SettingsTab.tsx` | 各タブの中身 (同時に行う試合数は「設定」タブ / 13-9)。**観戦画面の表示の切り替えは `DisplayTab` に集める** (アナウンス・`displayView`・`groupView`・`bracketView`)。指定中かの判定 `displayPinned` はタブの見出しの印にも使う |
+| `panel/AnnouncementCard.tsx` | 試合の合間に観戦画面へ出すアナウンスの文面と出し入れ (`set_announcement`)。「表示」タブの先頭に置く |
 | `panel/ResultConfirmDialog.tsx` | 結果確定。勝ち上がりの同点はまず「この結果で確定」(`acknowledgeTie`) だけを出し、押すと3択が開く (13-4) |
 | `qualifier/QualifierSection.tsx` | 決勝進出者の一覧と差し替え (予選リーグ。`QualifierPicker` は表のカードからも使う) |
 | `qualifier/BotQualifierSection.tsx` | 決勝進出者の最終決定確認リスト (BOT対戦予選。多めに出して削る) |
@@ -1948,13 +1958,42 @@ id は予選が `G1-D1M1` (Gリーグ番号-D節-M試合)、決勝が `SF1` / `F
 
 #### 観戦画面に何を出すか
 
-`displayView` (`'auto' | 'groups' | 'bracket'`) を運営パネルから切り替える。
-`armedMatchId` と同じくプロセス内の状態で、`state.json` には残さない。
+観戦画面の表示は、運営パネルの「表示」タブ (`DisplayTab`) から切り替える3つの軸で決まる。
+どれも `armedMatchId` と同じくプロセス内の状態 (`Binding`) で、`state.json` には残さない。
+軸ごとに独立していて (`displayView` を固定したまま `bracketView` を選べる)、既定はすべて `'auto'`。
+
+| 軸 (`TournamentStatePayload`) | 選べる値 | 使える形式 | 効くところ |
+|---|---|---|---|
+| `displayView` (どの画面) | `'auto'` / `'groups'` / `'bracket'` / `'participants'` / `'qualifiers'` | 名簿の `'participants'` は全形式、それ以外は予選のある形式 (`displayViewAvailable`) | `displayQualifyingPhase` と `displayScene` |
+| `bracketView` (決勝表の型) | `'auto'` / `'whole'` / `'left'` / `'right'` / `'quarter'` | 勝ち上がりの表を持つ形式 (`hasBracket`) | `BracketView` (`focusBracketBlock`) |
+| `groupView` (出すリーグ) | `'auto'` / `'all'` / リーグ番号 | 予選リーグでリーグが2つ以上 | `QualifyingView` |
+
+選べる値の判定はバックエンド (`setDisplayView` / `setBracketView` / `setGroupView`) が拒否し、
+運営パネルの選択肢の出し分けも同じ規則で行う (`displayViewAvailable` は ws-types の1か所)。
 
 **運営席 (`?mode=tournament`) のタブとは連動させない。** 観客には予選表を出したまま、
 手元で決勝の組み合わせを確認したい場面があるため、運営席のタブはローカル state のまま、
-観戦画面はサーバー配信の `displayView` だけを見る。`QualifyingView` は `phase` を
+観戦画面はサーバー配信の値だけを見る。`QualifyingView` は `phase` を
 渡されたらそれに従い、渡されなければ自前のタブと自動追従で動く。
+
+**名簿 (`isListDisplayView`: 参加者一覧 / 決勝進出者)** は大会の流れの中では自動で出ない。
+`displayScene` が待機・準備画面 (waiting / standby) を `'list'` の場面に置き換える —
+アナウンスより弱く、マッププレビューより強い。対戦中・結果表示・表彰には割り込まない。
+**`armMatch` が `displayView` を `'auto'` に戻す** (戻さないと、次の試合が終わった待機画面で
+また名簿が出る。アナウンスを `visible: false` に戻すのと同じ扱い)。
+
+**表を固定している間 (`isTableDisplayView`、または予選表でリーグを指定している間) は、
+`TournamentStandby` が直前の試合の結果を出さない。** 見出しのカードだけでなく、表の強調と
+「そのリーグだけ大きく出す」動きも止める。ただし「1試合も確定していないときの紹介画面」の
+判定には実際の直前の試合を使う (隠すために null にすると、試合が済んだあとも紹介画面に戻る)。
+
+`bracketView` の各型は `bracketBlock.ts` の `focusBracketBlock` が絞る。`'auto'` は具体的な型を
+選んで委ねる: 4回戦以上の表で、基準の試合 (準備済み → なければ直前に確定した試合) が
+1回戦ならその側の山、準々決勝以降なら `'quarter'`、それ以外は全体。
+**片側の山に絞るときは3位決定戦を含めない** (相手の山を隠すので片側しか埋まらない)。
+左右は `centeredBracketLayout` と同じく表示位置 (`order`) で決め、絞った表も元の表での
+左右のまま描く。**予選のある形式の決勝表は `focusId` を渡さない** (`QualifyingView` は
+`bracketView` だけを渡す) ので、`'auto'` で絞るのは予選のない大会だけ。
 
 `'auto'` の解決は `displayQualifyingPhase` (純関数。配信された state だけで決まるので、
 どの窓で開いても・いつ開いても同じ画面になる):
@@ -1988,7 +2027,7 @@ id は予選が `G1-D1M1` (Gリーグ番号-D節-M試合)、決勝が `SF1` / `F
   予選の試合は確定前でも準備できる。
 
 確定後の `setQualifier` は確定を外さない — 決勝表を出したまま差し替えを反映させたい
-場面 (組み合わせを見て気づく) があり、そこで観客席が予選表へ戻ると混乱するため。
+場面 (組み合わせを見て気づく) があり、そこで観戦画面が予選表へ戻ると混乱するため。
 
 **表彰画面は決勝トーナメントだけを出す** (`TournamentFinale`)。予選の試合を混ぜると
 `centeredBracketLayout` が節ごとに列を作り、列見出しが「Aリーグ」になって表が壊れる。
@@ -2194,7 +2233,7 @@ BOT対戦予選の予選試合を同時に走らせて、予選にかかる時�
 部屋で、専用の TCP ポート対を持つ (10章)。
 
 ```
-Binding                       … 大会1つ (試合グラフ・自動進行の設定・displayView)
+Binding                       … 大会1つ (試合グラフ・自動進行の設定・displayView / bracketView / groupView)
 └── lanes[]                   … 対戦を実行する場所
     ├── [0] roomId=local      … 主レーン。運営パネルとコントロール窓が見る部屋
     ├── [1] roomId=local-lane1
