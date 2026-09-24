@@ -1,11 +1,6 @@
 import type { TournamentStatePayload } from '@u15/ws-types';
 import { hasBotStage } from '@u15/ws-types';
-import { FitArea } from '../../FitArea';
-import { affiliationOf, ParticipantName } from './ParticipantName';
-import {
-  BG_CARD, BORDER_COLOR, FONT_NUM, FONT_UI, GOLD_BASE, GOLD_LIGHT, RADIUS_MD,
-  RADIUS_PILL, SHADOW_SM, TEXT_MUTED, TEXT_PRIMARY,
-} from '../../../ui';
+import { EntryCardsBoard, type EntryCard } from './EntryCardsBoard';
 
 // 予選開始前 (まだ1試合も確定していない間) だけ出す紹介画面。
 //
@@ -16,6 +11,9 @@ import {
 //
 // 1試合でも確定すれば TournamentStandby がこちらではなく QualifyingView (星取表) に
 // 切り替える — この画面の役目は「開始前の紹介」だけで、進行中の成績表示は持たない。
+//
+// **運営が「参加者一覧」を選んだときにも使う** (ParticipantListScreen)。リーグ分けを持たない
+// 形式 (トーナメント・リーグ) は groups が空なので、参加者全員を1枚のカードにまとめる。
 
 export interface GroupIntroBoardProps {
   state:     TournamentStatePayload;
@@ -29,66 +27,18 @@ export function GroupIntroBoard({ state, maxScale = 3 }: GroupIntroBoardProps) {
   // 実際には無い組み分けがあるように見えるので、単なる参加者一覧として見せる
   const isBot = hasBotStage(state.stage.format);
 
-  return (
-    <FitArea maxScale={maxScale}>
-      <div style={row}>
-        {groups.map(g => (
-          <div key={g.group} style={card}>
-            <div style={cardHead}>
-              <span style={cardTitle}>{isBot ? 'エントリー' : `${g.label}リーグ`}</span>
-              <span style={cardCount}>{g.participantIds.length}名</span>
-            </div>
-            <div style={list}>
-              {g.participantIds.map((id, i) => {
-                const p = state.participants.find(x => x.id === id);
-                return (
-                  <div key={id} style={entryRow}>
-                    <span style={entryNo}>{i + 1}</span>
-                    <ParticipantName
-                      name={p?.name ?? id}
-                      affiliation={affiliationOf(state.participants, id)}
-                      nameStyle={entryName}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
-    </FitArea>
-  );
+  const byId = new Map(state.participants.map(p => [p.id, p]));
+  const rowsOf = (ids: string[]) => ids.map((id, i) => ({
+    id, no: i + 1, name: byId.get(id)?.name ?? id, affiliation: byId.get(id)?.affiliation ?? null,
+  }));
+
+  // 運営BOT はエントリーではないので一覧に出さない
+  const entrants = state.participants.filter(p => !p.isBot);
+  const cards: EntryCard[] = groups.length > 0
+    ? groups.map(g => ({
+        key: g.group, title: isBot ? 'エントリー' : `${g.label}リーグ`, rows: rowsOf(g.participantIds),
+      }))
+    : [{ key: 0, title: '参加者', rows: rowsOf(entrants.map(p => p.id)) }];
+
+  return <EntryCardsBoard cards={cards} maxScale={maxScale} />;
 }
-
-const row: React.CSSProperties = {
-  display: 'flex', flexDirection: 'row', flexWrap: 'wrap',
-  justifyContent: 'center', alignItems: 'flex-start', gap: 24,
-  fontFamily: FONT_UI, color: TEXT_PRIMARY,
-};
-
-const card: React.CSSProperties = {
-  minWidth: 240, background: BG_CARD, border: `1px solid ${BORDER_COLOR}`,
-  borderRadius: RADIUS_MD, boxShadow: SHADOW_SM, padding: '14px 20px 18px',
-};
-
-const cardHead: React.CSSProperties = {
-  display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10,
-  borderBottom: `2px solid ${GOLD_LIGHT}`, paddingBottom: 8, marginBottom: 10,
-};
-
-const cardTitle: React.CSSProperties = { fontSize: 18, fontWeight: 800, color: TEXT_PRIMARY };
-const cardCount: React.CSSProperties = { fontSize: 12, fontFamily: FONT_NUM, color: TEXT_MUTED };
-
-const list: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 8 };
-
-const entryRow: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10 };
-
-// 順位ではなくエントリー順の通し番号なので、金色ではなく控えめな地色にとどめる
-// (トーナメント表の通過圏・星取表の金色と役割が被らないようにする)
-const entryNo: React.CSSProperties = {
-  flexShrink: 0, width: 22, height: 22, borderRadius: RADIUS_PILL,
-  background: GOLD_LIGHT, color: GOLD_BASE, fontFamily: FONT_NUM, fontWeight: 700, fontSize: 12,
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-};
-
-const entryName: React.CSSProperties = { fontSize: 16, fontWeight: 600 };

@@ -3,7 +3,7 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import { DEFAULT_DISPLAY_PREFS, NO_ANNOUNCEMENT, Reason, Winner } from '@u15/ws-types';
 import type { RoundResult, ServerStatusPayload, TournamentMatch, TournamentStatePayload } from '@u15/ws-types';
 import { stageRulesFor } from '../test/tournamentFixture';
-import { baseDisplayScene, SetupWaiting } from './DisplayMode';
+import { baseDisplayScene, displayScene, SetupWaiting } from './DisplayMode';
 
 // 第1ゲームの結果 (2ゲーム制のインターミッション)。点数の並びだけでは観客が2つの数字を
 // 見比べないと勝敗が分からないので、勝った側を色で浮かせ・沈め、一文でも言い切る。
@@ -144,5 +144,42 @@ describe('baseDisplayScene — 確定待ちの試合の場面選択', () => {
       'SF1',
     );
     expect(baseDisplayScene('finished', state, 'bracket')).toBe('result');
+  });
+});
+
+// 参加者一覧は運営が選んだときだけ、試合の合間 (待機・準備画面) に出る。
+// 対戦中・結果表示・表彰には割り込まない
+describe('displayScene — 参加者一覧', () => {
+  const view = (matches: TournamentMatch[], armed: string | null, displayView: 'auto' | 'participants' | 'qualifiers') =>
+    ({ ...tournamentState(matches, armed), displayView });
+  const none = NO_ANNOUNCEMENT;
+
+  it('大会の流れでは出ない (進行に合わせるままなら待機画面)', () => {
+    expect(displayScene('setup', view([match('SF1')], null, 'auto'), 'bracket', null, none))
+      .toBe('standby');
+  });
+
+  it('選ぶと、試合の合間 (待機・準備画面) を置き換える', () => {
+    expect(displayScene('setup', view([match('SF1')], null, 'participants'), 'bracket', null, none))
+      .toBe('list');
+    expect(displayScene('setup', view([match('SF1', { status: 'armed' })], 'SF1', 'participants'), 'bracket', null, none))
+      .toBe('list');
+  });
+
+  it('決勝進出者の一覧も同じ場面として出る', () => {
+    expect(displayScene('setup', view([match('SF1')], null, 'qualifiers'), 'bracket', null, none))
+      .toBe('list');
+  });
+
+  it('対戦中・結果表示には割り込まない', () => {
+    const t = view([match('SF1', { status: 'armed' })], 'SF1', 'participants');
+    expect(displayScene('playing', t, 'bracket', null, none)).toBe('playing');
+    expect(displayScene('finished', t, 'bracket', null, none)).toBe('result');
+  });
+
+  it('アナウンスのほうが強い', () => {
+    const announcement = { ...NO_ANNOUNCEMENT, visible: true, title: '休憩' };
+    expect(displayScene('setup', view([match('SF1')], null, 'participants'), 'bracket', null, announcement))
+      .toBe('announce');
   });
 });

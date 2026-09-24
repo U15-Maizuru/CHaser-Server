@@ -4,7 +4,7 @@ import type {
   SoloScoringMode, TournamentStatePayload,
 } from '@u15/ws-types';
 import {
-  DEFAULT_DISPLAY_PREFS, hasQualifying, idxForSide, NO_ANNOUNCEMENT, roundWonBy, SCENE_FADE_MS, Winner,
+  DEFAULT_DISPLAY_PREFS, hasQualifying, idxForSide, isListDisplayView, NO_ANNOUNCEMENT, roundWonBy, SCENE_FADE_MS, Winner,
 } from '@u15/ws-types';
 import { useGameState } from '../hooks/useGameState';
 import { useMuteOverride } from '../hooks/useMuteOverride';
@@ -26,6 +26,7 @@ import type { QualifyingPhase } from './tournament/board/QualifyingView';
 import { LeagueTable } from './tournament/board/LeagueTable';
 import { TournamentFinale } from './tournament/board/TournamentFinale';
 import { TournamentStandby } from './tournament/board/TournamentStandby';
+import { ParticipantListScreen } from './tournament/board/ParticipantListScreen';
 import { armedMatchNames, isTournamentComplete } from '../lib/tournamentResult';
 import { roundDisplayScore, scoringContextOf, type ScoringContext } from '../lib/koryuDisplay';
 import {
@@ -54,14 +55,15 @@ import {
 // (運営席の表示とは連動しない)。全工程が終わったうえで決勝側を見ていれば表彰画面。
 
 type DisplayScene =
-  'award' | 'standby' | 'waiting' | 'playing' | 'result' | 'preview' | 'announce' | 'lanes';
+  'award' | 'standby' | 'waiting' | 'playing' | 'result' | 'preview' | 'announce' | 'list'
+  | 'lanes';
 
 /** 並列実行中か (レーンが2本以上あり、どれかが対戦を抱えている) */
 function isRunningParallel(t: TournamentStatePayload | null | undefined): boolean {
   return !!t && t.lanes.length > 1 && t.lanes.some(l => l.armedMatchId !== null);
 }
 
-function displayScene(
+export function displayScene(
   phase:         ServerPhase,
   tournament:    TournamentStatePayload | null | undefined,
   groupPhase:    QualifyingPhase,
@@ -86,6 +88,10 @@ function displayScene(
   if (announcement.visible && (announcement.title !== '' || announcement.body !== '')) {
     return 'announce';
   }
+  // 運営が名簿 (参加者一覧 / 決勝進出者) を選んでいる間。アナウンスの次に強く、
+  // マッププレビューよりは強い (どちらも運営が明示して出すもの。
+  // armMatch が 'auto' に戻すので次の試合には残らない)
+  if (tournament && isListDisplayView(tournament.displayView)) return 'list';
   if (previewMapId) return 'preview';
   return base;
 }
@@ -129,6 +135,7 @@ const BGM_OF_SCENE: Record<DisplayScene, (p: DisplayPrefs, round: 0 | 1) => stri
   preview: p => p.bgmTrackWait,
   // 運営アナウンス中も「次の対戦を待つ場面」なので待機中と同じ曲
   announce: p => p.bgmTrackWait,
+  list: p => p.bgmTrackWait,
   // 並列実行中は対戦曲。レーンごとに第1/第2ゲームがばらけるので、常に第1ゲームの曲にする
   lanes:   p => p.bgmTrack0,
 };
@@ -136,7 +143,7 @@ const BGM_OF_SCENE: Record<DisplayScene, (p: DisplayPrefs, round: 0 | 1) => stri
 // 画面の暗転はこの単位で判定する。playing と result は同じ MainWindow をそのまま出し続ける
 // (盤面の上に結果を重ねるだけ) ので、両者の間に切り替えは無く暗転もしない。
 type VisualGroup =
-  'award' | 'standby' | 'waiting' | 'match' | 'preview' | 'announce' | 'lanes';
+  'award' | 'standby' | 'waiting' | 'match' | 'preview' | 'announce' | 'list' | 'lanes';
 
 function visualGroupOf(scene: DisplayScene): VisualGroup {
   return scene === 'playing' || scene === 'result' ? 'match' : scene;
@@ -242,6 +249,8 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
     content = (
       <MultiLaneDisplay wsUrl={wsUrl} lanes={tournamentState.lanes} prefs={prefs} />
     );
+  } else if (displayedGroup === 'list' && tournamentState) {
+    content = <ParticipantListScreen state={tournamentState} displayTitle={prefs.displayTitle} />;
   } else if (displayedGroup === 'announce') {
     content = <AnnouncementScreen announcement={announcement} displayTitle={prefs.displayTitle} />;
   } else if (displayedGroup === 'preview') {
