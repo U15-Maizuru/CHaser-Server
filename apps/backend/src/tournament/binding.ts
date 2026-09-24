@@ -3,7 +3,9 @@ import type {
   ResolvedParticipant,
   ServerStatusPayload,
   TournamentAutoPlay,
+  TournamentBracketView,
   TournamentDisplayView,
+  TournamentGroupView,
   TournamentMatch,
 } from '@u15/ws-types';
 import { isGroupStageDone } from '@u15/ws-types';
@@ -53,6 +55,10 @@ export interface Binding {
   lanes:        Lane[];
   /** 観戦画面に出すもの。運営席の表示とは独立 (レーンと同じくプロセス内の状態) */
   displayView:  TournamentDisplayView;
+  /** 観戦画面のトーナメント表の型。displayView とは別軸 */
+  bracketView:  TournamentBracketView;
+  /** 観戦画面の予選リーグ表で出すリーグ。displayView とは別軸 */
+  groupView:    TournamentGroupView;
   /** 自動進行。プロセス内の状態なので bind のたびに切れている */
   autoPlay:     TournamentAutoPlay;
   keepalive:    ReturnType<typeof setInterval>;

@@ -1,7 +1,7 @@
 import type { ClientType, ProcessConfig, ResolvedParticipant, TournamentMatch } from '@u15/ws-types';
 import {
   blockedByQualifiers, canRunInSideLane, doubleModeFor, groupLabel, groupStageCount, hasBracket,
-  isConsolationMatch, isKnockoutMatch, isLeaguePointsMatch,
+  isConsolationMatch, isKnockoutMatch, isLeaguePointsMatch, isListDisplayView,
 } from '@u15/ws-types';
 import { buildProcessConfig } from '../game/processConfig.js';
 import { getCatalogEntry } from '../programCatalog.js';
@@ -91,6 +91,9 @@ export async function armMatch(
   manager.setRepeatMode(false);
   // 対戦カードが決まったらアナウンスは役目を終える。文面は次の休憩のために残す
   manager.setAnnouncement({ visible: false });
+  // 名簿 (参加者一覧 / 決勝進出者) も同じ。試合の合間に出すものなので、対戦カードが決まったら
+  // 'auto' に戻す (戻さないと、次の試合が終わった待機画面でまた名簿が出てしまう)
+  if (isListDisplayView(b.displayView)) b.displayView = 'auto';
 
   await manager.requestReset();
   manager.setDoubleMode(doubleModeFor(b.loaded.def, match));

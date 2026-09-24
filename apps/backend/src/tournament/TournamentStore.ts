@@ -11,7 +11,9 @@ import type {
   QualifierSlot,
   ResolvedParticipant,
   TournamentAutoPlay,
+  TournamentBracketView,
   TournamentDisplayView,
+  TournamentGroupView,
   TournamentLane,
   TournamentDefinition,
   TournamentMatch,
@@ -878,6 +880,8 @@ export function buildStatePayload(
   // 並列実行していない大会 (と、レーンを気にしないテスト) のための既定値。
   // 主レーン1本 = bind した部屋そのもの
   lanes: TournamentLane[] = [{ roomId: boundRoomId, primary: true, armedMatchId }],
+  bracketView: TournamentBracketView = 'auto',
+  groupView: TournamentGroupView = 'auto',
 ): TournamentStatePayload {
   const participants = resolveParticipants(loaded);
   return {
@@ -900,6 +904,8 @@ export function buildStatePayload(
     thirdPlaceMapId: mapForThirdPlace(loaded),
     stageLabels:  stageLabelsOf(loaded),
     displayView,
+    bracketView,
+    groupView,
     autoPlay,
     lanes,
     armedMatchId,

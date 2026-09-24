@@ -52,7 +52,7 @@ export class ServerManager extends EventEmitter {
   private displayPrefs: DisplayPrefs = { ...DEFAULT_DISPLAY_PREFS };
   // マップ管理画面からの手動プレビュー (対戦画面の一時的な表示切り替え)。永続化しない
   private previewMapId: string | null = null;
-  // 観客席に出す運営アナウンス。文面 (title/body) だけ永続化し、visible は永続化しない
+  // 観戦画面に出す運営アナウンス。文面 (title/body) だけ永続化し、visible は永続化しない
   private announcement: AnnouncementState = { ...NO_ANNOUNCEMENT };
   private demoTimer: ReturnType<typeof setTimeout> | null = null;
   private logDir = DEFAULT_LOG_DIR;
@@ -99,7 +99,7 @@ export class ServerManager extends EventEmitter {
       if (saved.darkMode !== undefined) this.darkMode = saved.darkMode;
       if (saved.displayPrefs) this.displayPrefs = { ...this.displayPrefs, ...saved.displayPrefs };
       // 文面だけを復元する。visible は常に false で始める — アプリを開いた直後に
-      // 前回の休憩の案内が観客席へ出ていては困る
+      // 前回の休憩の案内が観戦画面へ出ていては困る
       if (saved.announcement) {
         this.announcement = { ...this.announcement, ...saved.announcement, visible: false };
       }
@@ -274,7 +274,7 @@ export class ServerManager extends EventEmitter {
   }
 
   /**
-   * 観客席に出す運営アナウンス。差分で受けるので「出したまま文面を直す」
+   * 観戦画面に出す運営アナウンス。差分で受けるので「出したまま文面を直す」
    * 「文面を残したまま消す」のどちらもできる。
    *
    * 出るのは待機中の画面だけ (対戦中・結果表示・表彰には割り込まない)。

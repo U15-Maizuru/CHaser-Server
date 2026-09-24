@@ -34,7 +34,7 @@ function state(over: Partial<TournamentStatePayload> = {}): TournamentStatePaylo
     matches: [match()],
     standings: null, groups: null, qualifiers: null, qualifierCandidates: null,
     qualifiersConfirmed: false,
-    displayView: 'auto',
+    displayView: 'auto', bracketView: 'auto', groupView: 'auto',
     autoPlay: { enabled: false, loop: false, announce: false, tieBreak: 'pause', stoppedReason: null },
     stageMaps: [], thirdPlaceMapId: null, stageLabels: [],
     lanes: [{ roomId: 'room', primary: true, armedMatchId: null }],
@@ -142,7 +142,7 @@ describe('NextActionCard', () => {
     expect(commands.armNext).toHaveBeenCalled();
   });
 
-  it('準備済みの試合にはレーン番号を添える (観客席の分割画面と突き合わせるため)', () => {
+  it('準備済みの試合にはレーン番号を添える (観戦画面の分割表示と突き合わせるため)', () => {
     show(parallel(['Q1', 'Q2', null]));
     expect(screen.getByText('レーン1')).toBeInTheDocument();
     expect(screen.getByText('レーン2')).toBeInTheDocument();

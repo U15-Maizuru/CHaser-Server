@@ -50,7 +50,7 @@ export const DEFAULT_AUTO_PLAY_DELAYS_MS: AutoPlayDelaysMs = {
 
 export type AutoPlayAction =
   | { kind: 'arm';        matchId: string }
-  /** 次の試合を準備する前に、観客席へ運営アナウンスを出す */
+  /** 次の試合を準備する前に、観戦画面へ運営アナウンスを出す */
   | { kind: 'announce' }
   | { kind: 'start' }
   | { kind: 'next-round' }
@@ -87,7 +87,7 @@ export interface AutoPlayInput {
   otherArmedIds:       readonly string[];
   /**
    * 主レーンか。**大会全体に効く一手は主レーンだけが出す** — 決勝進出者の確定・
-   * 観客席へのアナウンス・デモの作り直しがそれで、副レーンも出すと同じ操作が並列数ぶん飛ぶ。
+   * 観戦画面へのアナウンス・デモの作り直しがそれで、副レーンも出すと同じ操作が並列数ぶん飛ぶ。
    * 並列実行していなければ常に true
    */
   primary:             boolean;
@@ -166,7 +166,7 @@ export function nextAutoPlayAction(i: AutoPlayInput): AutoPlayAction | null {
     return { kind: 'confirm-qualifiers' };
   }
 
-  // ④ 次の試合を準備する。アナウンスを挟む設定なら、その前に観客席へ出す。
+  // ④ 次の試合を準備する。アナウンスを挟む設定なら、その前に観戦画面へ出す。
   //    出したあとは status.announcement.visible が立つのでここを素通りし、次の呼び出しで
   //    arm に落ちる (armMatch がアナウンスを消すので、次の試合ではまた出る)。
   //    **文面が空なら挟まない** — 真っ白な画面を数秒出すだけになるため
@@ -181,7 +181,7 @@ export function nextAutoPlayAction(i: AutoPlayInput): AutoPlayAction | null {
       : i.primary && i.otherArmedIds.length === 0,
   })[0];
   if (next) {
-    // アナウンスは観客席に1つしか無いので主レーンだけが出す
+    // アナウンスは観戦画面に1つしか無いので主レーンだけが出す
     const st = i.status.announcement;
     if (i.primary && i.announce && !st.visible && (st.title !== '' || st.body !== '')) {
       return { kind: 'announce' };

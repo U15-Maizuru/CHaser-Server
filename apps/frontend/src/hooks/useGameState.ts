@@ -12,7 +12,9 @@ import type {
   ProcessConfig,
   ServerStatusPayload,
   AutoPlayTieBreak,
+  TournamentBracketView,
   TournamentDisplayView,
+  TournamentGroupView,
   TournamentStatePayload,
   TurnStartPayload,
   WsMessage,
@@ -46,6 +48,8 @@ export interface TournamentCommands {
   confirmQualifiers: (confirmed: boolean) => void;
   /** 観戦画面に出すものの切り替え (運営席の表示とは連動しない) */
   setDisplayView: (view: TournamentDisplayView) => void;
+  setBracketView: (view: TournamentBracketView) => void;
+  setGroupView: (view: TournamentGroupView) => void;
   /**
    * 自動進行の切り替え。`loop` / `announce` を省略するとサーバー側の今の設定を保つ
    * (「自動で進める」「繰り返す」「アナウンスを挟む」を別々のボタンにしても互いを巻き戻さない)
@@ -104,7 +108,7 @@ export interface GameStateHook {
   setMapParams:     (params: MapParams) => void;
   loadMapData:      (data: InlineMapData) => void;
   previewMap:       (mapId: string | null) => void;
-  /** 観客席に出す運営アナウンス。差分で送る (文面だけ・表示だけ、どちらも直せる) */
+  /** 観戦画面に出す運営アナウンス。差分で送る (文面だけ・表示だけ、どちらも直せる) */
   setAnnouncement:  (patch: Partial<AnnouncementState>) => void;
   tournament:       TournamentCommands;
 }
@@ -262,6 +266,10 @@ export function useGameState(wsUrl: string, roomId: string): GameStateHook {
         send({ type: 'tournament_confirm_qualifiers', payload: { confirmed } }),
       setDisplayView: (view) =>
         send({ type: 'tournament_set_display_view', payload: { view } }),
+      setBracketView: (view) =>
+        send({ type: 'tournament_set_bracket_view', payload: { view } }),
+      setGroupView: (view) =>
+        send({ type: 'tournament_set_group_view', payload: { view } }),
       setAutoPlay: (enabled, loop, announce, tieBreak) =>
         send({ type: 'tournament_set_auto_play', payload: { enabled, loop, announce, tieBreak } }),
       setLaneCount: (count) =>

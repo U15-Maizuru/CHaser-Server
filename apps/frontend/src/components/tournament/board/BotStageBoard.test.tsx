@@ -82,7 +82,7 @@ function state(
     qualifierCandidates: opts.candidates ?? [],
     qualifiersConfirmed: false,
     stageMaps: ['map-1', null], thirdPlaceMapId: null, stageLabels: ['BOT対戦予選', '準決勝'],
-    displayView: 'auto',
+    displayView: 'auto', bracketView: 'auto', groupView: 'auto',
     autoPlay: { enabled: false, loop: false, announce: false, tieBreak: 'pause', stoppedReason: null },
     lanes: [{ roomId: 'room', primary: true, armedMatchId: opts.armedMatchId ?? null }],
     armedMatchId: opts.armedMatchId ?? null, boundRoomId: 'room', updatedAt: 0,

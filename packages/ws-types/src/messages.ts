@@ -16,7 +16,7 @@ import type {
   TurnStartPayload,
 } from './protocol.js';
 import type {
-  AutoPlayTieBreak, TournamentDisplayView, TournamentStatePayload,
+  AutoPlayTieBreak, TournamentBracketView, TournamentDisplayView, TournamentGroupView, TournamentStatePayload,
 } from './tournament.js';
 
 // --- Commands (Frontend → Backend) ---
@@ -44,7 +44,7 @@ export type FrontendMessage =
   | { type: 'set_dark_mode';     payload: { enabled: boolean } }
   | { type: 'set_display_prefs'; payload: Partial<DisplayPrefs> }
   /**
-   * 観客席に出す運営アナウンス。文面 (title/body) と表示 (visible) を別々に送れる
+   * 観戦画面に出す運営アナウンス。文面 (title/body) と表示 (visible) を別々に送れる
    * ように差分で受ける — 出したまま文面だけ直す・文面を残したまま消す、の両方をするため
    */
   | { type: 'set_announcement';  payload: Partial<AnnouncementState> }
@@ -84,6 +84,10 @@ export type FrontendMessage =
   | { type: 'tournament_confirm_qualifiers'; payload: { confirmed: boolean } }
   /** 観戦画面に出すものを切り替える (運営席の表示とは連動しない) */
   | { type: 'tournament_set_display_view'; payload: { view: TournamentDisplayView } }
+  /** 観戦画面のトーナメント表の型を切り替える (運営席の表示とは連動しない) */
+  | { type: 'tournament_set_bracket_view'; payload: { view: TournamentBracketView } }
+  /** 観戦画面の予選リーグ表で出すリーグを切り替える (運営席の表示とは連動しない) */
+  | { type: 'tournament_set_group_view'; payload: { view: TournamentGroupView } }
   /**
    * 自動進行の切り替え。`loop` は「全試合が終わったら最初からやり直す」(デモモード)、
    * `announce` は「次の試合を準備する前にアナウンス画面を挟む」、

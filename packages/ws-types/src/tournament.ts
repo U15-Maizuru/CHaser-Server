@@ -613,13 +613,67 @@ export function botResultMark(s: StandingRow): string {
 }
 
 /**
- * 観戦画面に何を出すか (予選のある形式のみ)。
+ * 観戦画面に何を出すか。
  *
  * `'auto'` は進行に追従する。運営が明示的に選んだときだけ固定され、
  * **運営席の画面 (?mode=tournament) の表示とは連動しない** —
  * 観客には見せずに手元だけで先の表を確認したい場面があるため。
+ *
+ * `'groups'` / `'bracket'` は予選のある形式だけ (予選表 / 決勝表を選ぶ)。
+ * 名簿の2つ (`isListDisplayView`) は、大会の流れの中では自動で出ず、運営が任意のタイミングで
+ * 出す。試合の間 (待機中) にだけ出て、次の試合を準備すると自動で `'auto'` に戻る
+ * (アナウンスと同じ扱い)。
+ * - `'participants'` (参加者一覧): **全形式**で選べる
+ * - `'qualifiers'` (決勝進出者だけの一覧): 予選のある形式だけ
  */
-export type TournamentDisplayView = 'auto' | 'groups' | 'bracket';
+export type TournamentDisplayView =
+  'auto' | 'groups' | 'bracket' | 'participants' | 'qualifiers';
+
+/**
+ * 観戦画面のトーナメント表の型 (勝ち上がりの表を持つ形式のみ)。
+ *
+ * - `'auto'`: 進行に合わせる。1回戦の試合が対戦待ちなら、その試合の山と決勝だけ。
+ *   準々決勝以降なら準々決勝より前の回戦を落とす
+ * - `'whole'`: 全体
+ * - `'left'` / `'right'`: 左 / 右のブロック (その山と決勝だけ)。表の左右は表示位置で決まる
+ * - `'quarter'`: 準々決勝から決勝まで (それより前の回戦は出さない)。
+ *   回戦数が足りない (3回戦以下) ときは全体と同じになる
+ *
+ * **どの表 (予選表・決勝表・名簿) を出すかを決める `TournamentDisplayView` とは別軸**。
+ * 運営席の画面の表示とは連動しない。回戦数が足りず型が成り立たないときは全体を出す。
+ */
+export type TournamentBracketView = 'auto' | 'whole' | 'left' | 'right' | 'quarter';
+
+/**
+ * 観戦画面の予選リーグ表で、どのリーグを出すか (予選リーグが2つ以上あるときのみ)。
+ *
+ * - `'auto'`: 進行に合わせる。たった今終わった試合のリーグがあればそのリーグだけ、
+ *   無ければ全リーグを並べる
+ * - `'all'`: 常に全リーグを並べる
+ * - 数値: そのリーグ (`GroupStanding.group`) だけ。星取表と順位表 (スコア) を大きく出す
+ *
+ * **どの表を出すかの `TournamentDisplayView` とは別軸**。運営席の画面の表示とは連動しない。
+ */
+export type TournamentGroupView = 'auto' | 'all' | number;
+
+/** 表 (予選表 / 決勝表) を運営が固定している指定か。進行に合わせた表示ではない */
+export function isTableDisplayView(view: TournamentDisplayView): boolean {
+  return view === 'groups' || view === 'bracket';
+}
+
+/**
+ * その形式で選べる `TournamentDisplayView` か。**選べる指定の唯一の定義** —
+ * バックエンドの拒否と、運営パネルの選択肢の出し分けが同じ規則で動く。
+ * 参加者一覧はどの形式でも出せる。予選表・決勝表・決勝進出者は予選のある形式だけ。
+ */
+export function displayViewAvailable(format: TournamentFormat, view: TournamentDisplayView): boolean {
+  return view === 'auto' || view === 'participants' || hasQualifying(format);
+}
+
+/** 名簿 (参加者一覧 / 決勝進出者) を出す指定か。試合の合間だけ出て、試合の準備で解ける */
+export function isListDisplayView(view: TournamentDisplayView): boolean {
+  return view === 'participants' || view === 'qualifiers';
+}
 
 /**
  * 自動進行中に、勝ち上がりの試合が同点で終わったときの扱い。
@@ -644,7 +698,7 @@ export interface TournamentAutoPlay {
   /** 全試合が終わったら進行状態を作り直して繰り返す (デモモード) */
   loop:    boolean;
   /**
-   * 次の試合を準備する前に、観客席へアナウンス画面を挟む。
+   * 次の試合を準備する前に、観戦画面へアナウンス画面を挟む。
    *
    * 自動進行中は試合ごとに運営が選べないので、**毎試合出すか出さないかの二択**にする
    * (手動運営では「次の試合を準備」か「アナウンス」かを試合ごとに選べる)。
@@ -801,6 +855,10 @@ export interface TournamentStatePayload {
   qualifiersConfirmed: boolean;
   /** 観戦画面に出すもの (運営が指定。既定は進行に追従する 'auto') */
   displayView:  TournamentDisplayView;
+  /** 観戦画面のトーナメント表の型 (運営が指定。既定は進行に追従する 'auto') */
+  bracketView:  TournamentBracketView;
+  /** 観戦画面の予選リーグ表で出すリーグ (運営が指定。既定は進行に追従する 'auto') */
+  groupView:    TournamentGroupView;
   /** 自動進行 (オートプレイ / デモモード) の状態 */
   autoPlay:     TournamentAutoPlay;
   /**

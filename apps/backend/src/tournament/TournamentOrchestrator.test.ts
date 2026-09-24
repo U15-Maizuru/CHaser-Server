@@ -89,6 +89,40 @@ describe('TournamentOrchestrator', () => {
       writeCup(cupDef());
       orch.bind(ROOM, CUP);
       expect(() => orch.setDisplayView(ROOM, 'groups')).toThrow(TournamentError);
+      // 決勝進出者の一覧も予選のある形式だけ
+      expect(() => orch.setDisplayView(ROOM, 'qualifiers')).toThrow(TournamentError);
+    });
+
+    it('予選リーグ表のリーグ指定は予選リーグの大会だけ', () => {
+      writeCup(cupDef());
+      orch.bind(ROOM, CUP);
+      expect(() => orch.setGroupView(ROOM, 0)).toThrow(TournamentError);
+      expect(() => orch.setGroupView(ROOM, 'all')).toThrow(TournamentError);
+    });
+
+    it('トーナメント表の型を切り替えられる (既定は進行に追従)', () => {
+      writeCup(cupDef());
+      orch.bind(ROOM, CUP);
+      expect(lastState()!.bracketView).toBe('auto');
+
+      orch.setBracketView(ROOM, 'left');
+      expect(lastState()!.bracketView).toBe('left');
+      // 表示するものの指定 (displayView) とは別軸
+      expect(lastState()!.displayView).toBe('auto');
+
+      orch.setBracketView(ROOM, 'auto');
+      expect(lastState()!.bracketView).toBe('auto');
+    });
+
+    it('参加者一覧は予選のない形式でも出せる。次の試合を準備すると自動で進行に戻る', async () => {
+      writeCup(cupDef());
+      orch.bind(ROOM, CUP);
+
+      orch.setDisplayView(ROOM, 'participants');
+      expect(lastState()!.displayView).toBe('participants');
+
+      await orch.armMatch(ROOM, 'SF1');
+      expect(lastState()!.displayView).toBe('auto');
     });
   });
 
@@ -1185,6 +1219,20 @@ describe('TournamentOrchestrator', () => {
 
       orch.setDisplayView(ROOM, 'auto');
       expect(lastState()!.displayView).toBe('auto');
+
+      // 予選リーグ表で出すリーグ。実在するリーグだけ指定できる (既定は進行に追従)
+      expect(lastState()!.groupView).toBe('auto');
+      orch.setGroupView(ROOM, 1);
+      expect(lastState()!.groupView).toBe(1);
+      expect(() => orch.setGroupView(ROOM, 99)).toThrow(TournamentError);
+      orch.setGroupView(ROOM, 'all');
+      expect(lastState()!.groupView).toBe('all');
+      // displayView とは別軸
+      expect(lastState()!.displayView).toBe('auto');
+
+      // 予選のある形式は、決勝進出者の一覧も出せる
+      orch.setDisplayView(ROOM, 'qualifiers');
+      expect(lastState()!.displayView).toBe('qualifiers');
     });
 
     it('予選の節にはマップを個別指定できない', () => {

@@ -2,11 +2,15 @@ import type {
   AutoPlayTieBreak,
   ServerStatusPayload,
   TournamentAutoPlay,
+  TournamentBracketView,
   TournamentDisplayView,
+  TournamentGroupView,
   TournamentStatePayload,
   WsMessage,
 } from '@u15/ws-types';
-import { canRunInSideLane, hasBotStage, hasQualifying, nextReadyMatches } from '@u15/ws-types';
+import {
+  canRunInSideLane, displayViewAvailable, hasBotStage, hasBracket, nextReadyMatches,
+} from '@u15/ws-types';
 import type { RoomManager } from '../RoomManager.js';
 import { PortPool } from '../network/PortPool.js';
 import {
@@ -22,7 +26,7 @@ import { applyServerStatus } from './statusBridge.js';
 import { clearTimer, scheduleNext, type AutoPlayEnv } from './autoPlayRunner.js';
 import { DEFAULT_AUTO_PLAY_DELAYS_MS, type AutoPlayDelaysMs } from './autoPlay.js';
 import {
-  assignProgram, buildStatePayload, loadTournament, mapForStage, scanTournaments,
+  assignProgram, buildStatePayload, groupsOf, loadTournament, mapForStage, scanTournaments,
   type LoadedTournament,
 } from './TournamentStore.js';
 
@@ -154,6 +158,8 @@ export class TournamentOrchestrator {
         listener,
       }],
       displayView:  'auto',
+      bracketView:  'auto',
+      groupView:    'auto',
       autoPlay:     AUTO_PLAY_OFF,
       keepalive: setInterval(() => this.deps.rm.touchRoom(roomId), KEEPALIVE_MS),
     };
@@ -425,10 +431,39 @@ export class TournamentOrchestrator {
    */
   setDisplayView(roomId: string, view: TournamentDisplayView): void {
     const b = this.require(roomId);
-    if (!hasQualifying(b.loaded.def.stage.format)) {
+    if (!displayViewAvailable(b.loaded.def.stage.format, view)) {
       throw new TournamentError('この大会には切り替える表がありません');
     }
     b.displayView = view;
+    this.publish(roomId);
+  }
+
+  /**
+   * 観戦画面のトーナメント表の型を切り替える。運営席の表示とは連動しない。
+   * 勝ち上がりの表を持たない形式 (リーグ) には型が無いので拒否する。
+   */
+  setBracketView(roomId: string, view: TournamentBracketView): void {
+    const b = this.require(roomId);
+    if (!hasBracket(b.loaded.def.stage.format)) {
+      throw new TournamentError('この大会にはトーナメント表がありません');
+    }
+    b.bracketView = view;
+    this.publish(roomId);
+  }
+
+  /**
+   * 観戦画面の予選リーグ表で出すリーグを切り替える。運営席の表示とは連動しない。
+   * 予選リーグ (group-then-bracket) だけ。数値は実在するリーグ番号でなければならない。
+   */
+  setGroupView(roomId: string, view: TournamentGroupView): void {
+    const b = this.require(roomId);
+    if (b.loaded.def.stage.format !== 'group-then-bracket') {
+      throw new TournamentError('この大会には予選リーグがありません');
+    }
+    if (typeof view === 'number' && !groupsOf(b.loaded.def)[view]) {
+      throw new TournamentError('そのリーグはありません');
+    }
+    b.groupView = view;
     this.publish(roomId);
   }
 
@@ -514,6 +549,7 @@ export class TournamentOrchestrator {
     return buildStatePayload(
       b.loaded, b.roomId, primaryLane(b).armedMatchId, b.displayView, b.autoPlay,
       b.lanes.map(l => ({ roomId: l.roomId, primary: l.primary, armedMatchId: l.armedMatchId })),
+      b.bracketView, b.groupView,
     );
   }
 

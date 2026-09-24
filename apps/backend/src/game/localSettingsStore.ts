@@ -10,8 +10,8 @@ export interface LocalSettings {
   darkMode:     boolean;
   displayPrefs: DisplayPrefs;
   /**
-   * 観客席アナウンスの**文面だけ**。`visible` は持たない — 表示状態まで復元すると、
-   * アプリを開き直した直後に前回の休憩の案内が観客席へ出てしまう
+   * 観戦画面のアナウンスの**文面だけ**。`visible` は持たない — 表示状態まで復元すると、
+   * アプリを開き直した直後に前回の休憩の案内が観戦画面へ出てしまう
    */
   announcement: Pick<AnnouncementState, 'title' | 'body'>;
   doubleMode:   boolean;

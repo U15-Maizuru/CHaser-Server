@@ -45,7 +45,7 @@ function state(): TournamentStatePayload {
     ],
     standings: null, groups: null, qualifiers: null, qualifierCandidates: null,
     qualifiersConfirmed: false,
-    displayView: 'auto',
+    displayView: 'auto', bracketView: 'auto', groupView: 'auto',
     autoPlay: { enabled: false, loop: false, announce: false, tieBreak: 'pause', stoppedReason: null },
     stageMaps: [], thirdPlaceMapId: null, stageLabels: [],
     lanes: [{ roomId: 'room', primary: true, armedMatchId: null }],
