@@ -58,7 +58,7 @@ export function isTournamentComplete(state: TournamentStatePayload | null): bool
  *
  * **同点で再試合待ちの試合があれば null に倒す。** 再試合は必ず「以前に確定した試合」より
  * あとに起きる出来事なので、confirmedAt がどれだけ新しくても、もう「たった今終わったもの」
- * ではない。ここで弾かないと、観客席には「(古い試合) が終わりました」という強調表示と
+ * ではない。ここで弾かないと、観戦画面には「(古い試合) が終わりました」という強調表示と
  * 「(今の試合) は再試合待ち」が同時に出て、どちらが最新の出来事か伝わらなくなる。
  */
 export function lastConfirmedMatch(state: TournamentStatePayload | null): TournamentMatch | null {

@@ -187,7 +187,7 @@ const cardSelected: React.CSSProperties = {
   outline: `2px solid ${COOL_COLOR}`, outlineOffset: 1,
 };
 
-// これから行う試合。観客席から一目で分かるよう、枠を金色にして脈打たせる。
+// これから行う試合。観戦画面から一目で分かるよう、枠を金色にして脈打たせる。
 // アニメーション本体 (UPCOMING_KEYFRAMES) は matchStatusStyle.ts で共有する。
 const cardUpcoming: React.CSSProperties = {
   border: `1px solid ${GOLD_BASE}`,

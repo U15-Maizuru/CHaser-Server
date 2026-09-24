@@ -7,7 +7,7 @@ import type {
 } from '@u15/ws-types';
 import { TournamentFinale } from './TournamentFinale';
 
-// 表彰画面は観客席から読むものなので、優勝プレイヤー名と最終結果の表が
+// 表彰画面は観戦画面から読むものなので、優勝プレイヤー名と最終結果の表が
 // トーナメント・リーグの**どちらでも**出ることを確かめる。
 
 afterEach(() => cleanup());

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { hasQualifying, NO_ANNOUNCEMENT } from '@u15/ws-types';
 import { useGameState } from '../../hooks/useGameState';
+import { lastConfirmedMatch } from '../../lib/tournamentResult';
 import { BracketView } from './board/BracketView';
 import { QualifyingView } from './board/QualifyingView';
 import { LeagueTable } from './board/LeagueTable';
@@ -25,6 +26,14 @@ export function TournamentMode({ wsUrl, roomId, httpBase }: TournamentModeProps)
   const [selected, setSelected] = useState<string | null>(null);
   const t = state.tournamentState;
 
+  // 観戦画面 (TournamentStandby) と同じく、たった今確定した試合の勝者が上がった次の枠を
+  // 金色にする。次の試合を準備するまでの間だけ (準備すると観戦画面は対戦表示へ移る)。
+  // 予選の試合 (group あり) は決勝表の強調の対象外 — 予選表は QualifyingView が
+  // 「直後はそのリーグだけを大きく見せる」表示に切り替えてしまうので、渡さない
+  const lastConfirmed = t && !t.armedMatchId ? lastConfirmedMatch(t) : null;
+  const bracketFinishedId = lastConfirmed && lastConfirmed.group === undefined
+    ? lastConfirmed.id : null;
+
   if (!state.isConnected) {
     return <Splash title="大会運営" sub="バックエンドに接続中..." />;
   }
@@ -38,7 +47,7 @@ export function TournamentMode({ wsUrl, roomId, httpBase }: TournamentModeProps)
           ) : hasQualifying(t.stage.format) ? (
             <QualifyingView
               state={t} interactive selectedId={selected} onSelect={setSelected}
-              showTabs maxScale={1.6}
+              finishedMatchId={bracketFinishedId} showTabs maxScale={1.6}
             />
           ) : t.stage.format === 'league' ? (
             <LeagueTable
@@ -57,6 +66,7 @@ export function TournamentMode({ wsUrl, roomId, httpBase }: TournamentModeProps)
               participants={t.participants}
               format={t.stage.format}
               upcomingId={t.armedMatchId}
+              finishedId={bracketFinishedId}
               interactive
               selectedId={selected}
               onSelect={setSelected}

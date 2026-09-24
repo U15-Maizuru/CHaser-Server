@@ -184,7 +184,7 @@ const cardSelected: React.CSSProperties = {
   outline: `2px solid ${COOL_COLOR}`, outlineOffset: 1,
 };
 
-// これから行う試合。観客席から一目で分かるよう、枠を金色にして脈打たせる。
+// これから行う試合。観戦画面から一目で分かるよう、枠を金色にして脈打たせる。
 // アニメーション本体 (UPCOMING_KEYFRAMES) は matchStatusStyle.ts で共有する。
 const cardUpcoming: React.CSSProperties = {
   // card と同じ border ショートハンドで上書きする (borderColor だけ足すと
@@ -199,7 +199,7 @@ const badgeUpcoming: React.CSSProperties = {
 };
 
 // たった今確定した試合。次の試合の金色とは別の色 (勝利のミント) にして、
-// 観客席から「これから」と「終わったばかり」を取り違えないようにする
+// 観戦画面から「これから」と「終わったばかり」を取り違えないようにする
 const cardJustFinished: React.CSSProperties = {
   border: `1px solid ${WIN_BASE}`,
   background: WIN_PALE,
