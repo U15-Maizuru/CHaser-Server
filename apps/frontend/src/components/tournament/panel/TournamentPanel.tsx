@@ -2,10 +2,9 @@ import { useEffect, useState } from 'react';
 import type {
   AnnouncementState, CatalogEntry, MapCatalogEntry, TournamentStatePayload, TournamentSummary,
 } from '@u15/ws-types';
-import { armedLaneMatchIds } from '@u15/ws-types';
 import type { TournamentCommands } from '../../../hooks/useGameState';
 import { NextActionCard } from './NextActionCard';
-import { AnnouncementCard } from './AnnouncementCard';
+import { DisplayTab, displayPinned } from './DisplayTab';
 import { LibraryTab } from './LibraryTab';
 import { ProgressTab } from './ProgressTab';
 import { SettingsTab } from './SettingsTab';
@@ -19,10 +18,11 @@ import {
 // 大会を最後まで進めるだけなら上の1枚しか見なくてよく、タブは
 //   大会 … 運営する大会を選ぶ・作る・持ち出す
 //   進行 … 決勝進出者の確認、試合の一覧と巻き戻し、結果の書き出し
-//   設定 … 観客席の表示・回戦ごとのマップ・オートプレイ
-// と、運営の関心ごとに分ける。
+//   表示 … 観戦画面に出すもの (アナウンス・表・名簿・表の見せ方)
+//   設定 … 回戦ごとのマップ・同時に行う試合数・オートプレイ
+// と、運営の関心ごとに分ける。観戦画面の表示に関わる操作は「表示」に集める。
 
-type PanelTab = 'library' | 'progress' | 'settings';
+type PanelTab = 'library' | 'progress' | 'display' | 'settings';
 
 export interface TournamentPanelProps {
   state:      TournamentStatePayload | null;
@@ -30,7 +30,7 @@ export interface TournamentPanelProps {
   commands:   TournamentCommands;
   lastError:  string | null;
   clearError: () => void;
-  /** 観客席に出す運営アナウンス (大会ではなくルームの状態なので commands とは別に受ける) */
+  /** 観戦画面に出す運営アナウンス (大会ではなくルームの状態なので commands とは別に受ける) */
   announcement:    AnnouncementState;
   setAnnouncement: (patch: Partial<AnnouncementState>) => void;
 }
@@ -69,14 +69,16 @@ export function TournamentPanel({
 
   const awaiting = state?.matches.find(m => m.status === 'awaiting_confirm') ?? null;
 
-  // どこかのレーンが対戦を抱えていれば、観客席は対戦画面 (並列なら分割画面) に入っている。
-  // **主レーンの armedMatchId だけを見ないこと** — 副レーンだけが走っている状態は普通に
-  // 起きるので、それだと「出したのに観客席に出ない」アナウンスができてしまう
-  const anyArmed = state ? armedLaneMatchIds(state).size > 0 : false;
-
   const tabs: TabDef<PanelTab>[] = [
     { id: 'library',  label: '大会' },
     { id: 'progress', label: '進行', ...(state ? {} : { disabledReason: '大会を選ぶと使えます' }) },
+    {
+      id: 'display', label: '表示',
+      ...(state
+        ? (displayPinned(state, announcement)
+            ? { marked: true, markTitle: '観戦画面に指定中の表示があります' } : {})
+        : { disabledReason: '大会を選ぶと使えます' }),
+    },
     { id: 'settings', label: '設定', ...(state ? {} : { disabledReason: '大会を選ぶと使えます' }) },
   ];
 
@@ -87,12 +89,6 @@ export function TournamentPanel({
       {lastError && <Callout tone="error" onDismiss={clearError}>{lastError}</Callout>}
 
       <NextActionCard state={state} commands={commands} programs={programs} />
-
-      {/* 試合の合間だけ出す。対戦カードが決まったら観客席は対戦画面に入るので、
-          出しっぱなしを消せるよう表示中だけカードを残す */}
-      {(!anyArmed || announcement.visible) && (
-        <AnnouncementCard announcement={announcement} onChange={setAnnouncement} />
-      )}
 
       <Tabs tabs={tabs} active={tab} onSelect={setTab} />
 
@@ -110,6 +106,14 @@ export function TournamentPanel({
         {tab === 'progress' && (state
           ? <ProgressTab state={state} httpBase={httpBase} commands={commands} />
           : <EmptyState>大会を選ぶと進行状況が出ます。</EmptyState>)}
+        {tab === 'display' && (state
+          ? (
+            <DisplayTab
+              state={state} commands={commands}
+              announcement={announcement} setAnnouncement={setAnnouncement}
+            />
+          )
+          : <EmptyState>大会を選ぶと観戦画面の表示を切り替えられます。</EmptyState>)}
         {tab === 'settings' && (state
           ? <SettingsTab state={state} maps={maps} commands={commands} />
           : <EmptyState>大会を選ぶと設定できます。</EmptyState>)}

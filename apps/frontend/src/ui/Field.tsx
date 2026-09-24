@@ -32,7 +32,7 @@ export function NumberInput({ style, ...rest }: InputHTMLAttributes<HTMLInputEle
   return <input type="number" {...rest} style={{ ...s.input, ...s.number, ...style }} />;
 }
 
-/** 複数行の入力。改行をそのまま持つ文字列 (観客席アナウンスの本文など) に使う */
+/** 複数行の入力。改行をそのまま持つ文字列 (観戦画面のアナウンスの本文など) に使う */
 export function TextArea({ style, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return <textarea {...rest} style={{ ...s.input, ...s.textarea, ...style }} />;
 }

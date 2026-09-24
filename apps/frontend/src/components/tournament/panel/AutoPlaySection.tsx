@@ -106,7 +106,7 @@ export function AutoPlaySection({ state, commands }: {
 
       <OptionRow
         label="試合の間"
-        hint={<>次の試合を準備する前に、毎回「合間のアナウンス」を観客席へ出します（文面が空なら挟みません）。</>}
+        hint={<>次の試合を準備する前に、毎回「合間のアナウンス」を観戦画面へ出します（文面が空なら挟みません）。</>}
       >
         <Toggle
           checked={a.announce}

@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react';
 import type { AnnouncementState } from '@u15/ws-types';
 import {
-  BG_HEADER, BORDER_COLOR, RADIUS_MD, SHADOW_MD, TEXT_MUTED, TEXT_SECONDARY, WIN_BASE,
-  Button, ChipRow, Field, Hint, TextArea, TextInput,
+  BG_HEADER, BORDER_COLOR, RADIUS_MD, SHADOW_MD, TEXT_MUTED, TEXT_SECONDARY,
+  Badge, Button, ChipRow, Field, Hint, TextArea, TextInput,
 } from '../../../ui';
 
-// 試合と試合の合間に、観客席へ出す運営アナウンス (「10分間の休憩にします」など)。
+// 試合と試合の合間に、観戦画面へ出す運営アナウンス (「10分間の休憩にします」など)。
 //
 // 「今やること」(NextActionCard) の真下に置く。次の試合を準備するか、その前に
 // アナウンスを出すか — 運営が選ぶのはこの場面なので、選択肢を隣に並べる。
 //
-// **対戦カードが決まっている間 (armed) は出さない。** そこから先は観客席が
+// **対戦カードが決まっている間 (armed) は出さない。** そこから先は観戦画面が
 // 対戦画面に入っているので、出しても見えない (出しっぱなしを消せるよう、
 // 表示中だけは armed でもカードを残す)。判定は TournamentPanel が持つ。
 //
@@ -40,7 +40,7 @@ export function AnnouncementCard({ announcement, onChange }: AnnouncementCardPro
   const dirty = title !== announcement.title || body !== announcement.body;
   const empty = title.trim() === '' && body.trim() === '';
 
-  /** 入力欄を離れたときの反映。表示中なら観客席の文字がその場で変わる */
+  /** 入力欄を離れたときの反映。表示中なら観戦画面の文字がその場で変わる */
   const flush = () => { if (dirty) onChange({ title, body }); };
 
   const show = () => onChange({ title, body, visible: true });
@@ -60,7 +60,7 @@ export function AnnouncementCard({ announcement, onChange }: AnnouncementCardPro
         >
           <span style={s.caret}>{open ? '▾' : '▸'}</span>
           <span style={s.label}>合間のアナウンス</span>
-          {announcement.visible && <span style={s.live}>表示中</span>}
+          {announcement.visible && <Badge>表示中</Badge>}
           {!open && (
             <span style={{ ...s.digest, ...(empty ? s.digestEmpty : null) }}>{digest}</span>
           )}
@@ -109,8 +109,8 @@ export function AnnouncementCard({ announcement, onChange }: AnnouncementCardPro
 
           <Hint>
             {announcement.visible
-              ? '観客席に表示中です。「この試合を準備」すると自動で消えます。'
-              : '観客席の待機画面を、この案内で置き換えます。対戦中は割り込みません。'}
+              ? '観戦画面に表示中です。「この試合を準備」すると自動で消えます。'
+              : '待機中の観戦画面を、この案内で置き換えます。対戦中は割り込みません。'}
             文面は消したあとも残るので、次の休憩でもそのまま使えます。
           </Hint>
         </>
@@ -136,10 +136,6 @@ const s: Record<string, React.CSSProperties> = {
   label: {
     fontSize: 11, letterSpacing: '0.06em', color: TEXT_SECONDARY, fontWeight: 700,
     flexShrink: 0,
-  },
-  live: {
-    fontSize: 9, fontWeight: 700, color: '#fff', background: WIN_BASE,
-    borderRadius: 99, padding: '1px 8px', flexShrink: 0,
   },
   // 畳んでいるときの中身のあらすじ。1行に収める
   digest: {

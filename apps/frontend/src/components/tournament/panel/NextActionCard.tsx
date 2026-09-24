@@ -129,7 +129,7 @@ function Body({ state, action, commands, programs }: {
         <>
           <p style={s.note}>
             予選が終わりました。下の「決勝進出者」を確認し、確定すると決勝トーナメントへ進みます。
-            確定するまで観客席には予選の最終結果が出続けます。
+            確定するまで観戦画面には予選の最終結果が出続けます。
           </p>
           {action.over > 0 ? (
             <Hint>
@@ -234,7 +234,7 @@ function LaneStart({ state, commands }: {
 }) {
   const spare   = spareLanesOf(state);
   const running = state.matches.some(m => m.status === 'in_progress');
-  // **レーン番号を添える。** 観客席の分割画面が「レーン1〜N」で並ぶので、
+  // **レーン番号を添える。** 観戦画面の分割表示が「レーン1〜N」で並ぶので、
   // 番号が無いと「レーン2が止まっている」をどの試合のことか言い当てられない
   const armed = state.lanes
     .map((l, i) => ({ lane: i + 1, match: state.matches.find(m => m.id === l.armedMatchId) }))
@@ -286,7 +286,7 @@ const s: Record<string, React.CSSProperties> = {
   },
   note: { margin: 0, fontSize: 12, lineHeight: 1.7, color: TEXT_PRIMARY },
   laneRow: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 },
-  // 観客席の分割画面の「レーン1」と同じ呼び名。番号で画面と試合を結ぶ
+  // 観戦画面の分割表示の「レーン1」と同じ呼び名。番号で画面と試合を結ぶ
   laneTag: {
     width: 46, flexShrink: 0, fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
     color: TEXT_MUTED,

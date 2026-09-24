@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
 import {
-  BG_CARD, BORDER_COLOR, RADIUS_MD, SHADOW_MD, TEXT_SECONDARY,
+  BG_CARD, BORDER_COLOR, RADIUS_MD, RADIUS_PILL, SHADOW_MD, TEXT_SECONDARY, WIN_BASE,
 } from './tokens';
 
 /** 一まとまりの操作・情報を載せる白い箱 */
@@ -28,6 +28,11 @@ export function Section({
   );
 }
 
+/** 状態を知らせる小さな緑の丸札 (「表示中」「指定中」など) */
+export function Badge({ style, children }: { style?: CSSProperties; children: ReactNode }) {
+  return <span style={{ ...s.badge, ...style }}>{children}</span>;
+}
+
 /** 補足説明。本文より一段弱い扱いで、読み飛ばしても操作できる内容だけを置く */
 export function Hint({ style, children }: { style?: CSSProperties; children: ReactNode }) {
   return <p style={{ ...s.hint, ...style }}>{children}</p>;
@@ -46,6 +51,10 @@ const s: Record<string, CSSProperties> = {
   },
   title:   { fontSize: 14, fontWeight: 700 },
   actions: { display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' },
+  badge: {
+    fontSize: 9, fontWeight: 700, color: '#fff', background: WIN_BASE,
+    borderRadius: RADIUS_PILL, padding: '1px 8px', flexShrink: 0, alignSelf: 'center',
+  },
   hint: {
     margin: 0, fontSize: 11, color: TEXT_SECONDARY, lineHeight: 1.6,
     overflowWrap: 'anywhere',

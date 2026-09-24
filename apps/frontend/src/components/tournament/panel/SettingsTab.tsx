@@ -1,24 +1,17 @@
-import type {
-  MapCatalogEntry, TournamentDisplayView, TournamentStatePayload,
-} from '@u15/ws-types';
-import { groupStageCount, hasBracket, hasQualifying, isConsolationMatch } from '@u15/ws-types';
+import type { MapCatalogEntry, TournamentStatePayload } from '@u15/ws-types';
+import { groupStageCount, hasBracket, isConsolationMatch } from '@u15/ws-types';
 import type { TournamentCommands } from '../../../hooks/useGameState';
 import { Button, ChipRow, Field, Hint, Section, Select } from '../../../ui';
 import { AutoPlaySection } from './AutoPlaySection';
 
 // 運営中に触る設定。どれも「今やること」からは外れているのでこのタブに退避する。
+// 観戦画面の表示の切り替えは「表示」タブ (DisplayTab) に集めてある。
 
 /**
  * 選べる同時実行数。**バックエンドの MAX_LANES (TournamentOrchestrator.ts) と揃える。**
  * 増やすほど1試合あたりの盤面が小さくなり、対戦プログラムも同時に2本ずつ増える。
  */
 const LANE_COUNTS = [1, 2, 3, 4] as const;
-
-const DISPLAY_VIEWS = (botStage: boolean): [TournamentDisplayView, string][] => [
-  ['auto',    '進行に合わせる'],
-  ['groups',  botStage ? 'BOT対戦予選の表' : '予選リーグ表'],
-  ['bracket', '決勝トーナメント表'],
-];
 
 /**
  * 同時に行う試合数。BOT対戦予選のある大会だけに出す。
@@ -37,7 +30,7 @@ function LaneSection({ state, commands }: {
     <Section title="同時に行う試合数">
       <Hint>
         BOT対戦予選は全員が<strong>同じ BOT・同じマップ</strong>と1試合ずつ戦うので、
-        同時に行っても測っている条件は変わりません。観客席の画面が分割され、
+        同時に行っても測っている条件は変わりません。観戦画面が分割され、
         そのぶん予選が早く終わります。<strong>決勝トーナメントは常に1試合ずつ</strong>です。
       </Hint>
       <ChipRow>
@@ -79,34 +72,6 @@ export function SettingsTab({ state, maps, commands }: SettingsTabProps) {
 
   return (
     <>
-      {hasQualifying(state.stage.format) && (
-        <Section title="観客席に出す表">
-          <Hint>
-            観客席の画面に出すものを選びます。<strong>この運営画面の表示とは連動しません</strong> —
-            観客には予選表を出したまま、手元で決勝の組み合わせを確認できます。対戦中は盤面が優先されます。
-          </Hint>
-          <ChipRow>
-            {DISPLAY_VIEWS(botStage).map(([view, label]) => (
-              <Button
-                key={view}
-                variant="choice"
-                size="sm"
-                selected={state.displayView === view}
-                onClick={() => commands.setDisplayView(view)}
-              >
-                {label}
-              </Button>
-            ))}
-          </ChipRow>
-          {state.displayView === 'auto' && (
-            <Hint>
-              予選が終わっても自動では切り替わらず、決勝進出者を
-              <strong>確定するまで予選の最終結果を出し続けます</strong>。
-            </Hint>
-          )}
-        </Section>
-      )}
-
       {botStage && <LaneSection state={state} commands={commands} />}
 
       {hasBracket(state.stage.format) && state.stageMaps.length > 0 && (

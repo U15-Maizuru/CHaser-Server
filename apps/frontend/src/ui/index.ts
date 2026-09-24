@@ -4,7 +4,7 @@
 export * from './tokens';
 export { Button, ButtonLabel, BUTTON_BAR_HEIGHT } from './Button';
 export type { ButtonProps, ButtonSize, ButtonVariant } from './Button';
-export { Card, Section, Hint } from './Card';
+export { Badge, Card, Section, Hint } from './Card';
 export { Callout, EmptyState } from './Callout';
 export type { CalloutTone } from './Callout';
 export { Dialog } from './Dialog';

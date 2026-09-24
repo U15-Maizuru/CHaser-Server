@@ -4,7 +4,7 @@ import type { AnnouncementState } from '@u15/ws-types';
 import { NO_ANNOUNCEMENT } from '@u15/ws-types';
 import { AnnouncementCard } from './AnnouncementCard';
 
-// 合間のアナウンス。文面はサーバーが持つ (観客席は別端末) ので、送るのは差分。
+// 合間のアナウンス。文面はサーバーが持つ (観戦画面は別端末) ので、送るのは差分。
 // 入力のたびに送らない (保存が1文字ごとに走る) というのがこのカードの肝。
 //
 // 既定は畳んだ状態で、出し入れだけは畳んだまま押せる。文面に触る試験は先に開くこと。
@@ -39,7 +39,7 @@ describe('AnnouncementCard', () => {
     expect(titleBox()).toHaveValue('休憩');
   });
 
-  it('文面が空のうちは観客席に出せない', () => {
+  it('文面が空のうちは観戦画面に出せない', () => {
     show();
     expect(screen.getByText('▶ 出す')).toBeDisabled();
   });
