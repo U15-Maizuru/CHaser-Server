@@ -73,7 +73,7 @@ function displayScene(
   // このとき主レーンの phase / armedMatchId だけを見ても正しい場面にならない —
   // 主レーンが空いていて副レーンだけが戦っている、という状態が普通に起きるため。
   // 空き時間の割り込み (アナウンス・マッププレビュー) も、全レーンが空くまで出さない
-  // (どこかで対戦が走っている間に観客席を差し替えると、その対戦が見えなくなる)
+  // (どこかで対戦が走っている間に観戦画面を差し替えると、その対戦が見えなくなる)
   if (isRunningParallel(tournament)) return 'lanes';
 
   const base = baseDisplayScene(phase, tournament, groupPhase);
@@ -163,7 +163,7 @@ export function DisplayMode({ wsUrl, roomId, httpBase }: { wsUrl: string; roomId
   // 自動で null に戻る、永続化しない一時状態)
   const previewMapId = serverStatus?.previewMapId ?? null;
 
-  // 運営が観客席へ出している休憩・再開時刻などの案内 (文面は残したまま出し入れできる)
+  // 運営が観戦画面へ出している休憩・再開時刻などの案内 (文面は残したまま出し入れできる)
   const announcement = serverStatus?.announcement ?? NO_ANNOUNCEMENT;
 
   // いま観客に出すべき画面。BGM の曲選び (BGM_OF_SCENE) と awarding 判定は、鳴らす音を
@@ -528,6 +528,8 @@ export function SetupWaiting({
               matches={tournament.matches}
               participants={tournament.participants}
               upcomingId={tournament.armedMatchId}
+              focusId={tournament.armedMatchId}
+              view={tournament.bracketView}
               fit
             />
           )}

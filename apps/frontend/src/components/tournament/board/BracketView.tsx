@@ -1,6 +1,9 @@
 import { useMemo } from 'react';
-import type { ResolvedParticipant, TournamentFormat, TournamentMatch } from '@u15/ws-types';
+import type {
+  ResolvedParticipant, TournamentBracketView, TournamentFormat, TournamentMatch,
+} from '@u15/ws-types';
 import { centeredBracketLayout } from '../../../lib/centeredBracketLayout';
+import { focusBracketBlock } from '../../../lib/bracketBlock';
 import { FitArea } from '../../FitArea';
 import { PLAYER_CARD_W, playerCardHeight, PlayerCard } from './PlayerCard';
 import { hasAffiliation } from './ParticipantName';
@@ -28,6 +31,16 @@ export interface BracketViewProps {
    * 上がった**次のラウンドの枠**を金色で強調する (`advancedSlotsOf` 参照)。
    */
   finishedId?:  string | null;
+  /**
+   * 観客向けに表を絞る基準の試合。4回戦以上の表で1回戦の試合を指すと、その試合を含む山と
+   * 決勝だけを描く (`focusBracketBlock`)。省略・該当しなければ全体を描く
+   */
+  focusId?:     string | null;
+  /**
+   * 運営が選んだ表の型 (全体 / 左 / 右 / 準々決勝から)。省略・'auto' は focusId に従う。
+   * 観戦画面の表だけが受け取る (運営席の表は常に全体)
+   */
+  view?:        TournamentBracketView;
   /** 表示倍率 (プロジェクタ表示で使う)。fit のときは無視される */
   scale?:       number;
   /** 親の空き領域いっぱいまで自動で拡大・縮小する (親は高さの決まった箱にすること) */
@@ -38,16 +51,21 @@ export interface BracketViewProps {
 
 export function BracketView({
   matches, participants, format, interactive = false, selectedId = null, onSelect,
-  upcomingId = null, finishedId = null, scale = 1, fit = false, maxScale = 3,
+  upcomingId = null, finishedId = null, focusId = null, view = 'auto', scale = 1, fit = false, maxScale = 3,
 }: BracketViewProps) {
   const withAffiliation = useMemo(() => hasAffiliation(participants), [participants]);
 
+  const focused = useMemo(
+    () => focusBracketBlock(matches, focusId, view), [matches, focusId, view],
+  );
+
   const layout = useMemo(
-    () => centeredBracketLayout(matches, {
+    () => centeredBracketLayout(focused.matches, {
       cardW: PLAYER_CARD_W, cardH: playerCardHeight(withAffiliation),
       matchInfoH: MATCH_INFO_H,
+      ...(focused.side ? { soloSide: focused.side } : {}),
     }),
-    [matches, withAffiliation],
+    [focused.matches, focused.side, withAffiliation],
   );
   const byId = useMemo(() => new Map(matches.map(m => [m.id, m])), [matches]);
 

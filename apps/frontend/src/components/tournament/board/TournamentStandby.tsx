@@ -161,6 +161,8 @@ export function TournamentStandby({
             matches={state.matches}
             participants={state.participants}
             finishedId={bracketFinishedId}
+            focusId={state.armedMatchId ?? finished?.id ?? null}
+            view={state.bracketView}
             fit
           />
         )}

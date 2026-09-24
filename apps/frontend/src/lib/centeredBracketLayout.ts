@@ -100,7 +100,14 @@ export interface CenteredBracketLayoutOptions {
   matchInfoHeightOf?: (m: TournamentMatch) => number;
   /** matchInfoHeightOf を省略したときの対戦カードの高さ */
   matchInfoH?: number;
+  /**
+   * 片方の山しか渡されない (bracketBlock で絞った表) ときに、その山を置く側。
+   * 元の表での左右のまま見せるために使う。省略時は左
+   */
+  soloSide?: BracketSide;
 }
+
+export type BracketSide = 'left' | 'right';
 
 const DEFAULTS = {
   cardW: 208, cardH: 34, gapX: 56, gapY: 14, centerGapY: 64, padding: 16, headerH: 22, matchInfoH: 24,
@@ -126,17 +133,7 @@ export function centeredBracketLayout(
   }
 
   // 決勝の slotA/slotB から逆向きに辿って、2つの山に属する試合をそれぞれ集める
-  const branchA = collectAncestors(final.slotA, byId);
-  const branchB = collectAncestors(final.slotB, byId);
-  // どちらを左山にするかは**表示位置 (order) で決める。slotA/slotB をそのまま使わないこと** —
-  // 1ゲーム制では bracket.ts の sideCoin が決勝の slotA/slotB を大会 id 由来のコイントスで
-  // 入れ替えるので、そのまま左右に割り当てると大会のおよそ半分で表が丸ごと左右反転する。
-  // order は buildBracket が表の上から順に振るので、直接の子 (準決勝相当) の order が
-  // 小さいほうを左に置けば、その山の試合はすべて反対側より上に来る。
-  // (実施順は order ではなく試合番号 `no` で決まる。compareByPlayOrder を参照)
-  const flipped = (branchB[0]?.order ?? 0) < (branchA[0]?.order ?? 0);
-  const leftMatches  = flipped ? branchB : branchA;
-  const rightMatches = flipped ? branchA : branchB;
+  const { left: leftMatches, right: rightMatches } = splitBranches(final, byId, opts.soloSide);
   const leftIds  = new Set(leftMatches.map(m => m.id));
   const rightIds = new Set(rightMatches.map(m => m.id));
   // 決勝そのものと、どちらの山にも属さない試合 (3位決定戦) を中央列にまとめる
@@ -254,6 +251,30 @@ function sideCenterY(p: PairPos, cardH: number, matchH: number, side: 0 | 1): nu
  * 試合を再帰的にすべて集める。参照先が無くなる (participant/bye/group-rank) か、
  * 試合が見つからないところで止まる。
  */
+/**
+ * 決勝の2つの山を左右に振り分ける。
+ *
+ * どちらを左山にするかは**表示位置 (order) で決める。slotA/slotB をそのまま使わないこと** —
+ * 1ゲーム制では bracket.ts の sideCoin が決勝の slotA/slotB を大会 id 由来のコイントスで
+ * 入れ替えるので、そのまま左右に割り当てると大会のおよそ半分で表が丸ごと左右反転する。
+ * order は buildBracket が表の上から順に振るので、直接の子 (準決勝相当) の order が
+ * 小さいほうを左に置けば、その山の試合はすべて反対側より上に来る。
+ * (実施順は order ではなく試合番号 `no` で決まる。compareByPlayOrder を参照)
+ *
+ * 片方の山しか無い (絞った表) ときは、その山を soloSide の側に置く。
+ */
+export function splitBranches(
+  final: TournamentMatch, byId: Map<string, TournamentMatch>, soloSide: BracketSide = 'left',
+): { left: TournamentMatch[]; right: TournamentMatch[] } {
+  const a = collectAncestors(final.slotA, byId);
+  const b = collectAncestors(final.slotB, byId);
+  if (a.length === 0 || b.length === 0) {
+    const solo = a.length > 0 ? a : b;
+    return soloSide === 'right' ? { left: [], right: solo } : { left: solo, right: [] };
+  }
+  return b[0]!.order < a[0]!.order ? { left: b, right: a } : { left: a, right: b };
+}
+
 function collectAncestors(
   ref: MatchSlotRef, byId: Map<string, TournamentMatch>,
 ): TournamentMatch[] {
