@@ -162,6 +162,45 @@ describe('QualifyingView', () => {
     expect(screen.getByText('Bリーグ')).toBeTruthy();
   });
 
+  describe('観戦画面に出すリーグの指定 (groupView)', () => {
+    it('リーグを指定すると、そのリーグだけ星取表と順位表を出す', () => {
+      render(<QualifyingView state={state(false)} groupView={1} />);
+      expect(screen.queryByText('Aリーグ')).toBeNull();
+      expect(screen.getByText('Bリーグ')).toBeTruthy();
+      // 星取表 + 順位表の2つだけ。Bリーグは2人
+      expect(screen.getAllByRole('table')).toHaveLength(2);
+      expect(screen.getAllByRole('table')[0]!.querySelectorAll('tbody tr')).toHaveLength(2);
+    });
+
+    it('指定は直前に確定した試合のリーグより優先される', () => {
+      // Aリーグの試合が確定した直後でも、Bリーグを指定していればBリーグを出す
+      render(<QualifyingView state={state(true)} finishedMatchId="G1-D1M1" groupView={1} />);
+      expect(screen.queryByText('Aリーグ')).toBeNull();
+      expect(screen.getByText('Bリーグ')).toBeTruthy();
+    });
+
+    it("'all' なら直前に確定した試合があっても全リーグを並べる", () => {
+      render(<QualifyingView state={state(true)} finishedMatchId="G1-D1M1" groupView="all" />);
+      expect(screen.getByText('Aリーグ')).toBeTruthy();
+      expect(screen.getByText('Bリーグ')).toBeTruthy();
+    });
+
+    it("'auto' (既定) は直前に確定した試合のリーグだけ、無ければ全リーグ", () => {
+      const { unmount } = render(<QualifyingView state={state(true)} finishedMatchId="G1-D1M1" />);
+      expect(screen.getByText('Aリーグ')).toBeTruthy();
+      expect(screen.queryByText('Bリーグ')).toBeNull();
+      unmount();
+      render(<QualifyingView state={state(true)} />);
+      expect(screen.getByText('Bリーグ')).toBeTruthy();
+    });
+
+    it('存在しないリーグの指定は自動と同じに倒す (表が空にならない)', () => {
+      render(<QualifyingView state={state(false)} groupView={9} />);
+      expect(screen.getByText('Aリーグ')).toBeTruthy();
+      expect(screen.getByText('Bリーグ')).toBeTruthy();
+    });
+  });
+
   it('リーグ表にはそのリーグの参加者しか出ない', () => {
     render(<QualifyingView state={state(false)} />);
     // 星取表 (各リーグ1つ目の table) は2人ぶんの行しか持たない

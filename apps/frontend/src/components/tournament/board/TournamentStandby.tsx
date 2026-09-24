@@ -147,7 +147,10 @@ export function TournamentStandby({
         {showGroupIntro ? (
           <GroupIntroBoard state={state} />
         ) : hasQualifying(state.stage.format) ? (
-          <QualifyingView state={state} finishedMatchId={bracketFinishedId} phase={groupPhase} />
+          <QualifyingView
+            state={state} finishedMatchId={bracketFinishedId} phase={groupPhase}
+            bracketView={state.bracketView} groupView={state.groupView}
+          />
         ) : state.stage.format === 'league' ? (
           <LeagueTable
             matches={state.matches}

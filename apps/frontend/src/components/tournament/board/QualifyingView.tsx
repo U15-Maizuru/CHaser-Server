@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
-import type { GroupStanding, TournamentStatePayload } from '@u15/ws-types';
+import type {
+  GroupStanding, TournamentBracketView, TournamentGroupView, TournamentStatePayload,
+} from '@u15/ws-types';
 import { advancePerGroupOf, hasBotStage, hasQualifying } from '@u15/ws-types';
 import { isTournamentComplete } from '../../../lib/tournamentResult';
 import { FitArea } from '../../FitArea';
@@ -15,7 +17,7 @@ import { Button, FONT_UI, TEXT_PRIMARY } from '../../../ui';
 // 分けて書くと、片方だけ「決勝進出者の確定を待つ」を実装し忘れて事故になる。
 //
 // 1画面に全部を詰めない理由: 予選2リーグの星取表と順位表だけで4枚あり、そこへ
-// トーナメント表を足すと、観客席のプロジェクターでどれも読めない大きさになる。
+// トーナメント表を足すと、プロジェクターに映す観戦画面でどれも読めない大きさになる。
 // FitArea は空き領域いっぱいまで拡大するので、見せる対象を絞るほど大きく出せる。
 
 export type QualifyingPhase = 'groups' | 'bracket';
@@ -123,13 +125,20 @@ export interface QualifyingViewProps {
   showTabs?:    boolean;
   /** 拡大の上限。観戦画面 (プロジェクタ) は大きく、操作する画面は控えめに */
   maxScale?:    number;
+  /**
+   * 予選リーグ表で出すリーグ (観戦画面が運営の指定を渡す)。省略・'auto' は進行に合わせる
+   * (たった今終わった試合のリーグがあればそのリーグだけ、無ければ全リーグ)
+   */
+  groupView?:   TournamentGroupView;
+  /** 決勝表の型 (観戦画面が運営の指定を渡す)。省略時は全体 */
+  bracketView?: TournamentBracketView;
   /** 表示するものを外から決める (観戦画面は運営パネルの指定に従う)。渡すとタブは出ない */
   phase?:       QualifyingPhase;
 }
 
 export function QualifyingView({
   state, interactive = false, selectedId = null, onSelect,
-  finishedMatchId = null, showTabs = false, maxScale = 3, phase: controlled,
+  finishedMatchId = null, bracketView = 'auto', groupView = 'auto', showTabs = false, maxScale = 3, phase: controlled,
 }: QualifyingViewProps) {
   const autoPhase: QualifyingPhase = autoQualifyingPhase(state).phase;
   // 運営が明示的に選ぶまでは進行に追従する (決勝進出者を確定すると決勝表へ切り替わる)
@@ -150,9 +159,13 @@ export function QualifyingView({
   const finishedMatch = finishedMatchId != null
     ? state.matches.find(m => m.id === finishedMatchId) ?? null
     : null;
-  const finishedGroup = finishedMatch?.group != null
-    ? groups.find(g => g.group === finishedMatch.group) ?? null
-    : null;
+  // 運営がリーグを指定していれば、直前の試合に関わらずそれに従う ('all' は常に全リーグ)。
+  // 指定したリーグが無い (大会が入れ替わった後など) ときは自動と同じに倒す
+  const pinnedGroup = typeof groupView === 'number' ? groups.find(g => g.group === groupView) : undefined;
+  const finishedGroup = groupView === 'all' ? null
+    : pinnedGroup
+      ?? (finishedMatch?.group != null ? groups.find(g => g.group === finishedMatch.group) : undefined)
+      ?? null;
 
   const board = phase === 'bracket' ? (
     <BracketView
@@ -161,6 +174,7 @@ export function QualifyingView({
       format={state.stage.format}
       upcomingId={state.armedMatchId}
       finishedId={finishedMatchId}
+      view={bracketView}
       interactive={interactive}
       selectedId={selectedId}
       {...(onSelect ? { onSelect } : {})}

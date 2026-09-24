@@ -514,7 +514,10 @@ export function SetupWaiting({
       {tournament && !intermission && (
         <div style={sw.bracket}>
           {hasQualifying(tournament.stage.format) ? (
-            <QualifyingView state={tournament} phase={groupPhase} />
+            <QualifyingView
+              state={tournament} phase={groupPhase} bracketView={tournament.bracketView}
+              groupView={tournament.groupView}
+            />
           ) : tournament.stage.format === 'league' ? (
             <LeagueTable
               matches={tournament.matches}
