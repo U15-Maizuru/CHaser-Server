@@ -144,6 +144,49 @@ describe('TournamentStandby', () => {
     expect(screen.queryByText('第1節 第2試合')).not.toBeInTheDocument();
   });
 
+  // 運営が観戦画面の表を明示的に選んでいるときは「進行に合わせた」表示ではないので、
+  // 直前の試合の結果は出さない
+  describe('運営が表を選んでいるとき (進行ではないとき)', () => {
+    const groupMatches = [
+      match('G0-M1', 0, 'p1', 'p2', {
+        group: 0, status: 'done', label: '第1節 第1試合', result: done(0, 1),
+      }),
+      match('G0-M2', 0, 'p3', 'p4', {
+        group: 0, status: 'done', label: '第1節 第2試合', result: done(1, 2),
+      }),
+    ];
+    const render_ = (over: Partial<TournamentStatePayload>) => render(
+      <TournamentStandby
+        state={{ ...state('group-then-bracket', groupMatches), ...over }}
+        displayTitle="U15 大会"
+        groupPhase="groups"
+      />,
+    );
+
+    it('進行に合わせているときは、直前の試合の結果を出す (従来どおり)', () => {
+      render_({});
+      expect(screen.getByText('D の勝ち')).toBeInTheDocument();
+    });
+
+    it('予選表を選んでいると、直前の試合の結果を出さない (紹介画面には戻らない)', () => {
+      render_({ displayView: 'groups' });
+      expect(screen.queryByText('D の勝ち')).not.toBeInTheDocument();
+      expect(screen.getByText('まもなく開始します')).toBeInTheDocument();
+      // 試合が済んでいるので、「まだ1試合も確定していない」用の紹介画面ではなく星取表のまま
+      expect(screen.queryByText('4名')).not.toBeInTheDocument();
+    });
+
+    it('決勝表を選んでいても出さない', () => {
+      render_({ displayView: 'bracket' });
+      expect(screen.queryByText('D の勝ち')).not.toBeInTheDocument();
+    });
+
+    it('リーグを指定しているときも出さない', () => {
+      render_({ groupView: 0 });
+      expect(screen.queryByText('D の勝ち')).not.toBeInTheDocument();
+    });
+  });
+
   // BOT対戦予選も「予選の位相判断は予選リーグと共通」(QualifyingView) なので、同じ経路で
   // holdingGroupResult が立つ。ラベルの呼び名だけ qualifyingLabel で分かれるので、
   // ここが「BOT対戦予選」に差し替わることも確かめる

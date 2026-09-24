@@ -1,5 +1,5 @@
 import type { TournamentMatch, TournamentStatePayload } from '@u15/ws-types';
-import { hasQualifying } from '@u15/ws-types';
+import { hasQualifying, isTableDisplayView } from '@u15/ws-types';
 import { BracketView } from './BracketView';
 import { GroupIntroBoard } from './GroupIntroBoard';
 import { QualifyingView, qualifyingLabel, type QualifyingPhase } from './QualifyingView';
@@ -62,17 +62,28 @@ export function TournamentStandby({
   const finished = candidate && matchesDisplayedPhase(candidate, hasQualifying(state.stage.format), groupPhase)
     ? candidate
     : null;
-  const winner   = finished ? winnerOf(state, finished) : null;
+
+  // 運営が「この表を出す」と選んでいるときは、進行に合わせた表示ではないので、
+  // 直前の試合の結果 (見出しのカード・表の中の強調・リーグの絞り込み) は出さない。
+  // **予選の紹介画面 (showGroupIntro) の判定には実際の finished を使う** — ここで null に
+  // してしまうと、試合が済んだあとでも「まだ1試合も確定していない」扱いで紹介画面に戻る
+  const pinned = hasQualifying(state.stage.format) && (
+    isTableDisplayView(state.displayView)
+    || (groupPhase === 'groups' && state.groupView !== 'auto')
+  );
+  const shown = pinned ? null : finished;
+
+  const winner   = shown ? winnerOf(state, shown) : null;
   // 「〜の勝ち」の一文だけでは勝因が伝わらない (何勝何敗だったのか、点差だったのか)。
   // 両者の勝敗数・合計ポイントを添える。set が無い (両者棄権など) 試合は出さない
-  const sideLabels  = finished ? matchSideLabels(state, finished) : null;
-  const set         = finished?.result?.set ?? null;
-  const winnerSide  = finished?.result?.winnerSide ?? null;
+  const sideLabels  = shown ? matchSideLabels(state, shown) : null;
+  const set         = shown?.result?.set ?? null;
+  const winnerSide  = shown?.result?.winnerSide ?? null;
   // トーナメント表の「次のラウンドを金色に」(BracketView の advancedSlots) は、勝者が
   // 実際に決まった (= 確定済みの) 試合だけを起点にする。認めただけでまだ再試合/裁定を
   // 選んでいない同点の試合を起点にすると、まだ解決していない下流の枠 (「—」のまま) まで
   // 金色になってしまう — 下のトーナメント表は変えずに、通常どおりの表示のままにする
-  const bracketFinishedId = finished === lastConfirmed ? (finished?.id ?? null) : null;
+  const bracketFinishedId = shown && shown === lastConfirmed ? shown.id : null;
 
   // 予選が1試合も確定していない間だけ、星取表の代わりに紹介画面を出す。
   // 1試合でも確定すればここは false になり、以降は通常の QualifyingView (星取表) に戻る
@@ -85,7 +96,7 @@ export function TournamentStandby({
       <div style={s.titleWrap}>
         <div style={s.eyebrow}>{displayTitle}</div>
         <div style={s.title}>{state.name}</div>
-        {finished ? (
+        {shown ? (
           <div style={s.matchResultCard}>
             <div style={s.matchResultHead}>
               {/* 予選が終わった直後 (最終試合の確定〜決勝進出者の確定待ち) は、
@@ -93,7 +104,7 @@ export function TournamentStandby({
                   ラベルを差し替えるだけで、勝者・スコアはそのまま最終試合のものを見せ続ける
                   (差し替えてしまうと、最後の試合だけ結果を見せずに表へ飛ぶことになる) */}
               <span style={s.resultLabel}>
-                {holdingGroupResult ? `${qualifyingLabel(state)} 最終結果` : finished.label}
+                {holdingGroupResult ? `${qualifyingLabel(state)} 最終結果` : shown.label}
               </span>
               {/* 所属は勝者名の上に小さく。「〜の勝ち」の一文は名前だけで組む。
                   勝者がいなくても set があれば (両者敗退ではなく) 引き分け — 数字を
